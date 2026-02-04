@@ -1,5 +1,5 @@
 #!/bin/sh
-# Copyright (c) 2015-present The Bitcoin Core developers
+# Copyright (c) 2015-2021 The Bitcoin Core developers
 # Distributed under the MIT software license, see the accompanying
 # file COPYING or http://www.opensource.org/licenses/mit-license.php.
 
@@ -19,7 +19,9 @@ while getopts "?hr" opt; do
       echo "COMMIT is the commit to check, if it is not provided, HEAD will be used."
       echo ""
       echo "-r      Check that subtree commit is present in repository."
-      echo "        To do this check, fetch the subtreed remote first. Example:"
+      echo "        To do this check, fetch the subtreed remote first."
+      echo "        Note: Subtrees are synced from upstream bitcoin-core repos."
+      echo "        Example:"
       echo ""
       echo "            git fetch https://github.com/bitcoin-core/secp256k1.git"
       echo "            test/lint/git-subtree-check.sh -r src/secp256k1"

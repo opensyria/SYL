@@ -1,5 +1,5 @@
 // Copyright (c) 2014 BitPay Inc.
-// Copyright (c) 2014-present The Bitcoin Core developers
+// Copyright (c) 2014-2022 The Bitcoin Core developers
 // Distributed under the MIT software license, see the accompanying
 // file COPYING or https://opensource.org/licenses/mit-license.php.
 
@@ -8,6 +8,7 @@
 #include <cassert>
 #include <cstdint>
 #include <map>
+#include <memory>
 #include <stdexcept>
 #include <string>
 #include <string_view>
@@ -434,7 +435,7 @@ void univalue_readwrite()
     BOOST_CHECK(!v.read("{true: 1}"));
     BOOST_CHECK(!v.read("{[1]: 1}"));
     BOOST_CHECK(!v.read("{{\"a\": \"a\"}: 1}"));
-    // BTC addresses should fail parsing
+    // Addresses should fail parsing
     BOOST_CHECK(!v.read("175tWpb8K1S7NmH4Zx6rewF9WQrcZv245W"));
     BOOST_CHECK(!v.read("3J98t1WpEZ73CNmQviecrnyiWrnqRhWNL"));
 

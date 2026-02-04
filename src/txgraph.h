@@ -1,4 +1,4 @@
-// Copyright (c) The Bitcoin Core developers
+// Copyright (c) The OpenSY developers
 // Distributed under the MIT software license, see the accompanying
 // file COPYING or http://www.opensource.org/licenses/mit-license.php.
 
@@ -11,8 +11,8 @@
 
 #include <util/feefrac.h>
 
-#ifndef BITCOIN_TXGRAPH_H
-#define BITCOIN_TXGRAPH_H
+#ifndef OPENSY_TXGRAPH_H
+#define OPENSY_TXGRAPH_H
 
 static constexpr unsigned MAX_CLUSTER_COUNT_LIMIT{64};
 
@@ -31,7 +31,7 @@ static constexpr unsigned MAX_CLUSTER_COUNT_LIMIT{64};
  * be close to the optimal order those transactions should be mined in if the goal is fee
  * maximization, though this is a best effort only, not a strong guarantee.
  *
- * For more explanation, see https://delvingbitcoin.org/t/introduction-to-cluster-linearization/1032
+ * For more explanation, see https://delvingopensyria.net/t/introduction-to-cluster-linearization/1032
  *
  * This linearization is partitioned into chunks: groups of transactions that according to this
  * order would be mined together. Each chunk consists of the highest-feerate prefix of what remains
@@ -257,4 +257,4 @@ public:
  *  steps will be performed per cluster before they are considered to be of acceptable quality. */
 std::unique_ptr<TxGraph> MakeTxGraph(unsigned max_cluster_count, uint64_t max_cluster_size, uint64_t acceptable_iters) noexcept;
 
-#endif // BITCOIN_TXGRAPH_H
+#endif // OPENSY_TXGRAPH_H

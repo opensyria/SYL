@@ -1,9 +1,9 @@
-// Copyright (c) 2018-present The Bitcoin Core developers
+// Copyright (c) 2018-present The OpenSY developers
 // Distributed under the MIT software license, see the accompanying
 // file COPYING or http://www.opensource.org/licenses/mit-license.php.
 
-#ifndef BITCOIN_CRYPTO_HKDF_SHA256_32_H
-#define BITCOIN_CRYPTO_HKDF_SHA256_32_H
+#ifndef OPENSY_CRYPTO_HKDF_SHA256_32_H
+#define OPENSY_CRYPTO_HKDF_SHA256_32_H
 
 #include <cstddef>
 #include <string>
@@ -20,4 +20,4 @@ public:
     void Expand32(const std::string& info, unsigned char hash[OUTPUT_SIZE]);
 };
 
-#endif // BITCOIN_CRYPTO_HKDF_SHA256_32_H
+#endif // OPENSY_CRYPTO_HKDF_SHA256_32_H

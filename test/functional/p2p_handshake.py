@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-# Copyright (c) 2024-present The Bitcoin Core developers
+# Copyright (c) 2024 The OpenSY developers
 # Distributed under the MIT software license, see the accompanying
 # file COPYING or http://www.opensource.org/licenses/mit-license.php.
 """
@@ -8,7 +8,7 @@ Test P2P behaviour during the handshake phase (VERSION, VERACK messages).
 import itertools
 import time
 
-from test_framework.test_framework import BitcoinTestFramework
+from test_framework.test_framework import OpenSYTestFramework
 from test_framework.util import assert_not_equal
 from test_framework.messages import (
     NODE_NETWORK,
@@ -21,6 +21,9 @@ from test_framework.messages import (
 from test_framework.p2p import P2PInterface
 from test_framework.util import p2p_port
 
+# Window, in blocks, for connecting to NODE_NETWORK_LIMITED peers
+NODE_NETWORK_LIMITED_ALLOW_CONN_BLOCKS = 144
+
 
 # Desirable service flags for outbound non-pruned and pruned peers. Note that
 # the desirable service flags for pruned peers are dynamic and only apply if
@@ -30,7 +33,7 @@ DESIRABLE_SERVICE_FLAGS_FULL = NODE_NETWORK | NODE_WITNESS
 DESIRABLE_SERVICE_FLAGS_PRUNED = NODE_NETWORK_LIMITED | NODE_WITNESS
 
 
-class P2PHandshakeTest(BitcoinTestFramework):
+class P2PHandshakeTest(OpenSYTestFramework):
     def set_test_params(self):
         self.num_nodes = 1
 
@@ -86,11 +89,15 @@ class P2PHandshakeTest(BitcoinTestFramework):
         self.test_desirable_service_flags(node, [NODE_NETWORK | NODE_WITNESS],
                                           DESIRABLE_SERVICE_FLAGS_FULL, expect_disconnect=False)
 
-        self.log.info("Check that limited peers are only desired if the local chain is close to the tip (<24h)")
-        self.generate_at_mocktime(int(time.time()) - 25 * 3600)  # tip outside the 24h window, should fail
+        self.log.info("Check that limited peers are only desired if the local chain is close to the tip")
+        # Window is NODE_NETWORK_LIMITED_ALLOW_CONN_BLOCKS (144) blocks
+        # Calculate time window based on chain's target spacing (120s for OpenSY, 600s for Bitcoin)
+        target_spacing = 120  # OpenSY's 2-minute block time
+        window_seconds = NODE_NETWORK_LIMITED_ALLOW_CONN_BLOCKS * target_spacing
+        self.generate_at_mocktime(int(time.time()) - window_seconds - 600)  # tip outside the window, should fail
         self.test_desirable_service_flags(node, [NODE_NETWORK_LIMITED | NODE_WITNESS],
                                           DESIRABLE_SERVICE_FLAGS_FULL, expect_disconnect=True)
-        self.generate_at_mocktime(int(time.time()) - 23 * 3600)  # tip inside the 24h window, should succeed
+        self.generate_at_mocktime(int(time.time()) - window_seconds + 600)  # tip inside the window, should succeed
         self.test_desirable_service_flags(node, [NODE_NETWORK_LIMITED | NODE_WITNESS],
                                           DESIRABLE_SERVICE_FLAGS_PRUNED, expect_disconnect=False)
 

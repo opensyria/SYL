@@ -1,9 +1,9 @@
-// Copyright (c) 2023-present The Bitcoin Core developers
+// Copyright (c) 2023 The OpenSY developers
 // Distributed under the MIT software license, see the accompanying
 // file COPYING or http://www.opensource.org/licenses/mit-license.php.
 
-#ifndef BITCOIN_UTIL_BATCHPRIORITY_H
-#define BITCOIN_UTIL_BATCHPRIORITY_H
+#ifndef OPENSY_UTIL_BATCHPRIORITY_H
+#define OPENSY_UTIL_BATCHPRIORITY_H
 
 /**
  * On platforms that support it, tell the kernel the calling thread is
@@ -12,4 +12,4 @@
  */
 void ScheduleBatchPriority();
 
-#endif // BITCOIN_UTIL_BATCHPRIORITY_H
+#endif // OPENSY_UTIL_BATCHPRIORITY_H

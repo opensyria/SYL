@@ -1,12 +1,12 @@
 #!/usr/bin/env python3
 # Copyright (c) 2010 ArtForz -- public domain half-a-node
 # Copyright (c) 2012 Jeff Garzik
-# Copyright (c) 2010-present The Bitcoin Core developers
+# Copyright (c) 2010-present The OpenSY developers
 # Distributed under the MIT software license, see the accompanying
 # file COPYING or http://www.opensource.org/licenses/mit-license.php.
-"""Test objects for interacting with a bitcoind node over the p2p protocol.
+"""Test objects for interacting with a opensyd node over the p2p protocol.
 
-The P2PInterface objects interact with the bitcoind nodes under test using the
+The P2PInterface objects interact with the opensyd nodes under test using the
 node's p2p interface. They can be used to send messages to the node, and
 callbacks can be registered that execute when messages are received from the
 node. Messages are sent to/received from the node on an asyncio event loop.
@@ -22,11 +22,9 @@ P2PTxInvStore: A p2p interface class that inherits from P2PDataStore, and keeps
 
 import asyncio
 from collections import defaultdict
-import ipaddress
 from io import BytesIO
 import logging
 import platform
-import socket
 import struct
 import sys
 import threading
@@ -77,9 +75,6 @@ from test_framework.messages import (
     NODE_WITNESS,
     MAGIC_BYTES,
     sha256,
-)
-from test_framework.netutil import (
-    set_ephemeral_port_range,
 )
 from test_framework.util import (
     assert_not_equal,
@@ -202,7 +197,7 @@ class P2PConnection(asyncio.Protocol):
             self.v2_state = EncryptedP2PState(initiating=True, net=net)
 
         loop = NetworkThread.network_event_loop
-        logger.debug('Connecting to Bitcoin Node: %s:%d' % (self.dstaddr, self.dstport))
+        logger.debug('Connecting to OpenSY Node: %s:%d' % (self.dstaddr, self.dstport))
         coroutine = loop.create_connection(lambda: self, host=self.dstaddr, port=self.dstport)
         return lambda: loop.call_soon_threadsafe(loop.create_task, coroutine)
 
@@ -212,7 +207,7 @@ class P2PConnection(asyncio.Protocol):
         if supports_v2_p2p:
             self.v2_state = EncryptedP2PState(initiating=False, net=net)
 
-        logger.debug('Listening for Bitcoin Node with id: {}'.format(connect_id))
+        logger.debug('Listening for OpenSY Node with id: {}'.format(connect_id))
         return lambda: NetworkThread.listen(self, connect_cb, idx=connect_id)
 
     def peer_disconnect(self):
@@ -451,7 +446,7 @@ class P2PConnection(asyncio.Protocol):
 
 
 class P2PInterface(P2PConnection):
-    """A high-level P2P interface class for communicating with a Bitcoin node.
+    """A high-level P2P interface class for communicating with an OpenSY node.
 
     This class provides high-level callbacks for processing P2P message
     payloads, as well as convenience methods for interacting with the
@@ -748,7 +743,7 @@ class NetworkThread(threading.Thread):
         """Start the network thread."""
         self.network_event_loop.run_forever()
 
-    def close(self, *, timeout):
+    def close(self, *, timeout=10):
         """Close the connections and network event loop."""
         self.network_event_loop.call_soon_threadsafe(self.network_event_loop.stop)
         wait_until_helper_internal(lambda: not self.network_event_loop.is_running(), timeout=timeout)
@@ -792,28 +787,13 @@ class NetworkThread(threading.Thread):
                 cls.protos[(addr, port)] = None
             return response
 
-        if port == 0 or (addr, port) not in cls.listeners:
+        if (addr, port) not in cls.listeners:
             # When creating a listener on a given (addr, port) we only need to
             # do it once. If we want different behaviors for different
             # connections, we can accomplish this by providing different
             # `proto` functions
 
-            if port == 0:
-                # Manually create the socket in order to set the range to be
-                # used for the port before the bind() call.
-                if ipaddress.ip_address(addr).version == 4:
-                    address_family = socket.AF_INET
-                else:
-                    address_family = socket.AF_INET6
-                s = socket.socket(address_family)
-                set_ephemeral_port_range(s)
-                s.bind((addr, 0))
-                s.listen()
-                listener = await cls.network_event_loop.create_server(peer_protocol, sock=s)
-                port = listener.sockets[0].getsockname()[1]
-            else:
-                listener = await cls.network_event_loop.create_server(peer_protocol, addr, port)
-
+            listener = await cls.network_event_loop.create_server(peer_protocol, addr, port)
             logger.debug("Listening server on %s:%d should be started" % (addr, port))
             cls.listeners[(addr, port)] = listener
 

@@ -1,0 +1,149 @@
+name: DNS/Fixed Seed Application
+description: Apply to operate an official OpenSY network seed node
+title: "[SEED] New seed application: <your-hostname>"
+labels: ["infrastructure", "seed-node", "community"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        ## OpenSY Seed Node Application
+        
+        Thank you for helping decentralize the OpenSY network! Seed nodes are critical 
+        infrastructure that help new nodes discover peers on the network.
+        
+        **Requirements:**
+        - 99%+ uptime commitment
+        - Reliable hosting (VPS, dedicated server, or stable home connection with port forwarding)
+        - Willingness to run for at least 1 year
+        - Geographic/jurisdictional diversity is preferred
+        
+  - type: dropdown
+    id: seed-type
+    attributes:
+      label: Seed Type
+      description: What type of seed are you applying to operate?
+      options:
+        - DNS Seed (requires running a DNS server + full node)
+        - Fixed Seed (full node with static IP only)
+        - Both
+    validations:
+      required: true
+
+  - type: input
+    id: hostname
+    attributes:
+      label: Hostname / IP Address
+      description: Your proposed DNS seed hostname OR static IP address
+      placeholder: "seed.example.com OR 203.0.113.50"
+    validations:
+      required: true
+
+  - type: input
+    id: region
+    attributes:
+      label: Geographic Region
+      description: Where is your server physically located?
+      placeholder: "e.g., Europe (Germany), Middle East (UAE), Asia (Singapore)"
+    validations:
+      required: true
+
+  - type: input
+    id: provider
+    attributes:
+      label: Hosting Provider
+      description: Who hosts your server? (Helps ensure diversity)
+      placeholder: "e.g., Hetzner, OVH, AWS, DigitalOcean, Self-hosted"
+    validations:
+      required: true
+
+  - type: dropdown
+    id: connection-type
+    attributes:
+      label: Connection Type
+      description: What type of internet connection does the server have?
+      options:
+        - Datacenter / VPS
+        - Dedicated Server
+        - Business Fiber
+        - Residential (with port forwarding)
+    validations:
+      required: true
+
+  - type: textarea
+    id: uptime-proof
+    attributes:
+      label: Uptime History / Proof
+      description: |
+        Provide evidence of reliable uptime. This could be:
+        - Link to uptime monitoring (UptimeRobot, etc.)
+        - Screenshot of hosting provider SLA
+        - Description of your redundancy setup
+      placeholder: "https://stats.uptimerobot.com/xxxxx or describe your setup"
+    validations:
+      required: true
+
+  - type: input
+    id: node-version
+    attributes:
+      label: Current OpenSY Version
+      description: What version of OpenSY are you running?
+      placeholder: "e.g., v1.0.0"
+    validations:
+      required: true
+
+  - type: input
+    id: block-height
+    attributes:
+      label: Current Block Height
+      description: Your node's current synced height (proves it's running)
+      placeholder: "e.g., 12345"
+    validations:
+      required: true
+
+  - type: input
+    id: contact
+    attributes:
+      label: Contact Method
+      description: How can we reach you for urgent seed issues?
+      placeholder: "Telegram @username, email, Matrix, Discord, etc."
+    validations:
+      required: true
+
+  - type: textarea
+    id: motivation
+    attributes:
+      label: Motivation
+      description: Why do you want to run a seed node for OpenSY?
+      placeholder: "Tell us about yourself and your connection to the project"
+    validations:
+      required: false
+
+  - type: checkboxes
+    id: commitments
+    attributes:
+      label: Commitments
+      description: Please confirm the following
+      options:
+        - label: I commit to maintaining 99%+ uptime
+          required: true
+        - label: I will keep my node updated to the latest stable release
+          required: true
+        - label: I will notify the team before any planned maintenance
+          required: true
+        - label: I understand my IP/hostname will be hardcoded in the OpenSY source code
+          required: true
+        - label: I am NOT affiliated with the OpenSY Foundation (for decentralization)
+          required: false
+
+  - type: markdown
+    attributes:
+      value: |
+        ---
+        
+        **What happens next?**
+        1. A maintainer will review your application within 1-2 weeks
+        2. We may ask for additional verification
+        3. If approved, your seed will be added in the next release
+        4. You'll be credited in the release notes
+        
+        Thank you for contributing to OpenSY's decentralization! 🇸🇾

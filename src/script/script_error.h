@@ -1,10 +1,10 @@
 // Copyright (c) 2009-2010 Satoshi Nakamoto
-// Copyright (c) 2009-present The Bitcoin Core developers
+// Copyright (c) 2009-2020 The OpenSY developers
 // Distributed under the MIT software license, see the accompanying
 // file COPYING or http://www.opensource.org/licenses/mit-license.php.
 
-#ifndef BITCOIN_SCRIPT_SCRIPT_ERROR_H
-#define BITCOIN_SCRIPT_SCRIPT_ERROR_H
+#ifndef OPENSY_SCRIPT_SCRIPT_ERROR_H
+#define OPENSY_SCRIPT_SCRIPT_ERROR_H
 
 #include <string>
 
@@ -78,7 +78,6 @@ typedef enum ScriptError_t
     SCRIPT_ERR_TAPSCRIPT_VALIDATION_WEIGHT,
     SCRIPT_ERR_TAPSCRIPT_CHECKMULTISIG,
     SCRIPT_ERR_TAPSCRIPT_MINIMALIF,
-    SCRIPT_ERR_TAPSCRIPT_EMPTY_PUBKEY,
 
     /* Constant scriptCode */
     SCRIPT_ERR_OP_CODESEPARATOR,
@@ -89,4 +88,4 @@ typedef enum ScriptError_t
 
 std::string ScriptErrorString(ScriptError error);
 
-#endif // BITCOIN_SCRIPT_SCRIPT_ERROR_H
+#endif // OPENSY_SCRIPT_SCRIPT_ERROR_H

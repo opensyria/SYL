@@ -1,10 +1,10 @@
 // Copyright (c) 2009-2010 Satoshi Nakamoto
-// Copyright (c) 2009-present The Bitcoin Core developers
+// Copyright (c) 2009-present The OpenSY developers
 // Distributed under the MIT software license, see the accompanying
 // file COPYING or http://www.opensource.org/licenses/mit-license.php.
 
-#ifndef BITCOIN_STREAMS_H
-#define BITCOIN_STREAMS_H
+#ifndef OPENSY_STREAMS_H
+#define OPENSY_STREAMS_H
 
 #include <logging.h>
 #include <serialize.h>
@@ -701,4 +701,4 @@ public:
     }
 };
 
-#endif // BITCOIN_STREAMS_H
+#endif // OPENSY_STREAMS_H

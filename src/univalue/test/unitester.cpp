@@ -63,9 +63,8 @@
 
 #include <array>
 #include <cassert>
+#include <cstdio>
 #include <string>
-#include <string_view>
-#include <tuple>
 
 static std::string rtrim(std::string s)
 {

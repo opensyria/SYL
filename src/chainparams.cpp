@@ -1,5 +1,5 @@
 // Copyright (c) 2010 Satoshi Nakamoto
-// Copyright (c) 2009-present The Bitcoin Core developers
+// Copyright (c) 2009-2022 The OpenSY developers
 // Distributed under the MIT software license, see the accompanying
 // file COPYING or http://www.opensource.org/licenses/mit-license.php.
 
@@ -39,12 +39,47 @@ void ReadSigNetArgs(const ArgsManager& args, CChainParams::SigNetOptions& option
         }
         options.challenge.emplace(*val);
     }
+    // Parse RandomX fork height override for signet (allows SHA256d testing)
+    if (auto value = args.GetArg("-randomxforkheight")) {
+        const auto height = ToIntegral<int32_t>(*value);
+        if (!height || *height < 0) {
+            throw std::runtime_error(strprintf("Invalid -randomxforkheight value: %s", *value));
+        }
+        options.randomx_fork_height = *height;
+    }
 }
 
 void ReadRegTestArgs(const ArgsManager& args, CChainParams::RegTestOptions& options)
 {
     if (auto value = args.GetBoolArg("-fastprune")) options.fastprune = *value;
     if (HasTestOption(args, "bip94")) options.enforce_bip94 = true;
+
+    // Parse RandomX fork height override
+    if (auto value = args.GetArg("-randomxforkheight")) {
+        const auto height = ToIntegral<int32_t>(*value);
+        if (!height || *height < 0) {
+            throw std::runtime_error(strprintf("Invalid -randomxforkheight value: %s", *value));
+        }
+        options.randomx_fork_height = *height;
+    }
+
+    // Parse RandomX key block interval override
+    if (auto value = args.GetArg("-randomxkeyinterval")) {
+        const auto interval = ToIntegral<int32_t>(*value);
+        if (!interval || *interval < 1) {
+            throw std::runtime_error(strprintf("Invalid -randomxkeyinterval value: %s", *value));
+        }
+        options.randomx_key_interval = *interval;
+    }
+
+    // Parse Argon2id emergency height override
+    if (auto value = args.GetArg("-argon2emergencyheight")) {
+        const auto height = ToIntegral<int32_t>(*value);
+        if (!height) {
+            throw std::runtime_error(strprintf("Invalid -argon2emergencyheight value: %s", *value));
+        }
+        options.argon2_emergency_height = *height;
+    }
 
     for (const std::string& arg : args.GetArgs("-testactivationheight")) {
         const auto found{arg.find('@')};

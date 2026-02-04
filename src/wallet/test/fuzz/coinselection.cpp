@@ -1,4 +1,4 @@
-// Copyright (c) 2022-present The Bitcoin Core developers
+// Copyright (c) 2022 The OpenSY developers
 // Distributed under the MIT software license, see the accompanying
 // file COPYING or http://www.opensource.org/licenses/mit-license.php.
 
@@ -143,7 +143,7 @@ FUZZ_TARGET(coin_grinder_is_optimal)
     FastRandomContext fast_random_context{ConsumeUInt256(fuzzed_data_provider)};
     CoinSelectionParams coin_params{fast_random_context};
     coin_params.m_subtract_fee_outputs = false;
-    // Set effective feerate up to MAX_MONEY sats per 1'000'000 vB (2'100'000'000 sat/vB = 21'000 BTC/kvB).
+    // Set effective feerate up to MAX_MONEY qirsh per 1'000'000 vB (2'100'000'000 qrs/vB = 21.000 SYL/kvB).
     coin_params.m_effective_feerate = CFeeRate{ConsumeMoney(fuzzed_data_provider, MAX_MONEY), 1'000'000};
     coin_params.m_min_change_target = ConsumeMoney(fuzzed_data_provider);
 
@@ -158,7 +158,7 @@ FUZZ_TARGET(coin_grinder_is_optimal)
         const int n_input_bytes{fuzzed_data_provider.ConsumeIntegralInRange<int>(1, 1'000'000)};
         // Only make UTXOs with positive effective value
         const CAmount input_fee = coin_params.m_effective_feerate.GetFee(n_input_bytes);
-        // Ensure that each UTXO has at least an effective value of 1 sat
+        // Ensure that each UTXO has at least an effective value of 1 qirsh
         const CAmount eff_value{fuzzed_data_provider.ConsumeIntegralInRange<CAmount>(1, MAX_MONEY + group_pos.size() - max_spendable - max_output_groups)};
         const CAmount amount{eff_value + input_fee};
         std::vector<COutput> temp_utxo_pool;

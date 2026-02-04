@@ -1,9 +1,9 @@
-// Copyright (c) 2024-present The Bitcoin Core developers
+// Copyright (c) 2024-present The OpenSY developers
 // Distributed under the MIT software license, see the accompanying
 // file COPYING or https://www.opensource.org/licenses/mit-license.php.
 
-#ifndef BITCOIN_MUSIG_H
-#define BITCOIN_MUSIG_H
+#ifndef OPENSY_MUSIG_H
+#define OPENSY_MUSIG_H
 
 #include <pubkey.h>
 
@@ -13,6 +13,15 @@
 struct secp256k1_musig_keyagg_cache;
 class MuSig2SecNonceImpl;
 struct secp256k1_musig_secnonce;
+
+//! MuSig2 chaincode as defined by BIP 328
+using namespace util::hex_literals;
+constexpr uint256 MUSIG_CHAINCODE{
+    // Use immediate lambda to work around GCC-14 bug https://gcc.gnu.org/bugzilla/show_bug.cgi?id=117966
+    []() consteval { return uint256{"868087ca02a6f974c4598924c36b57762d32cb45717167e300622c7167e38965"_hex_u8}; }(),
+};
+
+
 
 constexpr size_t MUSIG2_PUBNONCE_SIZE{66};
 
@@ -60,4 +69,4 @@ uint256 MuSig2SessionID(const CPubKey& script_pubkey, const CPubKey& part_pubkey
 
 std::optional<std::vector<uint8_t>> CreateMuSig2AggregateSig(const std::vector<CPubKey>& participants, const CPubKey& aggregate_pubkey, const std::vector<std::pair<uint256, bool>>& tweaks, const uint256& sighash, const std::map<CPubKey, std::vector<uint8_t>>& pubnonces, const std::map<CPubKey, uint256>& partial_sigs);
 
-#endif // BITCOIN_MUSIG_H
+#endif // OPENSY_MUSIG_H

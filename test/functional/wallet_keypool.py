@@ -1,12 +1,12 @@
 #!/usr/bin/env python3
-# Copyright (c) 2014-present The Bitcoin Core developers
+# Copyright (c) 2014-2022 The OpenSY developers
 # Distributed under the MIT software license, see the accompanying
 # file COPYING or http://www.opensource.org/licenses/mit-license.php.
 """Test the wallet keypool and interaction with wallet encryption/locking."""
 
 from decimal import Decimal
 
-from test_framework.test_framework import BitcoinTestFramework
+from test_framework.test_framework import OpenSYTestFramework
 from test_framework.util import (
     assert_equal,
     assert_not_equal,
@@ -14,7 +14,7 @@ from test_framework.util import (
 )
 from test_framework.wallet_util import WalletUnlock
 
-class KeyPoolTest(BitcoinTestFramework):
+class KeyPoolTest(OpenSYTestFramework):
     def set_test_params(self):
         self.num_nodes = 1
 
@@ -137,10 +137,10 @@ class KeyPoolTest(BitcoinTestFramework):
         assert_raises_rpc_error(-12, "Keypool ran out", nodes[0].getnewaddress)
 
         with WalletUnlock(nodes[0], 'test'):
-            nodes[0].keypoolrefill(100)
+            nodes[0].keypoolrefill(20000)
             wi = nodes[0].getwalletinfo()
-            assert_equal(wi['keypoolsize_hd_internal'], 400)
-            assert_equal(wi['keypoolsize'], 400)
+            assert_equal(wi['keypoolsize_hd_internal'], 80000)
+            assert_equal(wi['keypoolsize'], 80000)
 
         # create a blank wallet
         nodes[0].createwallet(wallet_name='w2', blank=True, disable_private_keys=True)

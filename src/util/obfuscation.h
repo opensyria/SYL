@@ -1,9 +1,9 @@
-// Copyright (c) 2025-present The Bitcoin Core developers
+// Copyright (c) 2025-present The OpenSY developers
 // Distributed under the MIT software license, see the accompanying
 // file COPYING or http://www.opensource.org/licenses/mit-license.php.
 
-#ifndef BITCOIN_UTIL_OBFUSCATION_H
-#define BITCOIN_UTIL_OBFUSCATION_H
+#ifndef OPENSY_UTIL_OBFUSCATION_H
+#define OPENSY_UTIL_OBFUSCATION_H
 
 #include <cstdint>
 #include <span.h>
@@ -112,4 +112,4 @@ private:
     }
 };
 
-#endif // BITCOIN_UTIL_OBFUSCATION_H
+#endif // OPENSY_UTIL_OBFUSCATION_H

@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-# Copyright (c) 2022-present The Bitcoin Core developers
+# Copyright (c) 2022 The OpenSY developers
 # Distributed under the MIT software license, see the accompanying
 # file COPYING or http://www.opensource.org/licenses/mit-license.php.
 """Test that unsupported utxo db causes an init error.
@@ -9,11 +9,11 @@ Previous releases are required by this test, see test/README.md.
 
 import shutil
 
-from test_framework.test_framework import BitcoinTestFramework
+from test_framework.test_framework import OpenSYTestFramework
 from test_framework.util import assert_equal
 
 
-class UnsupportedUtxoDbTest(BitcoinTestFramework):
+class UnsupportedUtxoDbTest(OpenSYTestFramework):
     def set_test_params(self):
         self.setup_clean_chain = True
         self.num_nodes = 2
@@ -35,7 +35,7 @@ class UnsupportedUtxoDbTest(BitcoinTestFramework):
         self.start_node(0)
         block = self.generate(self.nodes[0], 1, sync_fun=self.no_op)[-1]
         assert_equal(self.nodes[0].getbestblockhash(), block)
-        assert_equal(self.nodes[0].gettxoutsetinfo()["total_amount"], 50)
+        assert_equal(self.nodes[0].gettxoutsetinfo()["total_amount"], 10000)
         self.stop_nodes()
 
         self.log.info("Check init error")
@@ -54,7 +54,7 @@ class UnsupportedUtxoDbTest(BitcoinTestFramework):
         self.log.info("Drop legacy utxo db")
         self.start_node(1, extra_args=["-reindex-chainstate"])
         assert_equal(self.nodes[1].getbestblockhash(), block)
-        assert_equal(self.nodes[1].gettxoutsetinfo()["total_amount"], 50)
+        assert_equal(self.nodes[1].gettxoutsetinfo()["total_amount"], 10000)
 
 
 if __name__ == "__main__":

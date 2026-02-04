@@ -1,4 +1,4 @@
-// Copyright (c) 2020-present The Bitcoin Core developers
+// Copyright (c) 2020-present The OpenSY developers
 // Distributed under the MIT software license, see the accompanying
 // file COPYING or http://www.opensource.org/licenses/mit-license.php.
 
@@ -149,7 +149,7 @@ bool Session::Listen(Connection& conn)
         conn.sock = StreamAccept();
         return true;
     } catch (const std::runtime_error& e) {
-        LogError("Couldn't listen: %s\n", e.what());
+        LogPrintLevel(BCLog::I2P, BCLog::Level::Error, "Couldn't listen: %s\n", e.what());
         CheckControlSock();
     }
     return false;
@@ -206,9 +206,9 @@ bool Session::Accept(Connection& conn)
     }
 
     if (m_interrupt->interrupted()) {
-        LogDebug(BCLog::I2P, "Accept was interrupted\n");
+        LogPrintLevel(BCLog::I2P, BCLog::Level::Debug, "Accept was interrupted\n");
     } else {
-        LogDebug(BCLog::I2P, "Error accepting%s: %s\n", disconnect ? " (will close the session)" : "", errmsg);
+        LogPrintLevel(BCLog::I2P, BCLog::Level::Debug, "Error accepting%s: %s\n", disconnect ? " (will close the session)" : "", errmsg);
     }
     if (disconnect) {
         LOCK(m_mutex);
@@ -224,7 +224,7 @@ bool Session::Connect(const CService& to, Connection& conn, bool& proxy_error)
     // Refuse connecting to arbitrary ports. We don't specify any destination port to the SAM proxy
     // when connecting (SAM 3.1 does not use ports) and it forces/defaults it to I2P_SAM31_PORT.
     if (to.GetPort() != I2P_SAM31_PORT) {
-        LogDebug(BCLog::I2P, "Error connecting to %s, connection refused due to arbitrary port %s\n", to.ToStringAddrPort(), to.GetPort());
+        LogPrintLevel(BCLog::I2P, BCLog::Level::Debug, "Error connecting to %s, connection refused due to arbitrary port %s\n", to.ToStringAddrPort(), to.GetPort());
         proxy_error = false;
         return false;
     }
@@ -272,7 +272,7 @@ bool Session::Connect(const CService& to, Connection& conn, bool& proxy_error)
 
         throw std::runtime_error(strprintf("\"%s\"", connect_reply.full));
     } catch (const std::runtime_error& e) {
-        LogDebug(BCLog::I2P, "Error connecting to %s: %s\n", to.ToStringAddrPort(), e.what());
+        LogPrintLevel(BCLog::I2P, BCLog::Level::Debug, "Error connecting to %s: %s\n", to.ToStringAddrPort(), e.what());
         CheckControlSock();
         return false;
     }
@@ -345,7 +345,7 @@ void Session::CheckControlSock()
 
     std::string errmsg;
     if (m_control_sock && !m_control_sock->IsConnected(errmsg)) {
-        LogDebug(BCLog::I2P, "Control socket error: %s\n", errmsg);
+        LogPrintLevel(BCLog::I2P, BCLog::Level::Debug, "Control socket error: %s\n", errmsg);
         Disconnect();
     }
 }
@@ -415,7 +415,7 @@ void Session::CreateIfNotCreatedAlready()
     const auto session_type = m_transient ? "transient" : "persistent";
     const auto session_id = GetRandHash().GetHex().substr(0, 10); // full is overkill, too verbose in the logs
 
-    LogDebug(BCLog::I2P, "Creating %s I2P SAM session %s with %s\n", session_type, session_id, m_control_host.ToString());
+    LogPrintLevel(BCLog::I2P, BCLog::Level::Debug, "Creating %s SAM session %s with %s\n", session_type, session_id, m_control_host.ToString());
 
     auto sock = Hello();
 
@@ -452,7 +452,7 @@ void Session::CreateIfNotCreatedAlready()
     m_session_id = session_id;
     m_control_sock = std::move(sock);
 
-    LogInfo("%s I2P SAM session %s created, my address=%s",
+    LogPrintLevel(BCLog::I2P, BCLog::Level::Info, "%s SAM session %s created, my address=%s\n",
         Capitalize(session_type),
         m_session_id,
         m_my_addr.ToStringAddrPort());
@@ -483,9 +483,9 @@ void Session::Disconnect()
 {
     if (m_control_sock) {
         if (m_session_id.empty()) {
-            LogInfo("Destroying incomplete I2P SAM session");
+            LogPrintLevel(BCLog::I2P, BCLog::Level::Info, "Destroying incomplete SAM session\n");
         } else {
-            LogInfo("Destroying I2P SAM session %s", m_session_id);
+            LogPrintLevel(BCLog::I2P, BCLog::Level::Info, "Destroying SAM session %s\n", m_session_id);
         }
         m_control_sock.reset();
     }

@@ -1,9 +1,9 @@
-// Copyright (c) 2021-present The Bitcoin Core developers
+// Copyright (c) 2021-2022 The OpenSY developers
 // Distributed under the MIT software license, see the accompanying
 // file COPYING or http://www.opensource.org/licenses/mit-license.php.
 
-#ifndef BITCOIN_UTIL_SERFLOAT_H
-#define BITCOIN_UTIL_SERFLOAT_H
+#ifndef OPENSY_UTIL_SERFLOAT_H
+#define OPENSY_UTIL_SERFLOAT_H
 
 #include <cstdint>
 
@@ -13,4 +13,4 @@ uint64_t EncodeDouble(double f) noexcept;
 /* Reverse operation of DecodeDouble. DecodeDouble(EncodeDouble(f))==f unless isnan(f). */
 double DecodeDouble(uint64_t v) noexcept;
 
-#endif // BITCOIN_UTIL_SERFLOAT_H
+#endif // OPENSY_UTIL_SERFLOAT_H

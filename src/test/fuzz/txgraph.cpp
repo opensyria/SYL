@@ -1,4 +1,4 @@
-// Copyright (c) The Bitcoin Core developers
+// Copyright (c) The OpenSY developers
 // Distributed under the MIT software license, see the accompanying
 // file COPYING or http://www.opensource.org/licenses/mit-license.php.
 
@@ -710,7 +710,7 @@ FUZZ_TARGET(txgraph)
                 std::shuffle(refs.begin(), refs.end(), rng);
                 // Invoke the real function.
                 auto result = real->CountDistinctClusters(refs, level_select);
-                // Build a set with representatives of the clusters the Refs occur in the
+                // Build a set with representatives of the clusters the Refs occur in in the
                 // simulated graph. For each, remember the lowest-index transaction SimPos in the
                 // cluster.
                 SimTxGraph::SetType sim_reps;
@@ -1230,9 +1230,10 @@ FUZZ_TARGET(txgraph)
                     // Construct a chunking object for the simulated graph, using the reported cluster
                     // linearization as ordering, and compare it against the reported chunk feerates.
                     if (sims.size() == 1 || level == TxGraph::Level::MAIN) {
-                        auto simlinchunk = ChunkLinearizationInfo(sim.graph, simlin);
+                        cluster_linearize::LinearizationChunking simlinchunk(sim.graph, simlin);
                         DepGraphIndex idx{0};
-                        for (auto& chunk : simlinchunk) {
+                        for (unsigned chunknum = 0; chunknum < simlinchunk.NumChunksLeft(); ++chunknum) {
+                            auto chunk = simlinchunk.GetChunk(chunknum);
                             // Require that the chunks of cluster linearizations are connected (this must
                             // be the case as all linearizations inside are PostLinearized).
                             assert(sim.graph.IsConnected(chunk.transactions));

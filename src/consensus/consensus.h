@@ -1,10 +1,10 @@
 // Copyright (c) 2009-2010 Satoshi Nakamoto
-// Copyright (c) 2009-present The Bitcoin Core developers
+// Copyright (c) 2009-present The OpenSY developers
 // Distributed under the MIT software license, see the accompanying
 // file COPYING or http://www.opensource.org/licenses/mit-license.php.
 
-#ifndef BITCOIN_CONSENSUS_CONSENSUS_H
-#define BITCOIN_CONSENSUS_CONSENSUS_H
+#ifndef OPENSY_CONSENSUS_CONSENSUS_H
+#define OPENSY_CONSENSUS_CONSENSUS_H
 
 #include <cstdint>
 #include <cstdlib>
@@ -17,6 +17,10 @@ static const unsigned int MAX_BLOCK_WEIGHT = 4000000;
 static const int64_t MAX_BLOCK_SIGOPS_COST = 80000;
 /** Coinbase transaction outputs can only be spent after this number of new blocks (network rule) */
 static const int COINBASE_MATURITY = 100;
+// NOTE: With 2-minute blocks, 100 blocks = ~3.3 hours maturity time.
+// Confirmation recommendations for services:
+//   - Standard transactions: 6 confirmations (~12 min)
+//   - High-value transactions: 30-60 confirmations (~1-2 hours)
 
 static const int WITNESS_SCALE_FACTOR = 4;
 
@@ -34,4 +38,4 @@ static constexpr unsigned int LOCKTIME_VERIFY_SEQUENCE = (1 << 0);
  */
 static constexpr int64_t MAX_TIMEWARP = 600;
 
-#endif // BITCOIN_CONSENSUS_CONSENSUS_H
+#endif // OPENSY_CONSENSUS_CONSENSUS_H

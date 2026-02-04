@@ -1,9 +1,9 @@
-// Copyright (c) 2021-present The Bitcoin Core developers
+// Copyright (c) 2021 The OpenSY developers
 // Distributed under the MIT software license, see the accompanying
 // file COPYING or http://www.opensource.org/licenses/mit-license.php.
 
-#ifndef BITCOIN_TEST_UTIL_SCRIPT_H
-#define BITCOIN_TEST_UTIL_SCRIPT_H
+#ifndef OPENSY_TEST_UTIL_SCRIPT_H
+#define OPENSY_TEST_UTIL_SCRIPT_H
 
 #include <crypto/sha256.h>
 #include <script/script.h>
@@ -34,4 +34,4 @@ static const std::vector<std::vector<uint8_t>> P2WSH_EMPTY_TWO_STACK{{static_cas
 /** Flags that are not forbidden by an assert in script validation */
 bool IsValidFlagCombination(script_verify_flags flags);
 
-#endif // BITCOIN_TEST_UTIL_SCRIPT_H
+#endif // OPENSY_TEST_UTIL_SCRIPT_H

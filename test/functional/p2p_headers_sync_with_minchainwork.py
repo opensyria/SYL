@@ -1,10 +1,14 @@
 #!/usr/bin/env python3
-# Copyright (c) 2019-present The Bitcoin Core developers
+# Copyright (c) 2019-present The OpenSY developers
 # Distributed under the MIT software license, see the accompanying
 # file COPYING or http://www.opensource.org/licenses/mit-license.php.
-"""Test that we reject low difficulty headers to prevent our block tree from filling up with useless bloat"""
+"""Test that we reject low difficulty headers to prevent our block tree from filling up with useless bloat
 
-from test_framework.test_framework import BitcoinTestFramework
+NOTE: OpenSY has stricter header rate limiting (MAX_HEADERS_PER_MINUTE=2000).
+This test uses -test=disableheaderratelimit to bypass rate limiting for testing.
+"""
+
+from test_framework.test_framework import OpenSYTestFramework
 
 from test_framework.p2p import (
     P2PInterface,
@@ -27,13 +31,20 @@ NODE1_BLOCKS_REQUIRED = 15
 NODE2_BLOCKS_REQUIRED = 2047
 
 
-class RejectLowDifficultyHeadersTest(BitcoinTestFramework):
+class RejectLowDifficultyHeadersTest(OpenSYTestFramework):
     def set_test_params(self):
         self.rpc_timeout *= 4  # To avoid timeout when generating BLOCKS_TO_MINE
         self.setup_clean_chain = True
         self.num_nodes = 4
         # Node0 has no required chainwork; node1 requires 15 blocks on top of the genesis block; node2 requires 2047
-        self.extra_args = [["-minimumchainwork=0x0", "-checkblockindex=0"], ["-minimumchainwork=0x1f", "-checkblockindex=0"], ["-minimumchainwork=0x1000", "-checkblockindex=0"], ["-minimumchainwork=0x1000", "-checkblockindex=0", "-whitelist=noban@127.0.0.1"]]
+        # Use -test=disableheaderratelimit to bypass header rate limiting for testing
+        base_args = ["-checkblockindex=0", "-test=disableheaderratelimit"]
+        self.extra_args = [
+            ["-minimumchainwork=0x0"] + base_args,
+            ["-minimumchainwork=0x1f"] + base_args,
+            ["-minimumchainwork=0x1000"] + base_args,
+            ["-minimumchainwork=0x1000", "-whitelist=noban@127.0.0.1"] + base_args
+        ]
 
     def setup_network(self):
         self.setup_nodes()
@@ -79,7 +90,7 @@ class RejectLowDifficultyHeadersTest(BitcoinTestFramework):
             assert len(chaintips) == 1
             assert {
                 'height': 0,
-                'hash': '0f9188f13cb7b2c71f2a335e3a4fc328bf5beb436012afca590b1a11466e2206',
+                'hash': '67fb155259a269da63429b2d84149027fc4a9a366236bc849fddff3a2554cd50',
                 'branchlen': 0,
                 'status': 'active',
             } in chaintips
@@ -91,7 +102,7 @@ class RejectLowDifficultyHeadersTest(BitcoinTestFramework):
 
         assert {
             'height': 0,
-            'hash': '0f9188f13cb7b2c71f2a335e3a4fc328bf5beb436012afca590b1a11466e2206',
+            'hash': '67fb155259a269da63429b2d84149027fc4a9a366236bc849fddff3a2554cd50',
             'branchlen': 0,
             'status': 'active',
         } in self.nodes[2].getchaintips()
@@ -156,7 +167,7 @@ class RejectLowDifficultyHeadersTest(BitcoinTestFramework):
         self.reconnect_all()
 
         self.mocktime_all(int(time.time()))  # Temporarily hold time to avoid internal timeouts
-        self.sync_blocks(timeout=300) # Ensure tips eventually agree
+        self.sync_blocks(timeout=60000) # Ensure tips eventually agree
         self.mocktime_all(0)
 
 

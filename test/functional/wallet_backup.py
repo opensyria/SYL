@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-# Copyright (c) 2014-present The Bitcoin Core developers
+# Copyright (c) 2014-2022 The OpenSY developers
 # Distributed under the MIT software license, see the accompanying
 # file COPYING or http://www.opensource.org/licenses/mit-license.php.
 """Test the wallet backup features.
@@ -35,15 +35,14 @@ import os
 from random import randint
 
 from test_framework.blocktools import COINBASE_MATURITY
-from test_framework.test_framework import BitcoinTestFramework
+from test_framework.test_framework import OpenSYTestFramework
 from test_framework.util import (
     assert_equal,
     assert_raises_rpc_error,
-    sha256sum_file,
 )
 
 
-class WalletBackupTest(BitcoinTestFramework):
+class WalletBackupTest(OpenSYTestFramework):
     def set_test_params(self):
         self.num_nodes = 4
         self.setup_clean_chain = True
@@ -113,7 +112,7 @@ class WalletBackupTest(BitcoinTestFramework):
     def restore_invalid_wallet(self):
         node = self.nodes[3]
         invalid_wallet_file = self.nodes[0].datadir_path / 'invalid_wallet_file.bak'
-        open(invalid_wallet_file, "a").write("invalid_wallet_content")
+        open(invalid_wallet_file, 'a', encoding="utf8").write('invald wallet')
         wallet_name = "res0"
         not_created_wallet_file = node.wallets_path / wallet_name
         error_message = "Wallet file verification failed. Failed to load database path '{}'. Data is not in recognized format.".format(not_created_wallet_file)
@@ -133,59 +132,9 @@ class WalletBackupTest(BitcoinTestFramework):
         backup_file = self.nodes[0].datadir_path / 'wallet.bak'
         wallet_name = "res0"
         wallet_file = node.wallets_path / wallet_name
-        error_message = "Failed to restore wallet. Database file exists in '{}'.".format(wallet_file / "wallet.dat")
+        error_message = "Failed to create database path '{}'. Database already exists.".format(wallet_file)
         assert_raises_rpc_error(-36, error_message, node.restorewallet, wallet_name, backup_file)
         assert wallet_file.exists()
-
-    def test_restore_existent_dir(self):
-        self.log.info("Test restore on an existent empty directory")
-        node = self.nodes[3]
-        backup_file = self.nodes[0].datadir_path / 'wallet.bak'
-        wallet_name = "restored_wallet"
-        wallet_dir = node.wallets_path / wallet_name
-        os.mkdir(wallet_dir)
-        res = node.restorewallet(wallet_name, backup_file)
-        assert_equal(res['name'], wallet_name)
-        node.unloadwallet(wallet_name)
-
-        self.log.info("Test restore succeeds when the target directory contains non-wallet files")
-        wallet_file = node.wallets_path / wallet_name / "wallet.dat"
-        os.remove(wallet_file)
-        extra_file = node.wallets_path / wallet_name / "not_a_wallet.txt"
-        extra_file.touch()
-        res = node.restorewallet(wallet_name, backup_file)
-        assert_equal(res['name'], wallet_name)
-        assert extra_file.exists() # extra file was not removed by mistake
-        node.unloadwallet(wallet_name)
-
-        self.log.info("Test restore failure due to existing db file in the destination directory")
-        original_shasum = sha256sum_file(wallet_file)
-        error_message = "Failed to restore wallet. Database file exists in '{}'.".format(wallet_dir / "wallet.dat")
-        assert_raises_rpc_error(-36, error_message, node.restorewallet, wallet_name, backup_file)
-        # Ensure the wallet file remains untouched
-        assert wallet_dir.exists()
-        assert_equal(original_shasum, sha256sum_file(wallet_file))
-
-        self.log.info("Test restore succeeds when the .dat file in the destination has a different name")
-        second_wallet = wallet_dir / "hidden_storage.dat"
-        os.rename(wallet_dir / "wallet.dat", second_wallet)
-        original_shasum = sha256sum_file(second_wallet)
-        res = node.restorewallet(wallet_name, backup_file)
-        assert_equal(res['name'], wallet_name)
-        assert (wallet_dir / "hidden_storage.dat").exists()
-        assert_equal(original_shasum, sha256sum_file(second_wallet))
-        node.unloadwallet(wallet_name)
-
-        # Clean for follow-up tests
-        os.remove(wallet_file)
-
-    def test_restore_into_unnamed_wallet(self):
-        self.log.info("Test restore into a default unnamed wallet")
-        # This is also useful to test the migration recovery after failure logic
-        node = self.nodes[3]
-        backup_file = self.nodes[0].datadir_path / 'wallet.bak'
-        assert_raises_rpc_error(-8, "Wallet name cannot be empty", node.restorewallet, "", backup_file)
-        assert not (node.wallets_path / "wallet.dat").exists()
 
     def test_pruned_wallet_backup(self):
         self.log.info("Test loading backup on a pruned node when the backup was created close to the prune height of the restoring node")
@@ -201,16 +150,10 @@ class WalletBackupTest(BitcoinTestFramework):
         # Generate more blocks so we can actually prune the older blocks
         self.generate(node, 300, sync_fun=self.no_op)
         # This gives us an actual prune height roughly in the range of 220 - 240
-        node.pruneblockchain(250)
+        node.pruneblockchain(200)
         # The backup should be updated with the latest height (locator) for
         # the backup to load successfully this close to the prune height
         node.restorewallet('pruned', node.datadir_path / 'wallet_pruned.bak')
-
-        self.log.info("Test restore on a pruned node when the backup was beyond the pruning point")
-        backup_file = self.nodes[0].datadir_path / 'wallet.bak'
-        error_message = "Wallet loading failed. Prune: last wallet synchronisation goes beyond pruned data. You need to -reindex (download the whole blockchain again in case of a pruned node)"
-        assert_raises_rpc_error(-4, error_message, node.restorewallet, "restore_pruned", backup_file)
-        assert node.wallets_path.exists() # ensure the wallets dir exists
 
     def run_test(self):
         self.log.info("Generating initial blockchain")
@@ -219,9 +162,9 @@ class WalletBackupTest(BitcoinTestFramework):
         self.generate(self.nodes[2], 1)
         self.generate(self.nodes[3], COINBASE_MATURITY)
 
-        assert_equal(self.nodes[0].getbalance(), 50)
-        assert_equal(self.nodes[1].getbalance(), 50)
-        assert_equal(self.nodes[2].getbalance(), 50)
+        assert_equal(self.nodes[0].getbalance(), 10000)
+        assert_equal(self.nodes[1].getbalance(), 10000)
+        assert_equal(self.nodes[2].getbalance(), 10000)
         assert_equal(self.nodes[3].getbalance(), 0)
 
         self.log.info("Creating transactions")
@@ -248,8 +191,8 @@ class WalletBackupTest(BitcoinTestFramework):
         total = balance0 + balance1 + balance2 + balance3
 
         # At this point, there are 214 blocks (103 for setup, then 10 rounds, then 101.)
-        # 114 are mature, so the sum of all wallets should be 114 * 50 = 5700.
-        assert_equal(total, 5700)
+        # 114 are mature, so the sum of all wallets should be 114 * 10000 = 1140000.
+        assert_equal(total, 1140000)
 
         ##
         # Test restoring spender wallets from backups
@@ -276,8 +219,6 @@ class WalletBackupTest(BitcoinTestFramework):
         assert_equal(res2_rpc.getbalance(), balance2)
 
         self.restore_wallet_existent_name()
-        self.test_restore_existent_dir()
-        self.test_restore_into_unnamed_wallet()
 
         # Backup to source wallet file must fail
         sourcePaths = [

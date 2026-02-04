@@ -1,45 +1,49 @@
 #!/usr/bin/env python3
-# Copyright (c) 2020-present The Bitcoin Core developers
+# Copyright (c) 2020-present The OpenSY developers
 # Distributed under the MIT software license, see the accompanying
 # file COPYING or http://www.opensource.org/licenses/mit-license.php.
 """Test error messages for 'getaddressinfo' and 'validateaddress' RPC commands."""
 
-from test_framework.test_framework import BitcoinTestFramework
+from test_framework.test_framework import OpenSYTestFramework
 
 from test_framework.util import (
     assert_equal,
     assert_raises_rpc_error,
 )
 
-BECH32_VALID = 'bcrt1qtmp74ayg7p24uslctssvjm06q5phz4yrxucgnv'
-BECH32_VALID_UNKNOWN_WITNESS = 'bcrt1p424qxxyd0r'
-BECH32_VALID_CAPITALS = 'BCRT1QPLMTZKC2XHARPPZDLNPAQL78RSHJ68U33RAH7R'
-BECH32_VALID_MULTISIG = 'bcrt1qdg3myrgvzw7ml9q0ejxhlkyxm7vl9r56yzkfgvzclrf4hkpx9yfqhpsuks'
+# Valid addresses with correct checksums for rsyl HRP
+BECH32_VALID = 'rsyl1qtmp74ayg7p24uslctssvjm06q5phz4yr2pvve8'
+BECH32_VALID_UNKNOWN_WITNESS = 'rsyl1p424qv9wcz3'
+BECH32_VALID_CAPITALS = 'RSYL1QPLMTZKC2XHARPPZDLNPAQL78RSHJ68U3A7FN5G'
+BECH32_VALID_MULTISIG = 'rsyl1qdg3myrgvzw7ml9q0ejxhlkyxm7vl9r56yzkfgvzclrf4hkpx9yfqemnvr3'
 
-BECH32_INVALID_BECH32 = 'bcrt1p0xlxvlhemja6c4dqv22uapctqupfhlxm9h8z3k2e72q4k9hcz7vqdmchcc'
-BECH32_INVALID_BECH32M = 'bcrt1qw508d6qejxtdg4y5r3zarvary0c5xw7k35mrzd'
-BECH32_INVALID_VERSION = 'bcrt130xlxvlhemja6c4dqv22uapctqupfhlxm9h8z3k2e72q4k9hcz7vqynjegk'
-BECH32_INVALID_SIZE = 'bcrt1s0xlxvlhemja6c4dqv22uapctqupfhlxm9h8z3k2e72q4k9hcz7v8n0nx0muaewav25430mtr'
-BECH32_INVALID_V0_SIZE = 'bcrt1qw508d6qejxtdg4y5r3zarvary0c5xw7kqqq5k3my'
-BECH32_INVALID_PREFIX = 'bc1pw508d6qejxtdg4y5r3zarvary0c5xw7kw508d6qejxtdg4y5r3zarvary0c5xw7k7grplx'
-BECH32_TOO_LONG = 'bcrt1q049edschfnwystcqnsvyfpj23mpsg3jcedq9xv049edschfnwystcqnsvyfpj23mpsg3jcedq9xv049edschfnwystcqnsvyfpj23m'
-BECH32_ONE_ERROR = 'bcrt1q049edschfnwystcqnsvyfpj23mpsg3jcedq9xv'
-BECH32_ONE_ERROR_CAPITALS = 'BCRT1QPLMTZKC2XHARPPZDLNPAQL78RSHJ68U32RAH7R'
-BECH32_TWO_ERRORS = 'bcrt1qax9suht3qv95sw33xavx8crpxduefdrsvgsklu' # should be bcrt1qax9suht3qv95sw33wavx8crpxduefdrsvgsklx
-BECH32_NO_SEPARATOR = 'bcrtq049ldschfnwystcqnsvyfpj23mpsg3jcedq9xv'
-BECH32_INVALID_CHAR = 'bcrt1q04oldschfnwystcqnsvyfpj23mpsg3jcedq9xv'
-BECH32_MULTISIG_TWO_ERRORS = 'bcrt1qdg3myrgvzw7ml8q0ejxhlkyxn7vl9r56yzkfgvzclrf4hkpx9yfqhpsuks'
-BECH32_WRONG_VERSION = 'bcrt1ptmp74ayg7p24uslctssvjm06q5phz4yrxucgnv'
+# Invalid addresses with specific error conditions
+BECH32_INVALID_BECH32 = 'rsyl1p0xlxvlhemja6c4dqv22uapctqupfhlxm9h8z3k2e72q4k9hcz7vqrpm8de'  # v1 with wrong bech32 checksum
+BECH32_INVALID_BECH32M = 'rsyl1qw508d6qejxtdg4y5r3zarvary0c5xw7kaf08gx'  # v0 with wrong bech32m checksum
+BECH32_INVALID_VERSION = 'rsyl130xlxvlhemja6c4dqv22uapctqupfhlxm9h8z3k2e72q4k9hcz7vq2f3fah'  # v20 invalid
+BECH32_INVALID_SIZE = 'rsyl1s0xlxvlhemja6c4dqv22uapctqupfhlxm9h8z3k2e72q4k9hcz7v8n0nx0muaewav25dgrsxd'  # v16 with 41 byte program
+BECH32_INVALID_V0_SIZE = 'rsyl1qw508d6qejxtdg4y5r3zarvary0c5xw7kqqmgspdr'  # v0 with 21 byte program
+BECH32_INVALID_PREFIX = 'syl1pw508d6qejxtdg4y5r3zarvary0c5xw7kw508d6qejxtdg4y5r3zarvary0c5xw7kcvl4ml'  # mainnet prefix on regtest
+BECH32_TOO_LONG = 'rsyl1q049edschfnwystcqnsvyfpj23mpsg3jcedq9xv049edschfnwystcqnsvyfpj23mpsg3jcedq9xv049edschfnwystcqnsvy5h7cvd'
 
-BASE58_VALID = 'mipcBbFg9gMiCh81Kj8tqqdgoZub1ZJRfn'
+# Addresses with checksum errors at specific positions
+BECH32_ONE_ERROR = 'rsyl1q0496dschfnwystcqnsvyfpj23mpsg3jc48p5rv'  # error at pos 9
+BECH32_ONE_ERROR_CAPITALS = 'RSYL1QPLMTZKC2XHARPPZDLNPAQL78RSHJ68U377FN5G'  # error at pos 38
+BECH32_TWO_ERRORS = 'rsyl1qax9suht3qv95sw330avx8crpxduefdrsq4yj4w'  # errors at pos 22, 43
+BECH32_NO_SEPARATOR = 'rsylq049ldschfnwystcqnsvyfpj23mpsg3jcedq9xv'
+BECH32_INVALID_CHAR = 'rsyl1q04oedschfnwystcqnsvyfpj23mpsg3jc48p5rv'  # 'o' at pos 8
+BECH32_MULTISIG_TWO_ERRORS = 'rsyl1qdg3myrgvzw7mlxq0ejxhlkyxu7vl9r56yzkfgvzclrf4hkpx9yfqemnvr3'  # errors at pos 19, 30
+BECH32_WRONG_VERSION = 'rsyl1ptmp74ayg7p24uslctssvjm06q5phz4yr2pvve8'  # error at pos 5
+
+BASE58_VALID = 'fHQxRrV4nnwh7ktcw1oo5qH6jVnVc2zcVP'
 BASE58_INVALID_PREFIX = '17VZNX1SN5NtKa8UQFxwQbFeFc3iqRYhem'
-BASE58_INVALID_CHECKSUM = 'mipcBbFg9gMiCh81Kj8tqqdgoZub1ZJJfn'
+BASE58_INVALID_CHECKSUM = 'fHQxRrV4nnwh7ktcw1oo5qH6jVnVc2zcVQ'
 BASE58_INVALID_LENGTH = '2VKf7XKMrp4bVNVmuRbyCewkP8FhGLP2E54LHDPakr9Sq5mtU2'
 
 INVALID_ADDRESS = 'asfah14i8fajz0123f'
 INVALID_ADDRESS_2 = '1q049ldschfnwystcqnsvyfpj23mpsg3jcedq9xv'
 
-class InvalidAddressErrorMessageTest(BitcoinTestFramework):
+class InvalidAddressErrorMessageTest(OpenSYTestFramework):
     def set_test_params(self):
         self.setup_clean_chain = True
         self.num_nodes = 1
@@ -100,7 +104,7 @@ class InvalidAddressErrorMessageTest(BitcoinTestFramework):
 
         if not self.options.usecli:
             # Missing arg returns the help text
-            assert_raises_rpc_error(-1, "Return information about the given bitcoin address.", node.validateaddress)
+            assert_raises_rpc_error(-1, "Return information about the given opensy address.", node.validateaddress)
             # Explicit None is not allowed for required parameters
             assert_raises_rpc_error(-3, "JSON value of type null is not of expected type string", node.validateaddress, None)
 
@@ -111,6 +115,7 @@ class InvalidAddressErrorMessageTest(BitcoinTestFramework):
         assert_raises_rpc_error(-5, "Invalid or unsupported Segwit (Bech32) or Base58 encoding.", node.getaddressinfo, BECH32_INVALID_PREFIX)
         assert_raises_rpc_error(-5, "Invalid or unsupported Base58-encoded address.", node.getaddressinfo, BASE58_INVALID_PREFIX)
         assert_raises_rpc_error(-5, "Invalid or unsupported Segwit (Bech32) or Base58 encoding.", node.getaddressinfo, INVALID_ADDRESS)
+
         assert "isscript" not in node.getaddressinfo(BECH32_VALID_UNKNOWN_WITNESS)
 
     def run_test(self):

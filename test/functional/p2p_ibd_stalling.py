@@ -1,9 +1,12 @@
 #!/usr/bin/env python3
-# Copyright (c) 2022-present The Bitcoin Core developers
+# Copyright (c) 2022- The OpenSY developers
 # Distributed under the MIT software license, see the accompanying
 # file COPYING or http://www.opensource.org/licenses/mit-license.php.
 """
 Test stalling logic during IBD
+
+NOTE: OpenSY has stricter header rate limiting (MAX_HEADERS_PER_MINUTE=2000).
+This test uses -test=disableheaderratelimit to bypass rate limiting for testing.
 """
 
 import time
@@ -22,7 +25,7 @@ from test_framework.p2p import (
         msg_headers,
         P2PDataStore,
 )
-from test_framework.test_framework import BitcoinTestFramework
+from test_framework.test_framework import OpenSYTestFramework
 from test_framework.util import (
         assert_equal,
 )
@@ -44,10 +47,12 @@ class P2PStaller(P2PDataStore):
         pass
 
 
-class P2PIBDStallingTest(BitcoinTestFramework):
+class P2PIBDStallingTest(OpenSYTestFramework):
     def set_test_params(self):
         self.setup_clean_chain = True
         self.num_nodes = 1
+        # Use -test=disableheaderratelimit to bypass header rate limiting for testing
+        self.extra_args = [["-test=disableheaderratelimit"]]
 
     def run_test(self):
         NUM_BLOCKS = 1025

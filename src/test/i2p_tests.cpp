@@ -1,9 +1,8 @@
-// Copyright (c) 2021-present The Bitcoin Core developers
+// Copyright (c) 2021-2022 The OpenSY developers
 // Distributed under the MIT software license, see the accompanying
 // file COPYING or http://www.opensource.org/licenses/mit-license.php.
 
 #include <common/args.h>
-#include <compat/compat.h>
 #include <i2p.h>
 #include <logging.h>
 #include <netaddress.h>
@@ -23,7 +22,7 @@
 class EnvTestingSetup : public BasicTestingSetup
 {
 public:
-    explicit EnvTestingSetup(const ChainType chainType = ChainType::MAIN,
+    explicit EnvTestingSetup(const ChainType chainType = ChainType::REGTEST,
                              TestOpts opts = {})
         : BasicTestingSetup{chainType, opts},
           m_prev_log_level{LogInstance().LogLevel()},
@@ -57,7 +56,7 @@ BOOST_AUTO_TEST_CASE(unlimited_recv)
     i2p::sam::Session session(gArgs.GetDataDirNet() / "test_i2p_private_key", sam_proxy, interrupt);
 
     {
-        ASSERT_DEBUG_LOG("Creating persistent I2P SAM session");
+        ASSERT_DEBUG_LOG("Creating persistent SAM session");
         ASSERT_DEBUG_LOG("too many bytes without a terminator");
 
         i2p::Connection conn;
@@ -114,7 +113,7 @@ BOOST_AUTO_TEST_CASE(listen_ok_accept_fail)
     };
 
     auto interrupt{std::make_shared<CThreadInterrupt>()};
-    const CService addr{in6_addr(COMPAT_IN6ADDR_LOOPBACK_INIT), /*port=*/7656};
+    const CService addr{in6_addr(IN6ADDR_LOOPBACK_INIT), /*port=*/7656};
     const Proxy sam_proxy(addr, /*tor_stream_isolation=*/false);
     i2p::sam::Session session(gArgs.GetDataDirNet() / "test_i2p_private_key",
                               sam_proxy,
@@ -122,10 +121,10 @@ BOOST_AUTO_TEST_CASE(listen_ok_accept_fail)
 
     i2p::Connection conn;
     for (size_t i = 0; i < 5; ++i) {
-        ASSERT_DEBUG_LOG("Creating persistent I2P SAM session");
-        ASSERT_DEBUG_LOG("Persistent I2P SAM session" /* ... created */);
+        ASSERT_DEBUG_LOG("Creating persistent SAM session");
+        ASSERT_DEBUG_LOG("Persistent SAM session" /* ... created */);
         ASSERT_DEBUG_LOG("Error accepting");
-        ASSERT_DEBUG_LOG("Destroying I2P SAM session");
+        ASSERT_DEBUG_LOG("Destroying SAM session");
         BOOST_REQUIRE(session.Listen(conn));
         BOOST_REQUIRE(!session.Accept(conn));
     }
@@ -157,12 +156,12 @@ BOOST_AUTO_TEST_CASE(damaged_private_key)
         BOOST_REQUIRE(WriteBinaryFile(i2p_private_key_file, file_contents));
 
         auto interrupt{std::make_shared<CThreadInterrupt>()};
-        const CService addr{in6_addr(COMPAT_IN6ADDR_LOOPBACK_INIT), /*port=*/7656};
+        const CService addr{in6_addr(IN6ADDR_LOOPBACK_INIT), /*port=*/7656};
         const Proxy sam_proxy{addr, /*tor_stream_isolation=*/false};
         i2p::sam::Session session(i2p_private_key_file, sam_proxy, interrupt);
 
         {
-            ASSERT_DEBUG_LOG("Creating persistent I2P SAM session");
+            ASSERT_DEBUG_LOG("Creating persistent SAM session");
             ASSERT_DEBUG_LOG(expected_error);
 
             i2p::Connection conn;

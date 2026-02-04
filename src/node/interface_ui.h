@@ -1,10 +1,10 @@
 // Copyright (c) 2010 Satoshi Nakamoto
-// Copyright (c) 2012-present The Bitcoin Core developers
+// Copyright (c) 2012-2022 The OpenSY developers
 // Distributed under the MIT software license, see the accompanying
 // file COPYING or http://www.opensource.org/licenses/mit-license.php.
 
-#ifndef BITCOIN_NODE_INTERFACE_UI_H
-#define BITCOIN_NODE_INTERFACE_UI_H
+#ifndef OPENSY_NODE_INTERFACE_UI_H
+#define OPENSY_NODE_INTERFACE_UI_H
 
 #include <cstdint>
 #include <functional>
@@ -74,10 +74,10 @@ public:
     boost::signals2::connection signal_name##_connect(std::function<signal_name##Sig> fn)
 
     /** Show message box. */
-    ADD_SIGNALS_DECL_WRAPPER(ThreadSafeMessageBox, bool, const bilingual_str& message, unsigned int style);
+    ADD_SIGNALS_DECL_WRAPPER(ThreadSafeMessageBox, bool, const bilingual_str& message, const std::string& caption, unsigned int style);
 
-    /** If possible, ask the user a question. If not, falls back to ThreadSafeMessageBox(noninteractive_message, style) and returns false. */
-    ADD_SIGNALS_DECL_WRAPPER(ThreadSafeQuestion, bool, const bilingual_str& message, const std::string& noninteractive_message, unsigned int style);
+    /** If possible, ask the user a question. If not, falls back to ThreadSafeMessageBox(noninteractive_message, caption, style) and returns false. */
+    ADD_SIGNALS_DECL_WRAPPER(ThreadSafeQuestion, bool, const bilingual_str& message, const std::string& noninteractive_message, const std::string& caption, unsigned int style);
 
     /** Progress message during initialization. */
     ADD_SIGNALS_DECL_WRAPPER(InitMessage, void, const std::string& message);
@@ -121,4 +121,4 @@ bool InitError(const bilingual_str& str, const std::vector<std::string>& details
 
 extern CClientUIInterface uiInterface;
 
-#endif // BITCOIN_NODE_INTERFACE_UI_H
+#endif // OPENSY_NODE_INTERFACE_UI_H

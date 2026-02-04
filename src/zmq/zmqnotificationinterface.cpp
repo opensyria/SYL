@@ -1,29 +1,28 @@
-// Copyright (c) 2015-present The Bitcoin Core developers
+// Copyright (c) 2015-2022 The OpenSY developers
 // Distributed under the MIT software license, see the accompanying
 // file COPYING or http://www.opensource.org/licenses/mit-license.php.
 
 #include <zmq/zmqnotificationinterface.h>
 
 #include <common/args.h>
+#include <kernel/chain.h>
 #include <kernel/mempool_entry.h>
-#include <kernel/types.h>
 #include <logging.h>
 #include <netbase.h>
 #include <primitives/block.h>
 #include <primitives/transaction.h>
-#include <util/check.h>
+#include <validationinterface.h>
 #include <zmq/zmqabstractnotifier.h>
 #include <zmq/zmqpublishnotifier.h>
 #include <zmq/zmqutil.h>
 
 #include <zmq.h>
 
+#include <cassert>
 #include <map>
 #include <string>
 #include <utility>
 #include <vector>
-
-using kernel::ChainstateRole;
 
 CZMQNotificationInterface::CZMQNotificationInterface() = default;
 
@@ -177,9 +176,9 @@ void CZMQNotificationInterface::TransactionRemovedFromMempool(const CTransaction
     });
 }
 
-void CZMQNotificationInterface::BlockConnected(const ChainstateRole& role, const std::shared_ptr<const CBlock>& pblock, const CBlockIndex* pindexConnected)
+void CZMQNotificationInterface::BlockConnected(ChainstateRole role, const std::shared_ptr<const CBlock>& pblock, const CBlockIndex* pindexConnected)
 {
-    if (role.historical) {
+    if (role == ChainstateRole::BACKGROUND) {
         return;
     }
     for (const CTransactionRef& ptx : pblock->vtx) {

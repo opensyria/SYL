@@ -1,4 +1,4 @@
-// Copyright (c) The Bitcoin Core developers
+// Copyright (c) The OpenSY developers
 // Distributed under the MIT software license, see the accompanying
 // file COPYING or http://www.opensource.org/licenses/mit-license.php.
 
@@ -317,12 +317,12 @@ public:
     void* m_context;
 };
 
-//! Single element task queue used to handle recursive capnp calls. (If the
-//! server makes a callback into the client in the middle of a request, while the client
+//! Single element task queue used to handle recursive capnp calls. (If server
+//! makes an callback into the client in the middle of a request, while client
 //! thread is blocked waiting for server response, this is what allows the
-//! client to run the request in the same thread, the same way code would run in a
-//! single process, with the callback sharing the same thread stack as the original
-//! call.)
+//! client to run the request in the same thread, the same way code would run in
+//! single process, with the callback sharing same thread stack as the original
+//! call.
 struct Waiter
 {
     Waiter() = default;
@@ -753,8 +753,8 @@ void ListenConnections(EventLoop& loop, int fd, InitImpl& init)
     });
 }
 
-extern thread_local ThreadContext g_thread_context; // NOLINT(bitcoin-nontrivial-threadlocal)
-// Silence nonstandard bitcoin tidy error "Variable with non-trivial destructor
+extern thread_local ThreadContext g_thread_context; // NOLINT(opensy-nontrivial-threadlocal)
+// Silence nonstandard opensy tidy error "Variable with non-trivial destructor
 // cannot be thread_local" which should not be a problem on modern platforms, and
 // could lead to a small memory leak at worst on older ones.
 

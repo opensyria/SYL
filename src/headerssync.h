@@ -1,9 +1,9 @@
-// Copyright (c) 2022-present The Bitcoin Core developers
+// Copyright (c) 2022-present The OpenSY developers
 // Distributed under the MIT software license, see the accompanying
 // file COPYING or http://www.opensource.org/licenses/mit-license.php.
 
-#ifndef BITCOIN_HEADERSSYNC_H
-#define BITCOIN_HEADERSSYNC_H
+#ifndef OPENSY_HEADERSSYNC_H
+#define OPENSY_HEADERSSYNC_H
 
 #include <arith_uint256.h>
 #include <chain.h>
@@ -31,17 +31,16 @@ struct CompressedHeader {
         hashMerkleRoot.SetNull();
     }
 
-    explicit CompressedHeader(const CBlockHeader& header)
-        : nVersion{header.nVersion},
-          hashMerkleRoot{header.hashMerkleRoot},
-          nTime{header.nTime},
-          nBits{header.nBits},
-          nNonce{header.nNonce}
+    CompressedHeader(const CBlockHeader& header)
     {
+        nVersion = header.nVersion;
+        hashMerkleRoot = header.hashMerkleRoot;
+        nTime = header.nTime;
+        nBits = header.nBits;
+        nNonce = header.nNonce;
     }
 
-    CBlockHeader GetFullHeader(const uint256& hash_prev_block) const
-    {
+    CBlockHeader GetFullHeader(const uint256& hash_prev_block) {
         CBlockHeader ret;
         ret.nVersion = nVersion;
         ret.hashPrevBlock = hash_prev_block;
@@ -57,7 +56,7 @@ struct CompressedHeader {
  *
  * We wish to download a peer's headers chain in a DoS-resistant way.
  *
- * The Bitcoin protocol does not offer an easy way to determine the work on a
+ * The OpenSY protocol does not offer an easy way to determine the work on a
  * peer's chain. Currently, we can query a peer's headers by using a GETHEADERS
  * message, and our peer can return a set of up to 2000 headers that connect to
  * something we know. If a peer's chain has more than 2000 blocks, then we need
@@ -137,8 +136,8 @@ public:
      * minimum_required_work: amount of chain work required to accept the chain
      */
     HeadersSyncState(NodeId id, const Consensus::Params& consensus_params,
-                     const HeadersSyncParams& params, const CBlockIndex& chain_start,
-                     const arith_uint256& minimum_required_work);
+            const HeadersSyncParams& params, const CBlockIndex* chain_start,
+            const arith_uint256& minimum_required_work);
 
     /** Result data structure for ProcessNextHeaders. */
     struct ProcessingResult {
@@ -220,7 +219,7 @@ private:
     const HeadersSyncParams m_params;
 
     /** Store the last block in our block index that the peer's chain builds from */
-    const CBlockIndex& m_chain_start;
+    const CBlockIndex* m_chain_start{nullptr};
 
     /** Minimum work that we're looking for on this chain. */
     const arith_uint256 m_minimum_required_work;
@@ -280,4 +279,4 @@ private:
     State m_download_state{State::PRESYNC};
 };
 
-#endif // BITCOIN_HEADERSSYNC_H
+#endif // OPENSY_HEADERSSYNC_H

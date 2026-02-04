@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-# Copyright (c) 2024-present The Bitcoin Core developers
+# Copyright (c) 2024-present The OpenSY developers
 # Distributed under the MIT software license, see the accompanying
 # file COPYING or http://www.opensource.org/licenses/mit-license.php.
 
@@ -9,7 +9,7 @@ from test_framework.messages import (
     COIN,
     CTxOut,
 )
-from test_framework.test_framework import BitcoinTestFramework
+from test_framework.test_framework import OpenSYTestFramework
 from test_framework.mempool_util import assert_mempool_contents
 from test_framework.util import (
     assert_equal,
@@ -24,7 +24,7 @@ from test_framework.blocktools import (
     create_empty_fork
 )
 
-class EphemeralDustTest(BitcoinTestFramework):
+class EphemeralDustTest(OpenSYTestFramework):
     def set_test_params(self):
         # Mempools should match via 1P1C p2p relay
         self.num_nodes = 2
@@ -170,8 +170,8 @@ class EphemeralDustTest(BitcoinTestFramework):
         # Will not be accepted if base fee is 0 with modified fee of non-0
         dusty_tx, sweep_tx = self.create_ephemeral_dust_package(tx_version=3)
 
-        self.nodes[0].prioritisetransaction(txid=dusty_tx["txid"], dummy=0, fee_delta=1000)
-        self.nodes[1].prioritisetransaction(txid=dusty_tx["txid"], dummy=0, fee_delta=1000)
+        self.nodes[0].prioritisetransaction(txid=dusty_tx["txid"], dummy=0, fee_delta=200000)
+        self.nodes[1].prioritisetransaction(txid=dusty_tx["txid"], dummy=0, fee_delta=200000)
 
         # It's rejected submitted alone
         test_res = self.nodes[0].testmempoolaccept([dusty_tx["hex"]])
@@ -197,7 +197,7 @@ class EphemeralDustTest(BitcoinTestFramework):
         assert_equal(self.nodes[0].getrawmempool(), [])
 
     def test_nonzero_dust(self):
-        self.log.info("Test that a single output of any satoshi amount is allowed, not checking spending")
+        self.log.info("Test that a single output of any qirsh amount is allowed, not checking spending")
 
         # We aren't checking spending, allow it in with no fee
         self.restart_node(0, extra_args=["-minrelaytxfee=0"])
@@ -216,16 +216,18 @@ class EphemeralDustTest(BitcoinTestFramework):
         self.connect_nodes(0, 1)
         assert_mempool_contents(self, self.nodes[0], expected=[])
 
+    # N.B. If individual minrelay requirement is dropped, this test can be dropped
     def test_non_truc(self):
-        self.log.info("Test that v2 dust-having transaction is also accepted if spent")
+        self.log.info("Test that v2 dust-having transaction is rejected even if spent, because of min relay requirement")
 
         assert_equal(self.nodes[0].getrawmempool(), [])
         dusty_tx, sweep_tx = self.create_ephemeral_dust_package(tx_version=2)
 
         res = self.nodes[0].submitpackage([dusty_tx["hex"], sweep_tx["hex"]])
-        assert_equal(res["package_msg"], "success")
-        assert_mempool_contents(self, self.nodes[0], expected=[dusty_tx["tx"], sweep_tx["tx"]])
-        self.generate(self.nodes[0], 1)
+        assert_equal(res["package_msg"], "transaction failed")
+        assert_equal(res["tx-results"][dusty_tx["wtxid"]]["error"], "min relay fee not met, 0 < 15")
+
+        assert_equal(self.nodes[0].getrawmempool(), [])
 
     def test_unspent_ephemeral(self):
         self.log.info("Test that spending from a tx with ephemeral outputs is only allowed if dust is spent as well")

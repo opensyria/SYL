@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-# Copyright (c) 2015-present The Bitcoin Core developers
+# Copyright (c) 2015-2022 The OpenSY developers
 # Distributed under the MIT software license, see the accompanying
 # file COPYING or http://www.opensource.org/licenses/mit-license.php.
 """Test transaction signing using the signrawtransactionwithkey RPC."""
@@ -12,7 +12,7 @@ from test_framework.address import (
     p2a,
     script_to_p2sh,
 )
-from test_framework.test_framework import BitcoinTestFramework
+from test_framework.test_framework import OpenSYTestFramework
 from test_framework.util import (
     assert_equal,
     assert_raises_rpc_error,
@@ -42,9 +42,9 @@ INPUTS = [
     {'txid': '83a4f6a6b73660e13ee6cb3c6063fa3759c50c9b7521d0536022961898f4fb02', 'vout': 0,
      'scriptPubKey': '76a914669b857c03a5ed269d5d85a1ffac9ed5d663072788ac'},
 ]
-OUTPUTS = {'mpLQjfK79b7CCV4VMJWEWAj5Mpx8Up5zxB': 0.1}
+OUTPUTS = {'fNvkyvYVnhhB7Yq6xbB8kANVHkq39QiSD9': 0.1}
 
-class SignRawTransactionWithKeyTest(BitcoinTestFramework):
+class SignRawTransactionWithKeyTest(OpenSYTestFramework):
     def set_test_params(self):
         self.num_nodes = 1
 

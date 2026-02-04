@@ -1,9 +1,9 @@
-// Copyright (c) 2009-present The Bitcoin Core developers
+// Copyright (c) 2009-present The OpenSY developers
 // Distributed under the MIT software license, see the accompanying
 // file COPYING or http://www.opensource.org/licenses/mit-license.php.
 
-#ifndef BITCOIN_KERNEL_MEMPOOL_ENTRY_H
-#define BITCOIN_KERNEL_MEMPOOL_ENTRY_H
+#ifndef OPENSY_KERNEL_MEMPOOL_ENTRY_H
+#define OPENSY_KERNEL_MEMPOOL_ENTRY_H
 
 #include <consensus/amount.h>
 #include <consensus/validation.h>
@@ -12,6 +12,7 @@
 #include <policy/settings.h>
 #include <primitives/transaction.h>
 #include <txgraph.h>
+#include <util/epochguard.h>
 #include <util/overflow.h>
 
 #include <chrono>
@@ -79,7 +80,7 @@ private:
     const unsigned int entryHeight; //!< Chain height when entering the mempool
     const bool spendsCoinbase;      //!< keep track of transactions that spend a coinbase
     const int64_t sigOpCost;        //!< Total sigop cost
-    mutable CAmount m_modified_fee; //!< Used for determining the priority of the transaction for mining in a block
+    CAmount m_modified_fee;         //!< Used for determining the priority of the transaction for mining in a block
     mutable LockPoints lockPoints;  //!< Track the height and time at which tx was final
 
 public:
@@ -123,7 +124,7 @@ public:
     const LockPoints& GetLockPoints() const { return lockPoints; }
 
     // Updates the modified fees with descendants/ancestors.
-    void UpdateModifiedFee(CAmount fee_diff) const
+    void UpdateModifiedFee(CAmount fee_diff)
     {
         m_modified_fee = SaturatingAdd(m_modified_fee, fee_diff);
     }
@@ -137,6 +138,7 @@ public:
     bool GetSpendsCoinbase() const { return spendsCoinbase; }
 
     mutable size_t idx_randomized; //!< Index in mempool's txns_randomized
+    mutable Epoch::Marker m_epoch_marker; //!< epoch when last touched, useful for graph algorithms
 };
 
 using CTxMemPoolEntryRef = CTxMemPoolEntry::CTxMemPoolEntryRef;
@@ -200,4 +202,4 @@ struct NewMempoolTransactionInfo {
           m_has_no_mempool_parents{has_no_mempool_parents} {}
 };
 
-#endif // BITCOIN_KERNEL_MEMPOOL_ENTRY_H
+#endif // OPENSY_KERNEL_MEMPOOL_ENTRY_H

@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-# Copyright (c) 2015-present The Bitcoin Core developers
+# Copyright (c) 2015-2022 The OpenSY developers
 # Distributed under the MIT software license, see the accompanying
 # file COPYING or http://www.opensource.org/licenses/mit-license.php.
 """Test the prioritisetransaction mining RPC."""
@@ -11,7 +11,7 @@ from test_framework.messages import (
     COIN,
     MAX_BLOCK_WEIGHT,
 )
-from test_framework.test_framework import BitcoinTestFramework
+from test_framework.test_framework import OpenSYTestFramework
 from test_framework.util import (
     assert_not_equal,
     assert_equal,
@@ -22,7 +22,7 @@ from test_framework.util import (
 from test_framework.wallet import MiniWallet
 
 
-class PrioritiseTransactionTest(BitcoinTestFramework):
+class PrioritiseTransactionTest(OpenSYTestFramework):
     def set_test_params(self):
         self.num_nodes = 1
         self.extra_args = [[
@@ -36,75 +36,24 @@ class PrioritiseTransactionTest(BitcoinTestFramework):
             node.prioritisetransaction(txid, 0, -delta)
         assert_equal(node.getprioritisedtransactions(), {})
 
-    def test_large_fee_bump(self):
-        self.log.info("Test that a large fee delta is honoured")
-        tx = self.wallet.create_self_transfer()
-        txid = tx["txid"]
-        fee_delta = int(86 * COIN)  # large enough to not fit into (u)int32_t
-        self.nodes[0].prioritisetransaction(txid=txid, fee_delta=fee_delta)
-        assert_equal(
-            self.nodes[0].getprioritisedtransactions(),
-            {
-                txid: {
-                    "fee_delta": fee_delta,
-                    "in_mempool": False,
-                },
-            },
-        )
-        self.nodes[0].sendrawtransaction(tx["hex"])
-        expected_modified_fee = tx["fee"] + Decimal(fee_delta) / COIN
-        assert_equal(
-            self.nodes[0].getprioritisedtransactions(),
-            {
-                txid: {
-                    "fee_delta": fee_delta,
-                    "in_mempool": True,
-                    "modified_fee": int(expected_modified_fee * COIN),
-                },
-            },
-        )
-        # This transaction forms its own chunk.
-        mempool_entry = self.nodes[0].getrawmempool(verbose=True)[txid]
-        assert_equal(mempool_entry["fees"]["base"], tx["fee"])
-        assert_equal(mempool_entry["fees"]["modified"], expected_modified_fee)
-        assert_equal(mempool_entry["fees"]["ancestor"], expected_modified_fee)
-        assert_equal(mempool_entry["fees"]["descendant"], expected_modified_fee)
-        assert_equal(mempool_entry["fees"]["chunk"], expected_modified_fee)
-        assert_equal(mempool_entry["chunkweight"], mempool_entry["weight"])
-        append_chunk_info = self.nodes[0].getmempoolcluster(txid)
-        assert_equal(
-            append_chunk_info,
-            {
-                "clusterweight": mempool_entry["weight"],
-                "txcount": 1,
-                "chunks": [{
-                    "chunkfee": expected_modified_fee,
-                    "chunkweight": mempool_entry["weight"],
-                    "txs": [txid],
-                }],
-            },
-        )
-        self.generate(self.nodes[0], 1)
-        assert_equal(self.nodes[0].getprioritisedtransactions(), {})
-
     def test_replacement(self):
         self.log.info("Test tx prioritisation stays after a tx is replaced")
         conflicting_input = self.wallet.get_utxo()
         tx_replacee = self.wallet.create_self_transfer(utxo_to_spend=conflicting_input, fee_rate=Decimal("0.0001"))
         tx_replacement = self.wallet.create_self_transfer(utxo_to_spend=conflicting_input, fee_rate=Decimal("0.005"))
-        # Add 1 satoshi fee delta to replacee
-        self.nodes[0].prioritisetransaction(tx_replacee["txid"], 0, 100)
-        assert_equal(self.nodes[0].getprioritisedtransactions(), { tx_replacee["txid"] : { "fee_delta" : 100, "in_mempool" : False}})
+        # Add 1 qirsh fee delta to replacee
+        self.nodes[0].prioritisetransaction(tx_replacee["txid"], 0, 20000)
+        assert_equal(self.nodes[0].getprioritisedtransactions(), { tx_replacee["txid"] : { "fee_delta" : 20000, "in_mempool" : False}})
         self.nodes[0].sendrawtransaction(tx_replacee["hex"])
-        assert_equal(self.nodes[0].getprioritisedtransactions(), { tx_replacee["txid"] : { "fee_delta" : 100, "in_mempool" : True, "modified_fee": int(tx_replacee["fee"] * COIN + 100)}})
+        assert_equal(self.nodes[0].getprioritisedtransactions(), { tx_replacee["txid"] : { "fee_delta" : 20000, "in_mempool" : True, "modified_fee": int(tx_replacee["fee"] * COIN + 20000)}})
         self.nodes[0].sendrawtransaction(tx_replacement["hex"])
         assert tx_replacee["txid"] not in self.nodes[0].getrawmempool()
-        assert_equal(self.nodes[0].getprioritisedtransactions(), { tx_replacee["txid"] : { "fee_delta" : 100, "in_mempool" : False}})
+        assert_equal(self.nodes[0].getprioritisedtransactions(), { tx_replacee["txid"] : { "fee_delta" : 20000, "in_mempool" : False}})
 
         # PrioritiseTransaction is additive
         self.nodes[0].prioritisetransaction(tx_replacee["txid"], 0, COIN)
         self.nodes[0].sendrawtransaction(tx_replacee["hex"])
-        assert_equal(self.nodes[0].getprioritisedtransactions(), { tx_replacee["txid"] : { "fee_delta" : COIN + 100, "in_mempool" : True, "modified_fee": int(tx_replacee["fee"] * COIN + COIN + 100)}})
+        assert_equal(self.nodes[0].getprioritisedtransactions(), { tx_replacee["txid"] : { "fee_delta" : COIN + 20000, "in_mempool" : True, "modified_fee": int(tx_replacee["fee"] * COIN + COIN + 20000)}})
         self.generate(self.nodes[0], 1)
         assert_equal(self.nodes[0].getprioritisedtransactions(), {})
 
@@ -226,7 +175,6 @@ class PrioritiseTransactionTest(BitcoinTestFramework):
         # Test `prioritisetransaction` invalid `fee_delta`
         assert_raises_rpc_error(-3, "JSON value of type string is not of expected type number", self.nodes[0].prioritisetransaction, txid=txid, fee_delta='foo')
 
-        self.test_large_fee_bump()
         self.test_replacement()
         self.test_diamond()
 

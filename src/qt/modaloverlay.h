@@ -1,9 +1,9 @@
-// Copyright (c) 2016-present The Bitcoin Core developers
+// Copyright (c) 2016-2022 The OpenSY developers
 // Distributed under the MIT software license, see the accompanying
 // file COPYING or http://www.opensource.org/licenses/mit-license.php.
 
-#ifndef BITCOIN_QT_MODALOVERLAY_H
-#define BITCOIN_QT_MODALOVERLAY_H
+#ifndef OPENSY_QT_MODALOVERLAY_H
+#define OPENSY_QT_MODALOVERLAY_H
 
 #include <QDateTime>
 #include <QPropertyAnimation>
@@ -55,4 +55,4 @@ private:
     void UpdateHeaderPresyncLabel(int height, const QDateTime& blockDate);
 };
 
-#endif // BITCOIN_QT_MODALOVERLAY_H
+#endif // OPENSY_QT_MODALOVERLAY_H

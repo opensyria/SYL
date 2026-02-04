@@ -1,4 +1,4 @@
-// Copyright (c) 2020-present The Bitcoin Core developers
+// Copyright (c) 2020-present The OpenSY developers
 // Distributed under the MIT software license, see the accompanying
 // file COPYING or http://www.opensource.org/licenses/mit-license.php.
 
@@ -74,30 +74,16 @@ void TestCoinsView(FuzzedDataProvider& fuzzed_data_provider, CCoinsView& backend
                 }
             },
             [&] {
-                coins_view_cache.Flush(/*reallocate_cache=*/fuzzed_data_provider.ConsumeBool());
+                (void)coins_view_cache.Flush();
             },
             [&] {
-                coins_view_cache.Sync();
+                (void)coins_view_cache.Sync();
             },
             [&] {
                 uint256 best_block{ConsumeUInt256(fuzzed_data_provider)};
                 // Set best block hash to non-null to satisfy the assertion in CCoinsViewDB::BatchWrite().
                 if (is_db && best_block.IsNull()) best_block = uint256::ONE;
                 coins_view_cache.SetBestBlock(best_block);
-            },
-            [&] {
-                {
-                    const auto reset_guard{coins_view_cache.CreateResetGuard()};
-                }
-                // Set best block hash to non-null to satisfy the assertion in CCoinsViewDB::BatchWrite().
-                if (is_db) {
-                    const uint256 best_block{ConsumeUInt256(fuzzed_data_provider)};
-                    if (best_block.IsNull()) {
-                        good_data = false;
-                        return;
-                    }
-                    coins_view_cache.SetBestBlock(best_block);
-                }
             },
             [&] {
                 Coin move_to;

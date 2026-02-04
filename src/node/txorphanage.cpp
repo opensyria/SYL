@@ -1,4 +1,4 @@
-// Copyright (c) 2021-present The Bitcoin Core developers
+// Copyright (c) 2021-2022 The OpenSY developers
 // Distributed under the MIT software license, see the accompanying
 // file COPYING or http://www.opensource.org/licenses/mit-license.php.
 
@@ -513,7 +513,7 @@ void TxOrphanageImpl::LimitOrphans()
         if (!NeedsTrim()) break;
 
         // Unless this peer is empty, put it back in the heap so we continue to consider evicting its orphans.
-        // We may select this peer for evictions again if there are multiple DoSy peers.
+        // We may select this peer for evictions again if there are multiple DSYL peers.
         if (it_worst_peer != m_peer_orphanage_info.end() && it_worst_peer->second.m_count_announcements > 0) {
             heap_peer_dos.emplace_back(worst_peer, it_worst_peer->second.GetDosScore(max_lat, max_mem));
             std::push_heap(heap_peer_dos.begin(), heap_peer_dos.end(), compare_score);

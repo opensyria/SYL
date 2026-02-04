@@ -1,13 +1,13 @@
 #!/usr/bin/env python3
-# Copyright (c) 2020-present The Bitcoin Core developers
+# Copyright (c) 2020-2022 The OpenSY developers
 # Distributed under the MIT software license, see the accompanying
 # file COPYING or http://www.opensource.org/licenses/mit-license.php.
 """Test orphaned block rewards in the wallet."""
 
-from test_framework.test_framework import BitcoinTestFramework
+from test_framework.test_framework import OpenSYTestFramework
 from test_framework.util import assert_equal
 
-class OrphanedBlockRewardTest(BitcoinTestFramework):
+class OrphanedBlockRewardTest(OpenSYTestFramework):
     def set_test_params(self):
         self.setup_clean_chain = True
         self.num_nodes = 2
@@ -18,21 +18,23 @@ class OrphanedBlockRewardTest(BitcoinTestFramework):
     def run_test(self):
         # Generate some blocks and obtain some coins on node 0.  We send
         # some balance to node 1, which will hold it as a single coin.
+        # Note: Regtest halving happens at block 150, so block reward is 10000 for blocks 0-149,
+        # and 5000 for blocks 150+.
         self.generate(self.nodes[0], 150)
         self.nodes[0].sendtoaddress(self.nodes[1].getnewaddress(), 10)
         self.generate(self.nodes[0], 1)
 
         # Get a block reward with node 1 and remember the block so we can orphan
-        # it later.
+        # it later. This block is after halving, so reward is 5000 SYL.
         self.sync_blocks()
         blk = self.generate(self.nodes[1], 1)[0]
 
         # Let the block reward mature and send coins including both
         # the existing balance and the block reward.
         self.generate(self.nodes[0], 150)
-        assert_equal(self.nodes[1].getbalance(), 10 + 25)
+        assert_equal(self.nodes[1].getbalance(), 10 + 5000)  # 10 sent + 5000 block reward (post-halving)
         pre_reorg_conf_bals = self.nodes[1].getbalances()
-        txid = self.nodes[1].sendtoaddress(self.nodes[0].getnewaddress(), 30)
+        txid = self.nodes[1].sendtoaddress(self.nodes[0].getnewaddress(), 5000)  # Send the block reward amount
         orig_chain_tip = self.nodes[0].getbestblockhash()
         self.sync_mempools()
 

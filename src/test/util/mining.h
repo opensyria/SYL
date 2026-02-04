@@ -1,9 +1,9 @@
-// Copyright (c) 2019-present The Bitcoin Core developers
+// Copyright (c) 2019-2021 The OpenSY developers
 // Distributed under the MIT software license, see the accompanying
 // file COPYING or http://www.opensource.org/licenses/mit-license.php.
 
-#ifndef BITCOIN_TEST_UTIL_MINING_H
-#define BITCOIN_TEST_UTIL_MINING_H
+#ifndef OPENSY_TEST_UTIL_MINING_H
+#define OPENSY_TEST_UTIL_MINING_H
 
 #include <node/miner.h>
 
@@ -45,4 +45,4 @@ std::shared_ptr<CBlock> PrepareBlock(const node::NodeContext& node,
 /** RPC-like helper function, returns the generated coin */
 COutPoint generatetoaddress(const node::NodeContext&, const std::string& address);
 
-#endif // BITCOIN_TEST_UTIL_MINING_H
+#endif // OPENSY_TEST_UTIL_MINING_H

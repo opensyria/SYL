@@ -1,16 +1,16 @@
 #!/usr/bin/env python3
-# Copyright (c) 2021-present The Bitcoin Core developers
+# Copyright (c) 2021-present The OpenSY developers
 # Distributed under the MIT software license, see the accompanying
 # file COPYING or http://www.opensource.org/licenses/mit-license.php.
 """
 Test ports handling for I2P hosts
 """
 
-from test_framework.test_framework import BitcoinTestFramework
+from test_framework.test_framework import OpenSYTestFramework
 from test_framework.util import p2p_port
 
 
-class I2PPorts(BitcoinTestFramework):
+class I2PPorts(OpenSYTestFramework):
     def set_test_params(self):
         self.num_nodes = 1
         # Use the p2p port of the non-existing next node as the proxy port
@@ -22,8 +22,8 @@ class I2PPorts(BitcoinTestFramework):
         node = self.nodes[0]
 
         self.log.info("Ensure we don't try to connect if port!=0")
-        addr = "zsxwyo6qcn3chqzwxnseusqgsnuw3maqnztkiypyfxtya4snkoka.b32.i2p:8333"
-        with node.assert_debug_log(expected_msgs=[f"Error connecting to {addr}, connection refused due to arbitrary port 8333"]):
+        addr = "zsxwyo6qcn3chqzwxnseusqgsnuw3maqnztkiypyfxtya4snkoka.b32.i2p:9633"
+        with node.assert_debug_log(expected_msgs=[f"Error connecting to {addr}, connection refused due to arbitrary port 9633"]):
             node.addnode(node=addr, command="onetry")
 
         self.log.info("Ensure we try to connect if port=0 and get an error due to missing I2P proxy")

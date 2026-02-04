@@ -1,10 +1,10 @@
 #!/usr/bin/env python3
-# Copyright (c) 2018-present The Bitcoin Core developers
+# Copyright (c) 2018-2022 The OpenSY developers
 # Distributed under the MIT software license, see the accompanying
 # file COPYING or http://www.opensource.org/licenses/mit-license.php.
 """Test RPC help output."""
 
-from test_framework.test_framework import BitcoinTestFramework
+from test_framework.test_framework import OpenSYTestFramework
 from test_framework.util import assert_equal, assert_raises_rpc_error
 
 from collections import defaultdict
@@ -22,7 +22,7 @@ def process_mapping(fname):
     cmds = []
     string_params = []
     in_rpcs = False
-    with open(fname, "r") as f:
+    with open(fname, "r", encoding="utf8") as f:
         for line in f:
             line = line.rstrip()
             if not in_rpcs:
@@ -52,7 +52,7 @@ def process_mapping(fname):
     assert not in_rpcs
     return cmds, string_params
 
-class HelpRpcTest(BitcoinTestFramework):
+class HelpRpcTest(OpenSYTestFramework):
     def set_test_params(self):
         self.num_nodes = 1
         self.uses_wallet = None
@@ -153,7 +153,7 @@ class HelpRpcTest(BitcoinTestFramework):
         os.mkdir(dump_dir)
         calls = [line.split(' ', 1)[0] for line in self.nodes[0].help().splitlines() if line and not line.startswith('==')]
         for call in calls:
-            with open(os.path.join(dump_dir, call), 'w') as f:
+            with open(os.path.join(dump_dir, call), 'w', encoding='utf-8') as f:
                 # Make sure the node can generate the help at runtime without crashing
                 f.write(self.nodes[0].help(call))
 

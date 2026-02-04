@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-# Copyright (c) 2023-present The Bitcoin Core developers
+# Copyright (c) 2023-present The OpenSY developers
 # Distributed under the MIT software license, see the accompanying
 # file COPYING or https://www.opensource.org/licenses/mit-license.php.
 
@@ -8,13 +8,13 @@
 import time
 
 from test_framework.blocktools import COINBASE_MATURITY
-from test_framework.test_framework import BitcoinTestFramework
+from test_framework.test_framework import OpenSYTestFramework
 from test_framework.util import (
     assert_equal,
 )
-BLOCK_TIME = 60 * 10
+BLOCK_TIME = 60 * 2  # OpenSY: 2-minute blocks
 
-class WalletReindexTest(BitcoinTestFramework):
+class WalletReindexTest(OpenSYTestFramework):
     def set_test_params(self):
         self.num_nodes = 1
         self.setup_clean_chain = True
@@ -35,8 +35,10 @@ class WalletReindexTest(BitcoinTestFramework):
         wallet_addr = miner_wallet.getnewaddress()
         tx_id = miner_wallet.sendtoaddress(wallet_addr, 2)
 
-        # Generate 50 blocks, one every 10 min to surpass the 2 hours rescan window the wallet has
-        for _ in range(50):
+        # OpenSY: Generate 70 blocks, one every 2 min to surpass the 2 hours rescan window the wallet has
+        # (70 blocks × 120 seconds = 8400 seconds > 7200 seconds = 2 hours)
+        NUM_BLOCKS = 70
+        for _ in range(NUM_BLOCKS):
             self.generate(node, 1)
             self.advance_time(node, BLOCK_TIME)
 
@@ -57,7 +59,7 @@ class WalletReindexTest(BitcoinTestFramework):
 
         # Rescan the wallet to detect the missing transaction
         wallet_watch_only.rescanblockchain()
-        assert_equal(wallet_watch_only.gettransaction(tx_id)['confirmations'], 50)
+        assert_equal(wallet_watch_only.gettransaction(tx_id)['confirmations'], NUM_BLOCKS)  # OpenSY: matches generated blocks
         assert_equal(wallet_watch_only.getbalances()['mine']['trusted'], 2)
 
         # Reindex and wait for it to finish
@@ -68,7 +70,7 @@ class WalletReindexTest(BitcoinTestFramework):
         # Verify the transaction is still 'confirmed' after reindex
         wallet_watch_only = node.get_wallet_rpc('watch_only')
         tx_info = wallet_watch_only.gettransaction(tx_id)
-        assert_equal(tx_info['confirmations'], 50)
+        assert_equal(tx_info['confirmations'], NUM_BLOCKS)  # OpenSY: matches generated blocks
 
         # Depending on the wallet type, the birth time changes.
         # For descriptors, verify the wallet updated the birth time to the transaction time

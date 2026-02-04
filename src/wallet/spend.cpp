@@ -1,4 +1,4 @@
-// Copyright (c) 2021-present The Bitcoin Core developers
+// Copyright (c) 2021-2022 The OpenSY developers
 // Distributed under the MIT software license, see the accompanying
 // file COPYING or http://www.opensource.org/licenses/mit-license.php.
 
@@ -9,6 +9,7 @@
 #include <consensus/amount.h>
 #include <consensus/validation.h>
 #include <interfaces/chain.h>
+#include <logging.h>
 #include <node/types.h>
 #include <numeric>
 #include <policy/policy.h>
@@ -219,7 +220,7 @@ void CoinsResult::Erase(const std::unordered_set<COutPoint, SaltedOutpointHasher
     for (auto& [type, vec] : coins) {
         auto remove_it = std::remove_if(vec.begin(), vec.end(), [&](const COutput& coin) {
             // remove it if it's on the set
-            if (!coins_to_remove.contains(coin.outpoint)) return false;
+            if (coins_to_remove.count(coin.outpoint) == 0) return false;
 
             // update cached amounts
             total_amount -= coin.txout.nValue;
@@ -382,7 +383,7 @@ CoinsResult AvailableCoins(const CWallet& wallet,
             // be a 1-block reorg away from the chain where transactions A and C
             // were accepted to another chain where B, B', and C were all
             // accepted.
-            if (nDepth == 0 && wtx.mapValue.contains("replaces_txid")) {
+            if (nDepth == 0 && wtx.mapValue.count("replaces_txid")) {
                 safeTx = false;
             }
 
@@ -394,22 +395,19 @@ CoinsResult AvailableCoins(const CWallet& wallet,
             // intending to replace A', but potentially resulting in a scenario
             // where A, A', and D could all be accepted (instead of just B and
             // D, or just A and A' like the user would want).
-            if (nDepth == 0 && wtx.mapValue.contains("replaced_by_txid")) {
+            if (nDepth == 0 && wtx.mapValue.count("replaced_by_txid")) {
                 safeTx = false;
             }
 
-            if (nDepth == 0 && params.check_version_trucness) {
+            // Only check TRUC version trucness if coinControl is provided (fixes NULL dereference)
+            if (nDepth == 0 && params.check_version_trucness && coinControl) {
                 if (coinControl->m_version == TRUC_VERSION) {
                     if (wtx.tx->version != TRUC_VERSION) continue;
                     // this unconfirmed v3 transaction already has a child
                     if (wtx.truc_child_in_mempool.has_value()) continue;
-
-                    // this unconfirmed v3 transaction has a parent: spending would create a third generation
-                    size_t ancestors, descendants;
-                    wallet.chain().getTransactionAncestry(wtx.tx->GetHash(), ancestors, descendants);
-                    if (ancestors > 1) continue;
                 } else {
                     if (wtx.tx->version == TRUC_VERSION) continue;
+                    Assume(!wtx.truc_child_in_mempool.has_value());
                 }
             }
 
@@ -1147,7 +1145,7 @@ static util::Result<CreatedTransactionResult> CreateTransactionInternal(
     // Do not, ever, assume that it's fine to change the fee rate if the user has explicitly
     // provided one
     if (coin_control.m_feerate && coin_selection_params.m_effective_feerate > *coin_control.m_feerate) {
-        return util::Error{strprintf(_("Fee rate (%s) is lower than the minimum fee rate setting (%s)"), coin_control.m_feerate->ToString(FeeEstimateMode::SAT_VB), coin_selection_params.m_effective_feerate.ToString(FeeEstimateMode::SAT_VB))};
+        return util::Error{strprintf(_("Fee rate (%s) is lower than the minimum fee rate setting (%s)"), coin_control.m_feerate->ToString(FeeEstimateMode::QIRSH_VB), coin_selection_params.m_effective_feerate.ToString(FeeEstimateMode::QIRSH_VB))};
     }
     if (feeCalc.reason == FeeReason::FALLBACK && !wallet.m_allow_fallback_fee) {
         // eventually allow a fallback fee
@@ -1166,7 +1164,7 @@ static util::Result<CreatedTransactionResult> CreateTransactionInternal(
 
     // The smallest change amount should be:
     // 1. at least equal to dust threshold
-    // 2. at least 1 sat greater than fees to spend it at m_discard_feerate
+    // 2. at least 1 qirsh greater than fees to spend it at m_discard_feerate
     const auto dust = GetDustThreshold(change_prototype_txout, coin_selection_params.m_discard_feerate);
     const auto change_spend_fee = coin_selection_params.m_discard_feerate.GetFee(coin_selection_params.change_spend_size);
     coin_selection_params.min_viable_change = std::max(change_spend_fee + 1, dust);

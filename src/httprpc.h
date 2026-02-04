@@ -1,9 +1,9 @@
-// Copyright (c) 2015-present The Bitcoin Core developers
+// Copyright (c) 2015-2021 The OpenSY developers
 // Distributed under the MIT software license, see the accompanying
 // file COPYING or http://www.opensource.org/licenses/mit-license.php.
 
-#ifndef BITCOIN_HTTPRPC_H
-#define BITCOIN_HTTPRPC_H
+#ifndef OPENSY_HTTPRPC_H
+#define OPENSY_HTTPRPC_H
 
 #include <any>
 
@@ -31,4 +31,4 @@ void InterruptREST();
  */
 void StopREST();
 
-#endif // BITCOIN_HTTPRPC_H
+#endif // OPENSY_HTTPRPC_H

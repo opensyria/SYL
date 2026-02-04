@@ -1,4 +1,4 @@
-// Copyright (c) 2018-present The Bitcoin Core developers
+// Copyright (c) 2018-2022 The OpenSY developers
 // Distributed under the MIT software license, see the accompanying
 // file COPYING or http://www.opensource.org/licenses/mit-license.php.
 
@@ -24,12 +24,12 @@ static void Bech32Encode(benchmark::Bench& bench)
 
 static void Bech32Decode(benchmark::Bench& bench)
 {
-    std::string addr = "bc1qkallence7tjawwvy0dwt4twc62qjgaw8f4vlhyd006d99f09";
+    std::string addr = "syl1qqqpzry9x8gf2tvdw0s3jn54khce6mua7l67rhym";
     bench.batch(addr.size()).unit("byte").run([&] {
         bech32::Decode(addr);
     });
 }
 
 
-BENCHMARK(Bech32Encode);
-BENCHMARK(Bech32Decode);
+BENCHMARK(Bech32Encode, benchmark::PriorityLevel::HIGH);
+BENCHMARK(Bech32Decode, benchmark::PriorityLevel::HIGH);

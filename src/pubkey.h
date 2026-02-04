@@ -1,11 +1,11 @@
 // Copyright (c) 2009-2010 Satoshi Nakamoto
-// Copyright (c) 2009-present The Bitcoin Core developers
+// Copyright (c) 2009-present The OpenSY developers
 // Copyright (c) 2017 The Zcash developers
 // Distributed under the MIT software license, see the accompanying
 // file COPYING or http://www.opensource.org/licenses/mit-license.php.
 
-#ifndef BITCOIN_PUBKEY_H
-#define BITCOIN_PUBKEY_H
+#ifndef OPENSY_PUBKEY_H
+#define OPENSY_PUBKEY_H
 
 #include <hash.h>
 #include <serialize.h>
@@ -120,6 +120,10 @@ public:
     {
         return a.vch[0] == b.vch[0] &&
                memcmp(a.vch, b.vch, a.size()) == 0;
+    }
+    friend bool operator!=(const CPubKey& a, const CPubKey& b)
+    {
+        return !(a == b);
     }
     friend bool operator<(const CPubKey& a, const CPubKey& b)
     {
@@ -298,6 +302,7 @@ public:
     unsigned char* begin() { return m_keydata.begin(); }
     unsigned char* end() { return m_keydata.end(); }
     bool operator==(const XOnlyPubKey& other) const { return m_keydata == other.m_keydata; }
+    bool operator!=(const XOnlyPubKey& other) const { return m_keydata != other.m_keydata; }
     bool operator<(const XOnlyPubKey& other) const { return m_keydata < other.m_keydata; }
 
     //! Implement serialization without length prefixes since it is a fixed length
@@ -331,6 +336,11 @@ public:
     {
         return a.m_pubkey == b.m_pubkey;
     }
+
+    bool friend operator!=(const EllSwiftPubKey& a, const EllSwiftPubKey& b)
+    {
+        return a.m_pubkey != b.m_pubkey;
+    }
 };
 
 struct CExtPubKey {
@@ -350,6 +360,11 @@ struct CExtPubKey {
             a.pubkey == b.pubkey;
     }
 
+    friend bool operator!=(const CExtPubKey &a, const CExtPubKey &b)
+    {
+        return !(a == b);
+    }
+
     friend bool operator<(const CExtPubKey &a, const CExtPubKey &b)
     {
         if (a.pubkey < b.pubkey) {
@@ -367,4 +382,4 @@ struct CExtPubKey {
     [[nodiscard]] bool Derive(CExtPubKey& out, unsigned int nChild, uint256* bip32_tweak_out = nullptr) const;
 };
 
-#endif // BITCOIN_PUBKEY_H
+#endif // OPENSY_PUBKEY_H

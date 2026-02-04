@@ -1,17 +1,17 @@
 #!/usr/bin/env python3
-# Copyright (c) 2024-present The Bitcoin Core developers
+# Copyright (c) 2024-present The OpenSY developers
 # Distributed under the MIT software license, see the accompanying
 # file COPYING or http://www.opensource.org/licenses/mit-license.php.
 
 from decimal import Decimal
 
-from test_framework.test_framework import BitcoinTestFramework
+from test_framework.test_framework import OpenSYTestFramework
 from test_framework.util import assert_equal, assert_raises_rpc_error
 from test_framework.messages import COIN
 from test_framework.wallet import MiniWallet, MiniWalletMode, getnewdestination
 
 
-class GetBlocksActivityTest(BitcoinTestFramework):
+class GetBlocksActivityTest(OpenSYTestFramework):
     def set_test_params(self):
         self.num_nodes = 1
         self.setup_clean_chain = True
@@ -20,7 +20,7 @@ class GetBlocksActivityTest(BitcoinTestFramework):
         node = self.nodes[0]
         wallet = MiniWallet(node)
         node.setmocktime(node.getblockheader(node.getbestblockhash())['time'])
-        self.generate(wallet, 200)
+        self.generate(wallet, 200)  # OpenSY: fewer blocks for faster test
 
         self.test_no_activity(node)
         self.test_activity_in_block(node, wallet)

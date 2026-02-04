@@ -1,12 +1,11 @@
 // Copyright (c) 2009-2010 Satoshi Nakamoto
-// Copyright (c) 2009-present The Bitcoin Core developers
+// Copyright (c) 2009-present The OpenSY developers
 // Distributed under the MIT software license, see the accompanying
 // file COPYING or http://www.opensource.org/licenses/mit-license.php.
 
-#ifndef BITCOIN_COINS_H
-#define BITCOIN_COINS_H
+#ifndef OPENSY_COINS_H
+#define OPENSY_COINS_H
 
-#include <attributes.h>
 #include <compressor.h>
 #include <core_memusage.h>
 #include <memusage.h>
@@ -318,7 +317,7 @@ public:
 
     //! Do a bulk modification (multiple Coin changes + BestBlock change).
     //! The passed cursor is used to iterate through the coins.
-    virtual void BatchWrite(CoinsViewCacheCursor& cursor, const uint256& hashBlock);
+    virtual bool BatchWrite(CoinsViewCacheCursor& cursor, const uint256& hashBlock);
 
     //! Get a cursor to iterate over the whole state
     virtual std::unique_ptr<CCoinsViewCursor> Cursor() const;
@@ -344,7 +343,7 @@ public:
     uint256 GetBestBlock() const override;
     std::vector<uint256> GetHeadBlocks() const override;
     void SetBackend(CCoinsView &viewIn);
-    void BatchWrite(CoinsViewCacheCursor& cursor, const uint256& hashBlock) override;
+    bool BatchWrite(CoinsViewCacheCursor& cursor, const uint256 &hashBlock) override;
     std::unique_ptr<CCoinsViewCursor> Cursor() const override;
     size_t EstimateSize() const override;
 };
@@ -370,12 +369,6 @@ protected:
     /* Cached dynamic memory usage for the inner Coin objects. */
     mutable size_t cachedCoinsUsage{0};
 
-    /**
-     * Discard all modifications made to this cache without flushing to the base view.
-     * This can be used to efficiently reuse a cache instance across multiple operations.
-     */
-    void Reset() noexcept;
-
 public:
     CCoinsViewCache(CCoinsView *baseIn, bool deterministic = false);
 
@@ -389,7 +382,7 @@ public:
     bool HaveCoin(const COutPoint &outpoint) const override;
     uint256 GetBestBlock() const override;
     void SetBestBlock(const uint256 &hashBlock);
-    void BatchWrite(CoinsViewCacheCursor& cursor, const uint256& hashBlock) override;
+    bool BatchWrite(CoinsViewCacheCursor& cursor, const uint256 &hashBlock) override;
     std::unique_ptr<CCoinsViewCursor> Cursor() const override {
         throw std::logic_error("CCoinsViewCache cursor iteration not supported.");
     }
@@ -439,18 +432,18 @@ public:
      * Push the modifications applied to this cache to its base and wipe local state.
      * Failure to call this method or Sync() before destruction will cause the changes
      * to be forgotten.
-     * If reallocate_cache is false, the cache will retain the same memory footprint
-     * after flushing and should be destroyed to deallocate.
+     * If false is returned, the state of this cache (and its backing view) will be undefined.
      */
-    void Flush(bool reallocate_cache = true);
+    bool Flush();
 
     /**
      * Push the modifications applied to this cache to its base while retaining
      * the contents of this cache (except for spent coins, which we erase).
      * Failure to call this method or Flush() before destruction will cause the changes
      * to be forgotten.
+     * If false is returned, the state of this cache (and its backing view) will be undefined.
      */
-    void Sync();
+    bool Sync();
 
     /**
      * Removes the UTXO with the given outpoint from the cache, if it is
@@ -477,25 +470,6 @@ public:
     //! Run an internal sanity check on the cache data structure. */
     void SanityCheck() const;
 
-    class ResetGuard
-    {
-    private:
-        friend CCoinsViewCache;
-        CCoinsViewCache& m_cache;
-        explicit ResetGuard(CCoinsViewCache& cache LIFETIMEBOUND) noexcept : m_cache{cache} {}
-
-    public:
-        ResetGuard(const ResetGuard&) = delete;
-        ResetGuard& operator=(const ResetGuard&) = delete;
-        ResetGuard(ResetGuard&&) = delete;
-        ResetGuard& operator=(ResetGuard&&) = delete;
-
-        ~ResetGuard() { m_cache.Reset(); }
-    };
-
-    //! Create a scoped guard that will call `Reset()` on this cache when it goes out of scope.
-    [[nodiscard]] ResetGuard CreateResetGuard() noexcept { return ResetGuard{*this}; }
-
 private:
     /**
      * @note this is marked const, but may actually append to `cacheCoins`, increasing
@@ -521,7 +495,7 @@ const Coin& AccessByTxid(const CCoinsViewCache& cache, const Txid& txid);
 /**
  * This is a minimally invasive approach to shutdown on LevelDB read errors from the
  * chainstate, while keeping user interface out of the common library, which is shared
- * between bitcoind, and bitcoin-qt and non-server tools.
+ * between opensyd, and opensy-qt and non-server tools.
  *
  * Writes do not need similar protection, as failure to write is handled by the caller.
 */
@@ -543,4 +517,4 @@ private:
 
 };
 
-#endif // BITCOIN_COINS_H
+#endif // OPENSY_COINS_H

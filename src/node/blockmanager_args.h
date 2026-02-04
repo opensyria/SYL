@@ -1,10 +1,10 @@
 
-// Copyright (c) 2023-present The Bitcoin Core developers
+// Copyright (c) 2023 The OpenSY developers
 // Distributed under the MIT software license, see the accompanying
 // file COPYING or http://www.opensource.org/licenses/mit-license.php.
 
-#ifndef BITCOIN_NODE_BLOCKMANAGER_ARGS_H
-#define BITCOIN_NODE_BLOCKMANAGER_ARGS_H
+#ifndef OPENSY_NODE_BLOCKMANAGER_ARGS_H
+#define OPENSY_NODE_BLOCKMANAGER_ARGS_H
 
 #include <node/blockstorage.h>
 #include <util/result.h>
@@ -15,4 +15,4 @@ namespace node {
 [[nodiscard]] util::Result<void> ApplyArgsManOptions(const ArgsManager& args, BlockManager::Options& opts);
 } // namespace node
 
-#endif // BITCOIN_NODE_BLOCKMANAGER_ARGS_H
+#endif // OPENSY_NODE_BLOCKMANAGER_ARGS_H

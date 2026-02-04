@@ -1,17 +1,16 @@
 // Copyright (c) 2009-2010 Satoshi Nakamoto
-// Copyright (c) 2009-present The Bitcoin Core developers
+// Copyright (c) 2009-present The OpenSY developers
 // Distributed under the MIT software license, see the accompanying
 // file COPYING or http://www.opensource.org/licenses/mit-license.php.
 
-#ifndef BITCOIN_NET_PROCESSING_H
-#define BITCOIN_NET_PROCESSING_H
+#ifndef OPENSY_NET_PROCESSING_H
+#define OPENSY_NET_PROCESSING_H
 
 #include <consensus/amount.h>
 #include <net.h>
 #include <node/txorphanage.h>
 #include <protocol.h>
 #include <threadsafety.h>
-#include <util/expected.h>
 #include <validationinterface.h>
 
 #include <atomic>
@@ -41,6 +40,8 @@ static constexpr bool DEFAULT_TXRECONCILIATION_ENABLE{false};
     orphan, replaced, and rejected transactions. */
 static const uint32_t DEFAULT_BLOCK_RECONSTRUCTION_EXTRA_TXN{100};
 static const bool DEFAULT_PEERBLOOMFILTERS = false;
+// Serve compact block filters to peers per BIP 157 (default: false)
+// To enable, set both -peerblockfilters=1 and -blockfilterindex=1
 static const bool DEFAULT_PEERBLOCKFILTERS = false;
 /** Maximum number of outstanding CMPCTBLOCK requests for the same block. */
 static const unsigned int MAX_CMPCTBLOCKS_INFLIGHT_PER_BLOCK = 3;
@@ -90,8 +91,6 @@ public:
         //! Number of headers sent in one getheaders message result (this is
         //! a test-only option).
         uint32_t max_headers_result{MAX_HEADERS_RESULTS};
-        //! Whether private broadcast is used for sending transactions.
-        bool private_broadcast{DEFAULT_PRIVATE_BROADCAST};
     };
 
     static std::unique_ptr<PeerManager> make(CConnman& connman, AddrMan& addrman,
@@ -104,8 +103,9 @@ public:
      *
      * @param[in]  peer_id      The peer id
      * @param[in]  block_index  The blockindex
+     * @returns std::nullopt if a request was successfully made, otherwise an error message
      */
-    virtual util::Expected<void, std::string> FetchBlock(NodeId peer_id, const CBlockIndex& block_index) = 0;
+    virtual std::optional<std::string> FetchBlock(NodeId peer_id, const CBlockIndex& block_index) = 0;
 
     /** Begin running background tasks, should only be called once */
     virtual void StartScheduledTasks(CScheduler& scheduler) = 0;
@@ -118,19 +118,8 @@ public:
     /** Get peer manager info. */
     virtual PeerManagerInfo GetInfo() const = 0;
 
-    /**
-     * Initiate a transaction broadcast to eligible peers.
-     * Queue the witness transaction id to `Peer::TxRelay::m_tx_inventory_to_send`
-     * for each peer. Later, depending on `Peer::TxRelay::m_next_inv_send_time` and if
-     * the transaction is in the mempool, an `INV` about it may be sent to the peer.
-     */
-    virtual void InitiateTxBroadcastToAll(const Txid& txid, const Wtxid& wtxid) = 0;
-
-    /**
-     * Initiate a private transaction broadcast. This is done
-     * asynchronously via short-lived connections to peers on privacy networks.
-     */
-    virtual void InitiateTxBroadcastPrivate(const CTransactionRef& tx) = 0;
+    /** Relay transaction to all peers. */
+    virtual void RelayTransaction(const Txid& txid, const Wtxid& wtxid) = 0;
 
     /** Send ping message to all peers */
     virtual void SendPings() = 0;
@@ -149,7 +138,7 @@ public:
 
     /** Process a single message from a peer. Public for fuzz testing */
     virtual void ProcessMessage(CNode& pfrom, const std::string& msg_type, DataStream& vRecv,
-                                std::chrono::microseconds time_received, const std::atomic<bool>& interruptMsgProc) EXCLUSIVE_LOCKS_REQUIRED(g_msgproc_mutex) = 0;
+                                const std::chrono::microseconds time_received, const std::atomic<bool>& interruptMsgProc) EXCLUSIVE_LOCKS_REQUIRED(g_msgproc_mutex) = 0;
 
     /** This function is used for testing the stale tip eviction logic, see denialofservice_tests.cpp */
     virtual void UpdateLastBlockAnnounceTime(NodeId node, int64_t time_in_seconds) = 0;
@@ -178,4 +167,4 @@ public:
     virtual ServiceFlags GetDesirableServiceFlags(ServiceFlags services) const = 0;
 };
 
-#endif // BITCOIN_NET_PROCESSING_H
+#endif // OPENSY_NET_PROCESSING_H

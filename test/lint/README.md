@@ -3,24 +3,20 @@ This folder contains lint scripts.
 Running locally
 ===============
 
-To run linters locally with the same versions as the CI environment use
-the _lint.py_ helper script which runs checks inside the CI container:
+To run linters locally with the same versions as the CI environment, use the included
+Dockerfile:
 
 ```sh
-./ci/lint.py
+DOCKER_BUILDKIT=1 docker build --platform=linux --tag=opensy-linter --file="./ci/lint_imagefile" ./ && docker run --rm -v $(pwd):/opensy -it opensy-linter
 ```
 
-Extra arguments are passed to `cargo run -- ...` in the container so you can do:
-
-```sh
-./ci/lint.py --help
-./ci/lint.py --lint=py_lint
-```
+Building the container can be done every time, because it is fast when the
+result is cached and it prevents issues when the image changes.
 
 test runner
 ===========
 
-To run all the lint checks in the test runner outside the container you first need
+To run all the lint checks in the test runner outside the docker you first need
 to install the rust toolchain using your package manager of choice or
 [rustup](https://www.rust-lang.org/tools/install).
 
@@ -54,6 +50,7 @@ or `--help`:
 | [`lint-python.py`](/test/lint/lint-python.py) | [pyzmq](https://github.com/zeromq/pyzmq)
 | [`lint-python-dead-code.py`](/test/lint/lint-python-dead-code.py) | [vulture](https://github.com/jendrikseipp/vulture)
 | [`lint-shell.py`](/test/lint/lint-shell.py) | [ShellCheck](https://github.com/koalaman/shellcheck)
+| [`lint-spelling.py`](/test/lint/lint-spelling.py) | [codespell](https://github.com/codespell-project/codespell)
 | `py_lint` | [ruff](https://github.com/astral-sh/ruff)
 | markdown link check | [mlc](https://github.com/becheran/mlc)
 
@@ -94,7 +91,8 @@ Usage: test/lint/git-subtree-check.sh [-r] DIR [COMMIT]
 - `-r` checks that subtree commit is present in repository.
 
 To do a full check with `-r`, make sure that you have fetched the upstream repository branch in which the subtree is
-maintained:
+maintained. Note: These are intentionally kept pointing to bitcoin-core upstream repositories as they are
+cryptographic/utility subtrees that should be synced from their canonical sources:
 * for `src/crc32c`: https://github.com/bitcoin-core/crc32c-subtree.git (branch bitcoin-fork)
 * for `src/crypto/ctaes`: https://github.com/bitcoin-core/ctaes.git (branch master)
 * for `src/ipc/libmultiprocess`: https://github.com/bitcoin-core/libmultiprocess (branch master)

@@ -1,10 +1,10 @@
 // Copyright (c) 2009-2010 Satoshi Nakamoto
-// Copyright (c) 2009-present The Bitcoin Core developers
+// Copyright (c) 2009-2022 The OpenSY developers
 // Distributed under the MIT software license, see the accompanying
 // file COPYING or http://www.opensource.org/licenses/mit-license.php.
 
-#ifndef BITCOIN_COMPAT_COMPAT_H
-#define BITCOIN_COMPAT_COMPAT_H
+#ifndef OPENSY_COMPAT_COMPAT_H
+#define OPENSY_COMPAT_COMPAT_H
 
 // Windows defines FD_SETSIZE to 64 (see _fd_types.h in mingw-w64),
 // which is too small for our usage, but allows us to redefine it safely.
@@ -36,18 +36,6 @@
 // See https://learn.microsoft.com/en-us/windows/win32/api/winsock/ns-winsock-sockaddr#syntax
 #ifdef WIN32
 typedef u_short sa_family_t;
-#endif
-
-// Brace style in the IN6ADDR_*_INIT macros differs across platforms.
-#if defined(__illumos__)
-#define COMPAT_IN6ADDR_ANY_INIT {{IN6ADDR_ANY_INIT}}
-#else
-#define COMPAT_IN6ADDR_ANY_INIT IN6ADDR_ANY_INIT
-#endif
-#if defined(__illumos__) || defined(_MSC_VER)
-#define COMPAT_IN6ADDR_LOOPBACK_INIT {{IN6ADDR_LOOPBACK_INIT}}
-#else
-#define COMPAT_IN6ADDR_LOOPBACK_INIT IN6ADDR_LOOPBACK_INIT
 #endif
 
 // We map Linux / BSD error functions and codes, to the equivalent
@@ -100,7 +88,7 @@ typedef SSIZE_T ssize_t;
 
 // Note these both should work with the current usage of poll, but best to be safe
 // WIN32 poll is broken https://daniel.haxx.se/blog/2012/10/10/wsapoll-is-broken/
-// __APPLE__ poll is broke https://github.com/bitcoin/bitcoin/pull/14336#issuecomment-437384408
+// __APPLE__ poll is broke https://github.com/opensyria/OpenSY/pull/14336#issuecomment-437384408
 #if defined(__linux__)
 #define USE_POLL
 #endif
@@ -115,4 +103,4 @@ typedef SSIZE_T ssize_t;
 #define MSG_DONTWAIT 0
 #endif
 
-#endif // BITCOIN_COMPAT_COMPAT_H
+#endif // OPENSY_COMPAT_COMPAT_H

@@ -1,9 +1,9 @@
 // Copyright (c) 2009-2010 Satoshi Nakamoto
-// Copyright (c) 2009-present The Bitcoin Core developers
+// Copyright (c) 2009-2022 The OpenSY developers
 // Distributed under the MIT software license, see the accompanying
 // file COPYING or http://www.opensource.org/licenses/mit-license.php.
-#ifndef BITCOIN_POLICY_FEES_BLOCK_POLICY_ESTIMATOR_H
-#define BITCOIN_POLICY_FEES_BLOCK_POLICY_ESTIMATOR_H
+#ifndef OPENSY_POLICY_FEES_BLOCK_POLICY_ESTIMATOR_H
+#define OPENSY_POLICY_FEES_BLOCK_POLICY_ESTIMATOR_H
 
 #include <consensus/amount.h>
 #include <policy/feerate.h>
@@ -200,7 +200,7 @@ private:
     const fs::path m_estimation_filepath;
 public:
     /** Create new BlockPolicyEstimator and initialize stats tracking classes with default values */
-    CBlockPolicyEstimator(const fs::path& estimation_filepath, bool read_stale_estimates);
+    CBlockPolicyEstimator(const fs::path& estimation_filepath, const bool read_stale_estimates);
     virtual ~CBlockPolicyEstimator();
 
     /** Process all the transactions that have been included in a block */
@@ -343,4 +343,4 @@ private:
     FastRandomContext& insecure_rand GUARDED_BY(m_insecure_rand_mutex);
 };
 
-#endif // BITCOIN_POLICY_FEES_BLOCK_POLICY_ESTIMATOR_H
+#endif // OPENSY_POLICY_FEES_BLOCK_POLICY_ESTIMATOR_H

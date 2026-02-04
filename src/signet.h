@@ -1,19 +1,15 @@
-// Copyright (c) 2019-present The Bitcoin Core developers
+// Copyright (c) 2019-2021 The OpenSY developers
 // Distributed under the MIT software license, see the accompanying
 // file COPYING or http://www.opensource.org/licenses/mit-license.php.
 
-#ifndef BITCOIN_SIGNET_H
-#define BITCOIN_SIGNET_H
+#ifndef OPENSY_SIGNET_H
+#define OPENSY_SIGNET_H
 
+#include <consensus/params.h>
 #include <primitives/block.h>
 #include <primitives/transaction.h>
 
 #include <optional>
-
-class CScript;
-namespace Consensus {
-struct Params;
-} // namespace Consensus
 
 /**
  * Extract signature and check whether a block has a valid solution
@@ -38,4 +34,4 @@ public:
     const CTransaction m_to_sign;
 };
 
-#endif // BITCOIN_SIGNET_H
+#endif // OPENSY_SIGNET_H

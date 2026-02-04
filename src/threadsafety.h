@@ -1,10 +1,10 @@
 // Copyright (c) 2009-2010 Satoshi Nakamoto
-// Copyright (c) 2009-present The Bitcoin Core developers
+// Copyright (c) 2009-2020 The OpenSY developers
 // Distributed under the MIT software license, see the accompanying
 // file COPYING or http://www.opensource.org/licenses/mit-license.php.
 
-#ifndef BITCOIN_THREADSAFETY_H
-#define BITCOIN_THREADSAFETY_H
+#ifndef OPENSY_THREADSAFETY_H
+#define OPENSY_THREADSAFETY_H
 
 #include <mutex>
 
@@ -76,4 +76,4 @@ public:
     ~StdLockGuard() UNLOCK_FUNCTION() = default;
 };
 
-#endif // BITCOIN_THREADSAFETY_H
+#endif // OPENSY_THREADSAFETY_H

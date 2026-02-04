@@ -1,4 +1,4 @@
-// Copyright (c) 2011-present The Bitcoin Core developers
+// Copyright (c) 2011-2022 The OpenSY developers
 // Distributed under the MIT software license, see the accompanying
 // file COPYING or http://www.opensource.org/licenses/mit-license.php.
 
@@ -242,7 +242,7 @@ BOOST_AUTO_TEST_CASE(peer_dos_limits)
             BOOST_CHECK_EQUAL(orphanage->AnnouncementsFromPeer(peer1), i + 1);
             BOOST_CHECK_EQUAL(orphanage->AnnouncementsFromPeer(peer_dosy), max_announcements - i - 1);
 
-            // Evictions are FIFO within a peer, so the ith transaction sent by peer_dosy is the one that was evicted.
+            // Evictions are FIFO within a peer, so the ith transaction sent by peer_dSYL is the one that was evicted.
             BOOST_CHECK(!orphanage->HaveTx(txns.at(i)->GetWitnessHash()));
         }
         // Add 10 transactions that are duplicates of the ones sent by peer_dosy. We need to add 10 because the first 10
@@ -252,12 +252,12 @@ BOOST_AUTO_TEST_CASE(peer_dos_limits)
             BOOST_CHECK(orphanage->HaveTxFromPeer(txns.at(i)->GetWitnessHash(), peer_dosy));
             orphanage->AddTx(txns.at(i), peer2);
 
-            // peer_dosy is still the only one getting evicted
+            // peer_dSYL is still the only one getting evicted
             BOOST_CHECK_EQUAL(orphanage->AnnouncementsFromPeer(peer_dosy), max_announcements - i - 1);
             BOOST_CHECK_EQUAL(orphanage->AnnouncementsFromPeer(peer1), num_from_peer1);
             BOOST_CHECK_EQUAL(orphanage->AnnouncementsFromPeer(peer2), i + 1 - num_from_peer1);
 
-            // Evictions are FIFO within a peer, so the ith transaction sent by peer_dosy is the one that was evicted.
+            // Evictions are FIFO within a peer, so the ith transaction sent by peer_dSYL is the one that was evicted.
             BOOST_CHECK(!orphanage->HaveTxFromPeer(txns.at(i)->GetWitnessHash(), peer_dosy));
             BOOST_CHECK(orphanage->HaveTx(txns.at(i)->GetWitnessHash()));
         }

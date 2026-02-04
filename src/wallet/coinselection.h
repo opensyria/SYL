@@ -1,9 +1,9 @@
-// Copyright (c) 2017-present The Bitcoin Core developers
+// Copyright (c) 2017-2022 The OpenSY developers
 // Distributed under the MIT software license, see the accompanying
 // file COPYING or http://www.opensource.org/licenses/mit-license.php.
 
-#ifndef BITCOIN_WALLET_COINSELECTION_H
-#define BITCOIN_WALLET_COINSELECTION_H
+#ifndef OPENSY_WALLET_COINSELECTION_H
+#define OPENSY_WALLET_COINSELECTION_H
 
 #include <consensus/amount.h>
 #include <consensus/consensus.h>
@@ -306,7 +306,7 @@ typedef std::map<CoinEligibilityFilter, OutputGroupTypeMap> FilteredOutputGroups
  * @param[in]   payment_value   Average payment value of the transaction output(s).
  * @param[in]   change_fee      Fee for creating a change output.
  */
-[[nodiscard]] CAmount GenerateChangeTarget(CAmount payment_value, CAmount change_fee, FastRandomContext& rng);
+[[nodiscard]] CAmount GenerateChangeTarget(const CAmount payment_value, const CAmount change_fee, FastRandomContext& rng);
 
 enum class SelectionAlgorithm : uint8_t
 {
@@ -317,7 +317,7 @@ enum class SelectionAlgorithm : uint8_t
     MANUAL = 4,
 };
 
-std::string GetAlgorithmName(SelectionAlgorithm algo);
+std::string GetAlgorithmName(const SelectionAlgorithm algo);
 
 struct SelectionResult
 {
@@ -371,7 +371,7 @@ public:
     void AddInputs(const std::set<std::shared_ptr<COutput>>& inputs, bool subtract_fee_outputs);
 
     /** How much individual inputs overestimated the bump fees for shared ancestries */
-    void SetBumpFeeDiscount(CAmount discount);
+    void SetBumpFeeDiscount(const CAmount discount);
 
     /** Calculates and stores the waste for this result given the cost of change
      * and the opportunity cost of spending these inputs now vs in the future.
@@ -385,7 +385,7 @@ public:
      *                              used if there is change, in which case it must be non-negative.
      * @param[in] change_fee        The fee for creating a change output
      */
-    void RecalculateWaste(CAmount min_viable_change, CAmount change_cost, CAmount change_fee);
+    void RecalculateWaste(const CAmount min_viable_change, const CAmount change_cost, const CAmount change_fee);
     [[nodiscard]] CAmount GetWaste() const;
 
     /** Tracks that algorithm was able to exhaustively search the entire combination space before hitting limit of tries */
@@ -432,7 +432,7 @@ public:
      * @returns Amount for change output, 0 when there is no change.
      *
      */
-    CAmount GetChange(CAmount min_viable_change, CAmount change_fee) const;
+    CAmount GetChange(const CAmount min_viable_change, const CAmount change_fee) const;
 
     CAmount GetTarget() const { return m_target; }
 
@@ -446,16 +446,11 @@ util::Result<SelectionResult> SelectCoinsBnB(std::vector<OutputGroup>& utxo_pool
 
 util::Result<SelectionResult> CoinGrinder(std::vector<OutputGroup>& utxo_pool, const CAmount& selection_target, CAmount change_target, int max_selection_weight);
 
-/** Select coins by Single Random Draw (SRD). SRD selects eligible OutputGroups from a shuffled
- * ordering until the effective value of the input set suffices to create the recipient outputs and a
- * change output with an amount of at least CHANGE_LOWER. While the maximum selection
- * weight is exceeded during selection, the OutputGroup with the lowest effective value is dropped
- * from the selection before additional OutputGroups are selected. Due to this greedy approach,
- * SRD can fail to discover possible solutions in pathological cases.
+/** Select coins by Single Random Draw. OutputGroups are selected randomly from the eligible
+ * outputs until the target is satisfied
  *
  * @param[in]  utxo_pool    The positive effective value OutputGroups eligible for selection
  * @param[in]  target_value The target value to select for
- * @param[in]  change_fee The cost of adding the change output to the transaction at the transaction’s feerate.
  * @param[in]  rng The randomness source to shuffle coins
  * @param[in]  max_selection_weight The maximum allowed weight for a selection result to be valid
  * @returns If successful, a valid SelectionResult, otherwise, util::Error
@@ -468,4 +463,4 @@ util::Result<SelectionResult> KnapsackSolver(std::vector<OutputGroup>& groups, c
                                              CAmount change_target, FastRandomContext& rng, int max_selection_weight);
 } // namespace wallet
 
-#endif // BITCOIN_WALLET_COINSELECTION_H
+#endif // OPENSY_WALLET_COINSELECTION_H

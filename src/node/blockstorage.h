@@ -1,9 +1,9 @@
-// Copyright (c) 2011-present The Bitcoin Core developers
+// Copyright (c) 2011-2022 The OpenSY developers
 // Distributed under the MIT software license, see the accompanying
 // file COPYING or http://www.opensource.org/licenses/mit-license.php.
 
-#ifndef BITCOIN_NODE_BLOCKSTORAGE_H
-#define BITCOIN_NODE_BLOCKSTORAGE_H
+#ifndef OPENSY_NODE_BLOCKSTORAGE_H
+#define OPENSY_NODE_BLOCKSTORAGE_H
 
 #include <attributes.h>
 #include <chain.h>
@@ -14,22 +14,16 @@
 #include <kernel/cs_main.h>
 #include <kernel/messagestartchars.h>
 #include <primitives/block.h>
-#include <serialize.h>
 #include <streams.h>
 #include <sync.h>
 #include <uint256.h>
-#include <util/expected.h>
 #include <util/fs.h>
 #include <util/hasher.h>
-#include <util/obfuscation.h>
 
-#include <algorithm>
 #include <array>
 #include <atomic>
-#include <cstddef>
 #include <cstdint>
 #include <functional>
-#include <iosfwd>
 #include <limits>
 #include <map>
 #include <memory>
@@ -136,7 +130,6 @@ using BlockMap = std::unordered_map<uint256, CBlockIndex, BlockHasher>;
 
 struct CBlockIndexWorkComparator {
     bool operator()(const CBlockIndex* pa, const CBlockIndex* pb) const;
-    using is_transparent = void;
 };
 
 struct CBlockIndexHeightOnlyComparator {
@@ -176,10 +169,6 @@ struct BlockfileCursor {
 
 std::ostream& operator<<(std::ostream& os, const BlockfileCursor& cursor);
 
-enum class ReadRawError {
-    IO,
-    BadPartRange,
-};
 
 /**
  * Maintains a tree of blocks (stored in `m_block_index`) which is consulted
@@ -229,7 +218,8 @@ private:
     void FindFilesToPruneManual(
         std::set<int>& setFilesToPrune,
         int nManualPruneHeight,
-        const Chainstate& chain);
+        const Chainstate& chain,
+        ChainstateManager& chainman);
 
     /**
      * Prune block and undo files (blk???.dat and rev???.dat) so that the disk space used is less than a user-defined target.
@@ -254,6 +244,7 @@ private:
         ChainstateManager& chainman);
 
     RecursiveMutex cs_LastBlockFile;
+    std::vector<CBlockFileInfo> m_blockfile_info;
 
     //! Since assumedvalid chainstates may be syncing a range of the chain that is very
     //! far away from the normal/background validation process, we should segment blockfiles
@@ -288,6 +279,12 @@ private:
 
     const Obfuscation m_obfuscation;
 
+    /** Dirty block index entries. */
+    std::set<CBlockIndex*> m_dirty_blockindex;
+
+    /** Dirty block file entries. */
+    std::set<int> m_dirty_fileinfo;
+
     /**
      * Map from external index name to oldest block that must not be pruned.
      *
@@ -303,18 +300,8 @@ private:
     const FlatFileSeq m_block_file_seq;
     const FlatFileSeq m_undo_file_seq;
 
-protected:
-    std::vector<CBlockFileInfo> m_blockfile_info;
-
-    /** Dirty block index entries. */
-    std::set<CBlockIndex*> m_dirty_blockindex;
-
-    /** Dirty block file entries. */
-    std::set<int> m_dirty_fileinfo;
-
 public:
     using Options = kernel::BlockManagerOpts;
-    using ReadRawBlockResult = util::Expected<std::vector<std::byte>, ReadRawError>;
 
     explicit BlockManager(const util::SignalInterrupt& interrupt, Options opts);
 
@@ -371,7 +358,7 @@ public:
     CBlockIndex* InsertBlockIndex(const uint256& hash) EXCLUSIVE_LOCKS_REQUIRED(cs_main);
 
     //! Mark one block file as pruned (modify associated database entries)
-    void PruneOneBlockFile(int fileNumber) EXCLUSIVE_LOCKS_REQUIRED(cs_main);
+    void PruneOneBlockFile(const int fileNumber) EXCLUSIVE_LOCKS_REQUIRED(cs_main);
 
     CBlockIndex* LookupBlockIndex(const uint256& hash) EXCLUSIVE_LOCKS_REQUIRED(cs_main);
     const CBlockIndex* LookupBlockIndex(const uint256& hash) const EXCLUSIVE_LOCKS_REQUIRED(cs_main);
@@ -468,7 +455,7 @@ public:
     /** Functions for disk access for blocks */
     bool ReadBlock(CBlock& block, const FlatFilePos& pos, const std::optional<uint256>& expected_hash) const;
     bool ReadBlock(CBlock& block, const CBlockIndex& index) const;
-    ReadRawBlockResult ReadRawBlock(const FlatFilePos& pos, std::optional<std::pair<size_t, size_t>> block_part = std::nullopt) const;
+    bool ReadRawBlock(std::vector<std::byte>& block, const FlatFilePos& pos) const;
 
     bool ReadBlockUndo(CBlockUndo& blockundo, const CBlockIndex& index) const;
 
@@ -479,4 +466,4 @@ public:
 void ImportBlocks(ChainstateManager& chainman, std::span<const fs::path> import_paths);
 } // namespace node
 
-#endif // BITCOIN_NODE_BLOCKSTORAGE_H
+#endif // OPENSY_NODE_BLOCKSTORAGE_H

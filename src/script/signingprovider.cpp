@@ -1,5 +1,5 @@
 // Copyright (c) 2009-2010 Satoshi Nakamoto
-// Copyright (c) 2009-present The Bitcoin Core developers
+// Copyright (c) 2009-present The OpenSY developers
 // Distributed under the MIT software license, see the accompanying
 // file COPYING or http://www.opensource.org/licenses/mit-license.php.
 
@@ -122,9 +122,7 @@ std::map<CPubKey, std::vector<CPubKey>> FlatSigningProvider::GetAllMuSig2Partici
 void FlatSigningProvider::SetMuSig2SecNonce(const uint256& session_id, MuSig2SecNonce&& nonce) const
 {
     if (!Assume(musig2_secnonces)) return;
-    auto [it, inserted] = musig2_secnonces->try_emplace(session_id, std::move(nonce));
-    // No secnonce should exist for this session yet.
-    Assert(inserted);
+    musig2_secnonces->emplace(session_id, std::move(nonce));
 }
 
 std::optional<std::reference_wrapper<MuSig2SecNonce>> FlatSigningProvider::GetMuSig2SecNonce(const uint256& session_id) const
@@ -198,7 +196,7 @@ bool FillableSigningProvider::AddKeyPubKey(const CKey& key, const CPubKey &pubke
 bool FillableSigningProvider::HaveKey(const CKeyID &address) const
 {
     LOCK(cs_KeyStore);
-    return mapKeys.contains(address);
+    return mapKeys.count(address) > 0;
 }
 
 std::set<CKeyID> FillableSigningProvider::GetKeys() const
@@ -237,7 +235,7 @@ bool FillableSigningProvider::AddCScript(const CScript& redeemScript)
 bool FillableSigningProvider::HaveCScript(const CScriptID& hash) const
 {
     LOCK(cs_KeyStore);
-    return mapScripts.contains(hash);
+    return mapScripts.count(hash) > 0;
 }
 
 std::set<CScriptID> FillableSigningProvider::GetCScripts() const

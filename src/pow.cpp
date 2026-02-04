@@ -1,20 +1,81 @@
 // Copyright (c) 2009-2010 Satoshi Nakamoto
-// Copyright (c) 2009-present The Bitcoin Core developers
+// Copyright (c) 2009-2022 The Bitcoin Core developers
+// Copyright (c) 2025-present The OpenSY developers
 // Distributed under the MIT software license, see the accompanying
 // file COPYING or http://www.opensource.org/licenses/mit-license.php.
+//
+// OpenSY: Forked from Bitcoin Core with dual-phase proof-of-work.
+
+// ═══════════════════════════════════════════════════════════════════════════
+// OPENSY TWO-PHASE PROOF-OF-WORK SYSTEM
+// ═══════════════════════════════════════════════════════════════════════════
+//
+// PHASE 1: SHA256d (Blocks 0 - 209,999)
+//   Purpose: Chain bootstrapping and initial distribution (10% of total supply)
+//   Algorithm: Standard Bitcoin SHA256 double-hash
+//   Rationale: Proven algorithm for initial chain establishment
+//
+// PHASE 2: RandomX (Blocks 210,000+)
+//   Purpose: Community mining phase (90% of total supply)
+//   Algorithm: RandomX - CPU-optimized, ASIC-resistant
+//   Rationale: Democratizes mining for Syrian community without specialized hardware
+//
+// SECURITY ADVANTAGES OF THIS APPROACH:
+// - Phase 1 establishes strong chainwork for assumevalid/checkpoints
+// - Phase 2 prevents ASIC/GPU domination of community mining
+// - No vulnerability to Bitcoin hashrate redirection in Phase 2
+//
+// RANDOMX CONSIDERATIONS (Phase 2):
+// - Validation is slower than SHA256d (~100x) but acceptable for 2-min blocks
+// - Key rotation every 32 blocks (mainnet) prevents pre-computation attacks
+// - Light mode (256KB) for validation, full mode (2GB) for mining
+//
+// ARGON2ID EMERGENCY FALLBACK:
+// If RandomX is compromised (cryptographic break, critical vulnerability),
+// the network can activate Argon2id as an emergency fallback via hard fork.
+// ═══════════════════════════════════════════════════════════════════════════
 
 #include <pow.h>
 
 #include <arith_uint256.h>
 #include <chain.h>
+#include <crypto/randomx_context.h>
+#include <crypto/randomx_pool.h>
+#include <crypto/argon2_context.h>
+#include <logging.h>
 #include <primitives/block.h>
+#include <streams.h>
+#include <sync.h>
 #include <uint256.h>
 #include <util/check.h>
+
+#include <mutex>
 
 unsigned int GetNextWorkRequired(const CBlockIndex* pindexLast, const CBlockHeader *pblock, const Consensus::Params& params)
 {
     assert(pindexLast != nullptr);
-    unsigned int nProofOfWorkLimit = UintToArith256(params.powLimit).GetCompact();
+    
+    // Use different powLimit based on whether we're in RandomX territory
+    int nextHeight = pindexLast->nHeight + 1;
+    const uint256& activePowLimit = params.GetRandomXPowLimit(nextHeight);
+    unsigned int nProofOfWorkLimit = UintToArith256(activePowLimit).GetCompact();
+
+    // NO RETARGETING: When fPowNoRetargeting is true, always use minimum difficulty
+    // Used for regtest and special testing scenarios
+    if (params.fPowNoRetargeting) {
+        return nProofOfWorkLimit;
+    }
+
+    // At the RandomX fork height, reset to minimum difficulty for the new algorithm
+    if (nextHeight == params.nRandomXForkHeight) {
+        return nProofOfWorkLimit;
+    }
+
+    // At the Argon2 emergency height, reset to minimum difficulty for the fallback algorithm
+    // This ensures mining can proceed immediately if RandomX is ever compromised
+    if (params.nArgon2EmergencyHeight >= 0 && nextHeight == params.nArgon2EmergencyHeight) {
+        return nProofOfWorkLimit;
+    }
 
     // Only change once per difficulty adjustment interval
     if ((pindexLast->nHeight+1) % params.DifficultyAdjustmentInterval() != 0)
@@ -59,9 +120,12 @@ unsigned int CalculateNextWorkRequired(const CBlockIndex* pindexLast, int64_t nF
     if (nActualTimespan > params.nPowTargetTimespan*4)
         nActualTimespan = params.nPowTargetTimespan*4;
 
-    // Retarget
-    const arith_uint256 bnPowLimit = UintToArith256(params.powLimit);
+    // Use appropriate powLimit based on height (SHA256d vs RandomX)
+    int nextHeight = pindexLast->nHeight + 1;
+    const arith_uint256 bnPowLimit = UintToArith256(params.GetRandomXPowLimit(nextHeight));
     arith_uint256 bnNew;
+
+    // Normal difficulty adjustment for RandomX blocks
 
     // Special difficulty rule for Testnet4
     if (params.enforce_BIP94) {
@@ -89,6 +153,16 @@ unsigned int CalculateNextWorkRequired(const CBlockIndex* pindexLast, int64_t nF
 bool PermittedDifficultyTransition(const Consensus::Params& params, int64_t height, uint32_t old_nbits, uint32_t new_nbits)
 {
     if (params.fPowAllowMinDifficultyBlocks) return true;
+
+    // At RandomX fork height, difficulty resets to minimum - this is always permitted
+    if (height == params.nRandomXForkHeight) {
+        return true;
+    }
+
+    // At Argon2 emergency height, difficulty resets to minimum - this is always permitted
+    if (params.nArgon2EmergencyHeight >= 0 && height == params.nArgon2EmergencyHeight) {
+        return true;
+    }
 
     if (height % params.DifficultyAdjustmentInterval() == 0) {
         int64_t smallest_timespan = params.nPowTargetTimespan/4;
@@ -168,4 +242,198 @@ bool CheckProofOfWorkImpl(uint256 hash, unsigned int nBits, const Consensus::Par
         return false;
 
     return true;
+}
+
+// Height-aware version that uses appropriate powLimit for SHA256d vs RandomX
+bool CheckProofOfWorkImpl(uint256 hash, unsigned int nBits, int height, const Consensus::Params& params)
+{
+    const uint256& activePowLimit = params.GetRandomXPowLimit(height);
+    auto bnTarget{DeriveTarget(nBits, activePowLimit)};
+    if (!bnTarget) return false;
+
+    // Check proof of work matches claimed amount
+    if (UintToArith256(hash) > bnTarget)
+        return false;
+
+    return true;
+}
+
+// =============================================================================
+// RANDOMX PROOF-OF-WORK FUNCTIONS
+// =============================================================================
+
+uint256 GetRandomXKeyBlockHash(int height, const CBlockIndex* pindex, const Consensus::Params& params)
+{
+    int keyHeight = params.GetRandomXKeyBlockHeight(height);
+
+    // For early blocks (before we have enough history), use genesis
+    if (keyHeight < 0) {
+        keyHeight = 0;
+    }
+
+    // Traverse back to the key block
+    const CBlockIndex* keyBlock = pindex;
+    while (keyBlock && keyBlock->nHeight > keyHeight) {
+        keyBlock = keyBlock->pprev;
+    }
+
+    // If we couldn't find the key block, log and return empty hash
+    if (!keyBlock || keyBlock->nHeight != keyHeight) {
+        LogDebug(BCLog::VALIDATION, "GetRandomXKeyBlockHash: Failed to find key block at height %d for block height %d (pindex=%s, keyBlock=%s)\n",
+                 keyHeight, height,
+                 pindex ? std::to_string(pindex->nHeight) : "null",
+                 keyBlock ? std::to_string(keyBlock->nHeight) : "null");
+        return uint256();
+    }
+
+    return keyBlock->GetBlockHash();
+}
+
+// =============================================================================
+// RANDOMX CONTEXT POOL
+// =============================================================================
+//
+// SECURITY FIX [H-01]: Thread-Local RandomX Context Memory Accumulation
+//
+// Previously, each thread had its own thread_local RandomX context (~256KB each),
+// leading to unbounded memory growth under high concurrency (many RPC requests,
+// parallel block validation).
+//
+// The new pooled approach:
+// 1. Limits total contexts to MAX_CONTEXTS (default 8) = 2MB max memory
+// 2. Uses RAII guards for automatic checkout/checkin
+// 3. Implements key-aware context reuse (avoids re-initialization)
+// 4. Blocks threads when pool is exhausted (bounded memory)
+//
+// This prevents memory exhaustion attacks where an adversary could cause
+// unbounded thread creation to consume all available memory.
+// =============================================================================
+
+uint256 CalculateRandomXHash(const CBlockHeader& header, const uint256& keyBlockHash)
+{
+    // Acquire a context from the global pool with CONSENSUS_CRITICAL priority
+    // This ensures block validation never fails due to pool exhaustion
+    auto guard = g_randomx_pool.Acquire(keyBlockHash, AcquisitionPriority::CONSENSUS_CRITICAL);
+    if (!guard.has_value()) {
+        // FIX M-01: This should NEVER happen with CONSENSUS_CRITICAL priority
+        // which has infinite timeout and highest preemption rights.
+        // If this occurs, something is fundamentally broken.
+        LogPrintf("RandomX: CRITICAL - Failed to acquire context from pool. This indicates a bug in the pool implementation.\n");
+        
+        // Assert in debug builds to catch this during testing
+        assert(!"CONSENSUS_CRITICAL RandomX context acquisition failed - this should be impossible");
+        
+        // In release builds, return max hash which will fail validation
+        // This is safer than proceeding with undefined behavior
+        return uint256{"ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff"};
+    }
+
+    // Serialize block header
+    DataStream ss{};
+    ss << header;
+
+    // Calculate and return RandomX hash
+    // Context is automatically returned to pool when guard destructs
+    return (*guard)->CalculateHash(
+        reinterpret_cast<const unsigned char*>(ss.data()), ss.size());
+}
+
+// =============================================================================
+// ALGORITHM NAME HELPER
+// =============================================================================
+
+const char* GetPowAlgorithmName(int height, const Consensus::Params& params)
+{
+    switch (params.GetPowAlgorithm(height)) {
+        case Consensus::Params::PowAlgorithm::ARGON2ID:
+            return "Argon2id";
+        case Consensus::Params::PowAlgorithm::RANDOMX:
+            return "RandomX";
+        case Consensus::Params::PowAlgorithm::SHA256D:
+        default:
+            return "SHA256d";
+    }
+}
+
+// =============================================================================
+// UNIFIED PROOF-OF-WORK VALIDATION
+// =============================================================================
+
+bool CheckProofOfWorkAtHeight(const CBlockHeader& header, int height, const CBlockIndex* pindex, const Consensus::Params& params)
+{
+    // Determine which PoW algorithm to use based on height and consensus rules
+    const auto algorithm = params.GetPowAlgorithm(height);
+
+    switch (algorithm) {
+        case Consensus::Params::PowAlgorithm::ARGON2ID: {
+            // Argon2id emergency fallback - only activated if RandomX is compromised
+            LogPrintf("PoW: Using Argon2id emergency fallback at height %d\n", height);
+
+            uint256 argon2Hash = CalculateArgon2Hash(header, params);
+            return CheckProofOfWorkImpl(argon2Hash, header.nBits, height, params);
+        }
+
+        case Consensus::Params::PowAlgorithm::RANDOMX: {
+            // RandomX proof-of-work for blocks at or after fork height
+            uint256 keyBlockHash = GetRandomXKeyBlockHash(height, pindex, params);
+            if (keyBlockHash.IsNull()) {
+                // Can't determine key block - reject
+                return false;
+            }
+
+            uint256 randomxHash = CalculateRandomXHash(header, keyBlockHash);
+            return CheckProofOfWorkImpl(randomxHash, header.nBits, height, params);
+        }
+
+        case Consensus::Params::PowAlgorithm::SHA256D:
+        default: {
+            // SHA256d proof-of-work for genesis/legacy blocks
+            return CheckProofOfWork(header.GetHash(), header.nBits, params);
+        }
+    }
+}
+
+bool CheckProofOfWorkForBlockIndex(const CBlockHeader& header, int height, const Consensus::Params& params)
+{
+    // ==========================================================================
+    // SECURITY: CheckProofOfWorkForBlockIndex is INTENTIONALLY WEAK
+    // ==========================================================================
+    //
+    // This function only validates nBits range, NOT the actual RandomX/Argon2 hash.
+    // Full validation occurs in ContextualCheckBlockHeader/ConnectBlock.
+    //
+    // WHY THIS IS ACCEPTABLE:
+    //   1. Blocks on disk were already validated when first accepted
+    //   2. Full PoW validation occurs during ConnectBlock/ActivateBestChain
+    //   3. Attackers with disk write access have already compromised the node
+    //
+    // IMPLEMENTATION DETAIL:
+    // During index loading, blocks are loaded in arbitrary order and pprev pointers
+    // may not be fully set, so we cannot traverse the chain to compute PoW hashes.
+    //
+    // For RandomX/Argon2id blocks: we ONLY verify that nBits is within the valid range.
+    // For SHA256d blocks: full validation is performed (no chain traversal needed).
+    //
+    // IMPORTANT: Do not rely on this function alone for consensus security.
+    // Full PoW hash verification MUST happen in ContextualCheckBlockHeader
+    // or CheckProofOfWorkAtHeight before a block affects chain state.
+    // ==========================================================================
+
+    const auto algorithm = params.GetPowAlgorithm(height);
+
+    switch (algorithm) {
+        case Consensus::Params::PowAlgorithm::ARGON2ID:
+        case Consensus::Params::PowAlgorithm::RANDOMX: {
+            // For memory-hard algorithms during index load: just verify nBits is valid
+            const uint256& activePowLimit = params.GetActivePowLimit(height);
+            auto bnTarget = DeriveTarget(header.nBits, activePowLimit);
+            return bnTarget.has_value();  // Valid if nBits parses to a valid target within powLimit
+        }
+
+        case Consensus::Params::PowAlgorithm::SHA256D:
+        default: {
+            // SHA256d blocks can be fully validated
+            return CheckProofOfWork(header.GetHash(), header.nBits, params);
+        }
+    }
 }

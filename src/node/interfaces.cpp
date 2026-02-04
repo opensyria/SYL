@@ -1,4 +1,4 @@
-// Copyright (c) 2018-present The Bitcoin Core developers
+// Copyright (c) 2018-2022 The OpenSY developers
 // Distributed under the MIT software license, see the accompanying
 // file COPYING or http://www.opensource.org/licenses/mit-license.php.
 
@@ -62,7 +62,7 @@
 #include <validation.h>
 #include <validationinterface.h>
 
-#include <bitcoin-build-config.h> // IWYU pragma: keep
+#include <opensy-build-config.h> // IWYU pragma: keep
 
 #include <any>
 #include <memory>
@@ -81,10 +81,8 @@ using interfaces::MakeSignalHandler;
 using interfaces::Mining;
 using interfaces::Node;
 using interfaces::WalletLoader;
-using kernel::ChainstateRole;
 using node::BlockAssembler;
 using node::BlockWaitOptions;
-using node::CoinbaseTx;
 using util::Join;
 
 namespace node {
@@ -463,7 +461,7 @@ public:
     {
         m_notifications->transactionRemovedFromMempool(tx, reason);
     }
-    void BlockConnected(const ChainstateRole& role, const std::shared_ptr<const CBlock>& block, const CBlockIndex* index) override
+    void BlockConnected(ChainstateRole role, const std::shared_ptr<const CBlock>& block, const CBlockIndex* index) override
     {
         m_notifications->blockConnected(role, kernel::MakeBlockInfo(index, block.get()));
     }
@@ -475,8 +473,7 @@ public:
     {
         m_notifications->updatedBlockTip();
     }
-    void ChainStateFlushed(const ChainstateRole& role, const CBlockLocator& locator) override
-    {
+    void ChainStateFlushed(ChainstateRole role, const CBlockLocator& locator) override {
         m_notifications->chainStateFlushed(role, locator);
     }
     std::shared_ptr<Chain::Notifications> m_notifications;
@@ -846,8 +843,7 @@ public:
     }
     bool hasAssumedValidChain() override
     {
-        LOCK(::cs_main);
-        return bool{chainman().CurrentChainstate().m_from_snapshot_blockhash};
+        return chainman().IsSnapshotActive();
     }
 
     NodeContext* context() override { return &m_node; }
@@ -889,14 +885,9 @@ public:
         return m_block_template->vTxSigOpsCost;
     }
 
-    CTransactionRef getCoinbaseRawTx() override
+    CTransactionRef getCoinbaseTx() override
     {
         return m_block_template->block.vtx[0];
-    }
-
-    CoinbaseTx getCoinbaseTx() override
-    {
-        return m_block_template->m_coinbase_tx;
     }
 
     std::vector<unsigned char> getCoinbaseCommitment() override
@@ -914,11 +905,13 @@ public:
         return TransactionMerklePath(m_block_template->block, 0);
     }
 
-    bool submitSolution(uint32_t version, uint32_t timestamp, uint32_t nonce, CTransactionRef coinbase) override
+bool submitSolution(uint32_t version, uint32_t timestamp, uint32_t nonce, CTransactionRef coinbase) override
     {
         AddMerkleRootAndCoinbase(m_block_template->block, std::move(coinbase), version, timestamp, nonce);
         return chainman().ProcessNewBlock(std::make_shared<const CBlock>(m_block_template->block), /*force_processing=*/true, /*min_pow_checked=*/true, /*new_block=*/nullptr);
     }
+
+
 
     std::unique_ptr<BlockTemplate> waitNext(BlockWaitOptions options) override
     {

@@ -1,18 +1,18 @@
 #!/usr/bin/env python3
-# Copyright (c) 2022-present The Bitcoin Core developers
+# Copyright (c) 2022 The OpenSY developers
 # Distributed under the MIT software license, see the accompanying
 # file COPYING or http://www.opensource.org/licenses/mit-license.php.
 
 from decimal import Decimal, getcontext
 
-from test_framework.test_framework import BitcoinTestFramework
+from test_framework.test_framework import OpenSYTestFramework
 from test_framework.util import (
     assert_greater_than_or_equal,
     assert_equal,
     find_vout_for_address,
 )
 
-class UnconfirmedInputTest(BitcoinTestFramework):
+class UnconfirmedInputTest(OpenSYTestFramework):
     def set_test_params(self):
         getcontext().prec=9
         self.setup_clean_chain = True

@@ -12,7 +12,6 @@
 
 # Only ignore unexpected patches
 *.patch
-!ci/test/*.patch
 !contrib/guix/patches/*.patch
 !depends/patches/**/*.patch
 
@@ -27,3 +26,125 @@ target/
 /guix-build-*
 
 /ci/scratch/
+.DS_Store
+**/.DS_Store
+
+# Mining logs and state
+mining_v2.log
+mining_state.json
+mining.log
+nohup.out
+mining_universal.log
+mine.log
+
+# Test/sanitizer output
+sanitizer_output.log
+test/config.ini
+
+# ===========================================
+# Mobile App Build Artifacts (Added Jan 2026)
+# ===========================================
+
+# Android
+mobile/android/.gradle/
+mobile/android/app/build/
+mobile/android/build/
+mobile/android/local.properties
+*.apk
+*.aab
+*.keystore
+*.jks
+
+# iOS
+mobile/ios/build/
+mobile/ios/DerivedData/
+mobile/ios/*.xcworkspace/xcuserdata/
+mobile/ios/*.xcodeproj/xcuserdata/
+mobile/ios/*.xcodeproj/project.xcworkspace/xcuserdata/
+mobile/ios/Pods/
+mobile/ios/Podfile.lock
+
+# Rust
+mobile/opensy-wallet-core/target/
+
+# Native miner logs
+tools/native-miner/logs/
+
+# Sensitive/placeholder files that shouldn't be committed
+# (google-services.json is a placeholder - replace with real one locally)
+# mobile/android/app/google-services.json
+
+# Firebase
+GoogleService-Info.plist
+
+# IDE
+.idea/
+*.iml
+
+# Temporary files
+*.log
+*.tmp
+*.temp
+
+# Private documentation
+doc/private/
+
+# Android release keystore
+mobile/android/release.keystore
+*.keystore
+# D-01 fix: Production environment secrets
+infrastructure/docker/.env.prod
+infrastructure/docker/.env.production
+infrastructure/**/.env.local
+infrastructure/**/.env.*.local
+**/.env.prod
+**/.env.production
+
+# ===========================================
+# Build Artifacts & Caches (QA Cleanup Jan 2026)
+# ===========================================
+
+# SDK/Web Vite caches
+**/node_modules/.vite/
+**/.vite/
+*.tsbuildinfo
+
+# Foundry/Solidity build outputs
+**/contracts/cache/
+**/contracts/out/
+**/contracts/lib/forge-std/
+*.sol.bak
+
+# Fuzz testing corpus (auto-generated)
+**/fuzz/corpus/
+
+# Rust target directories
+**/target/
+
+# Test result caches
+**/vitest/results.json
+
+# Static library outputs
+*.a
+
+# Node modules (all locations)
+node_modules/
+**/node_modules/
+web/wallet/node_modules/
+
+# Build outputs
+dist/
+**/dist/
+build/
+**/build/
+
+# Environment secrets
+.mainnet-keys/
+.wusdt-local/
+.aws-nodes.env
+**/.env.local
+**/.env.*.local
+
+# Pytest cache
+**/.pytest_cache/
+**/__pycache__/

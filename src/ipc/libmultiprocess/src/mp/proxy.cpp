@@ -1,4 +1,4 @@
-// Copyright (c) The Bitcoin Core developers
+// Copyright (c) The OpenSY developers
 // Distributed under the MIT software license, see the accompanying
 // file COPYING or http://www.opensource.org/licenses/mit-license.php.
 
@@ -102,17 +102,17 @@ Connection::~Connection()
     // The ProxyClient cleanup handlers are synchronous because they are fast
     // and don't do anything besides release capnp resources and reset state so
     // future calls to client methods immediately throw exceptions instead of
-    // trying to communicate across the socket. The synchronous callbacks set
+    // trying to communicating across the socket. The synchronous callbacks set
     // ProxyClient capability pointers to null, so new method calls on client
     // objects fail without triggering i/o or relying on event loop which may go
     // out of scope or trigger obscure capnp i/o errors.
     //
-    // The ProxyServer cleanup handlers call user defined destructors on the server
-    // object, which can run arbitrary blocking bitcoin code so they have to run
+    // The ProxySever cleanup handlers call user defined destructors on server
+    // object, which can run arbitrary blocking opensy code so they have to run
     // asynchronously in a different thread. The asynchronous cleanup functions
     // intentionally aren't started until after the synchronous cleanup
-    // functions run, so client objects are fully disconnected before bitcoin
-    // code in the destructors are run. This way if the bitcoin code tries to
+    // functions run, so client objects are fully disconnected before opensy
+    // code in the destructors are run. This way if the opensy code tries to
     // make client requests the requests will just fail immediately instead of
     // sending i/o or accessing the event loop.
     //
@@ -136,7 +136,7 @@ Connection::~Connection()
     //
     // Either way disconnect code runs in the event loop thread and called both
     // on clean and unclean shutdowns. In unclean shutdown case when the
-    // connection is broken, sync and async cleanup lists will be filled with
+    // connection is broken, sync and async cleanup lists will filled with
     // callbacks. In the clean shutdown case both lists will be empty.
     Lock lock{m_loop->m_mutex};
     while (!m_sync_cleanup_fns.empty()) {
@@ -181,7 +181,7 @@ void EventLoop::addAsyncCleanup(std::function<void()> fn)
     // order, and add cleanup callbacks to the end of the list so they can be
     // run starting from the beginning of the list.
     //
-    // In bitcoin core, running these callbacks in the right order is
+    // In opensy core, running these callbacks in the right order is
     // particularly important for the wallet process, because it uses blocking
     // shared_ptrs and requires Chain::Notification pointers owned by the node
     // process to be destroyed before the WalletLoader objects owned by the node

@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-# Copyright (c) 2015-present The Bitcoin Core developers
+# Copyright (c) 2015-2021 The OpenSY developers
 # Distributed under the MIT software license, see the accompanying
 # file COPYING or http://www.opensource.org/licenses/mit-license.php.
 """Test node responses to invalid network messages."""
@@ -26,7 +26,7 @@ from test_framework.p2p import (
     P2PDataStore,
     P2PInterface,
 )
-from test_framework.test_framework import BitcoinTestFramework
+from test_framework.test_framework import OpenSYTestFramework
 from test_framework.util import (
     assert_equal,
 )
@@ -54,7 +54,7 @@ class SenderOfAddrV2(P2PInterface):
         self.wait_until(lambda: 'sendaddrv2' in self.last_message)
 
 
-class InvalidMessagesTest(BitcoinTestFramework):
+class InvalidMessagesTest(OpenSYTestFramework):
     def set_test_params(self):
         self.num_nodes = 1
         self.setup_clean_chain = True
@@ -182,7 +182,7 @@ class InvalidMessagesTest(BitcoinTestFramework):
         node = self.nodes[0]
         conn = node.add_p2p_connection(SenderOfAddrV2())
 
-        # Make sure bitcoind signals support for ADDRv2, otherwise this test
+        # Make sure opensyd signals support for ADDRv2, otherwise this test
         # will bombard an old node with messages it does not recognize which
         # will produce unexpected results.
         conn.wait_for_sendaddrv2()
@@ -236,7 +236,7 @@ class InvalidMessagesTest(BitcoinTestFramework):
         self.test_addrv2('unrecognized network',
             [
                 'received: addrv2 (25 bytes)',
-                '9.9.9.9:8333',
+                '9.9.9.9:9633',
                 'Added 1 addresses',
             ],
             bytes.fromhex(
@@ -247,14 +247,14 @@ class InvalidMessagesTest(BitcoinTestFramework):
                 '99' +     # network type (unrecognized)
                 '02' +     # address length (COMPACTSIZE(2))
                 'ab' * 2 + # address
-                '208d' +   # port
+                '25a1' +   # port (9633 for OpenSY)
                 # this should be added:
                 now_hex +  # time
                 '01' +     # service flags, COMPACTSIZE(NODE_NETWORK)
                 '01' +     # network type (IPv4)
                 '04' +     # address length (COMPACTSIZE(4))
                 '09' * 4 + # address
-                '208d'))   # port
+                '25a1'))   # port (9633 for OpenSY)
 
     def test_oversized_msg(self, msg, size):
         msg_type = msg.msgtype.decode('ascii')
@@ -300,7 +300,7 @@ class InvalidMessagesTest(BitcoinTestFramework):
         # invalidate PoW
         while not blockheader.hash_hex.startswith('f'):
             blockheader.nNonce += 1
-        with self.nodes[0].assert_debug_log(['Misbehaving', 'header with invalid proof of work']):
+        with self.nodes[0].assert_debug_log(['Misbehaving', 'invalid header received']):
             peer.send_without_ping(msg_headers([blockheader]))
             peer.wait_for_disconnect()
 

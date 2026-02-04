@@ -1,9 +1,9 @@
-// Copyright (c) 2015-present The Bitcoin Core developers
+// Copyright (c) 2015-present The OpenSY developers
 // Distributed under the MIT software license, see the accompanying
 // file COPYING or http://www.opensource.org/licenses/mit-license.php.
 
-#ifndef BITCOIN_PREVECTOR_H
-#define BITCOIN_PREVECTOR_H
+#ifndef OPENSY_PREVECTOR_H
+#define OPENSY_PREVECTOR_H
 
 #include <algorithm>
 #include <cassert>
@@ -12,6 +12,7 @@
 #include <cstdlib>
 #include <cstring>
 #include <iterator>
+#include <new>
 #include <type_traits>
 #include <utility>
 
@@ -72,7 +73,11 @@ public:
         iterator operator-(size_type n) const { return iterator(ptr - n); }
         iterator& operator-=(size_type n) { ptr -= n; return *this; }
         bool operator==(iterator x) const { return ptr == x.ptr; }
-        auto operator<=>(iterator x) const { return ptr <=> x.ptr; }
+        bool operator!=(iterator x) const { return ptr != x.ptr; }
+        bool operator>=(iterator x) const { return ptr >= x.ptr; }
+        bool operator<=(iterator x) const { return ptr <= x.ptr; }
+        bool operator>(iterator x) const { return ptr > x.ptr; }
+        bool operator<(iterator x) const { return ptr < x.ptr; }
     };
 
     class const_iterator {
@@ -100,7 +105,11 @@ public:
         const_iterator operator-(size_type n) const { return const_iterator(ptr - n); }
         const_iterator& operator-=(size_type n) { ptr -= n; return *this; }
         bool operator==(const_iterator x) const { return ptr == x.ptr; }
-        auto operator<=>(const_iterator x) const { return ptr <=> x.ptr; }
+        bool operator!=(const_iterator x) const { return ptr != x.ptr; }
+        bool operator>=(const_iterator x) const { return ptr >= x.ptr; }
+        bool operator<=(const_iterator x) const { return ptr <= x.ptr; }
+        bool operator>(const_iterator x) const { return ptr > x.ptr; }
+        bool operator<(const_iterator x) const { return ptr < x.ptr; }
     };
 
 private:
@@ -118,6 +127,47 @@ private:
 
     static_assert(alignof(char*) % alignof(size_type) == 0 && sizeof(char*) % alignof(size_type) == 0, "size_type cannot have more restrictive alignment requirement than pointer");
     static_assert(alignof(char*) % alignof(T) == 0, "value_type T cannot have more restrictive alignment requirement than pointer");
+
+    /**
+     * Safe allocation wrapper that calls std::get_new_handler() on failure.
+     * This addresses the FIXME about malloc not calling new_handler.
+     * Performance: Only invokes handler on allocation failure (rare path).
+     */
+    static void* safe_malloc(size_t size) {
+        void* ptr = malloc(size);
+        if (!ptr) {
+            // Attempt to invoke new_handler before giving up
+            auto handler = std::get_new_handler();
+            if (handler) {
+                handler();
+                ptr = malloc(size);  // Retry after handler
+            }
+            if (!ptr) {
+                throw std::bad_alloc();
+            }
+        }
+        return ptr;
+    }
+
+    /**
+     * Safe realloc wrapper that calls std::get_new_handler() on failure.
+     */
+    static void* safe_realloc(void* old_ptr, size_t size) {
+        void* ptr = realloc(old_ptr, size);
+        if (!ptr && size > 0) {  // realloc(p, 0) may legitimately return nullptr
+            // Attempt to invoke new_handler before giving up
+            auto handler = std::get_new_handler();
+            if (handler) {
+                handler();
+                ptr = realloc(old_ptr, size);  // Retry after handler
+            }
+            if (!ptr) {
+                throw std::bad_alloc();
+            }
+        }
+        return ptr;
+    }
+
 
     T* direct_ptr(difference_type pos) { return reinterpret_cast<T*>(_union.direct) + pos; }
     const T* direct_ptr(difference_type pos) const { return reinterpret_cast<const T*>(_union.direct) + pos; }
@@ -137,15 +187,12 @@ private:
             }
         } else {
             if (!is_direct()) {
-                /* FIXME: Because malloc/realloc here won't call new_handler if allocation fails, assert
-                    success. These should instead use an allocator or new/delete so that handlers
-                    are called as necessary, but performance would be slightly degraded by doing so. */
-                _union.indirect_contents.indirect = static_cast<char*>(realloc(_union.indirect_contents.indirect, ((size_t)sizeof(T)) * new_capacity));
-                assert(_union.indirect_contents.indirect);
+                // Use safe_realloc which invokes new_handler on failure before throwing std::bad_alloc
+                _union.indirect_contents.indirect = static_cast<char*>(safe_realloc(_union.indirect_contents.indirect, ((size_t)sizeof(T)) * new_capacity));
                 _union.indirect_contents.capacity = new_capacity;
             } else {
-                char* new_indirect = static_cast<char*>(malloc(((size_t)sizeof(T)) * new_capacity));
-                assert(new_indirect);
+                // Use safe_malloc which invokes new_handler on failure before throwing std::bad_alloc
+                char* new_indirect = static_cast<char*>(safe_malloc(((size_t)sizeof(T)) * new_capacity));
                 T* src = direct_ptr(0);
                 T* dst = reinterpret_cast<T*>(new_indirect);
                 memcpy(dst, src, size() * sizeof(T));
@@ -443,6 +490,10 @@ public:
         return true;
     }
 
+    bool operator!=(const prevector<N, T, Size, Diff>& other) const {
+        return !(*this == other);
+    }
+
     bool operator<(const prevector<N, T, Size, Diff>& other) const {
         if (size() < other.size()) {
             return true;
@@ -483,4 +534,4 @@ public:
     }
 };
 
-#endif // BITCOIN_PREVECTOR_H
+#endif // OPENSY_PREVECTOR_H

@@ -1,14 +1,14 @@
 #!/usr/bin/env python3
 # Copyright (c) 2010 ArtForz -- public domain half-a-node
 # Copyright (c) 2012 Jeff Garzik
-# Copyright (c) 2010-present The Bitcoin Core developers
+# Copyright (c) 2010-2022 The OpenSY developers
 # Distributed under the MIT software license, see the accompanying
 # file COPYING or http://www.opensource.org/licenses/mit-license.php.
-"""Bitcoin test framework primitive and message structures
+"""OpenSY test framework primitive and message structures
 
 CBlock, CTransaction, CBlockHeader, CTxIn, CTxOut, etc....:
     data structures that should map to corresponding structures in
-    bitcoin/primitives
+    opensy/primitives
 
 msg_block, msg_tx, msg_headers, etc.:
     data structures that represent network messages
@@ -25,6 +25,7 @@ from io import BytesIO
 import math
 import random
 import socket
+import subprocess
 import time
 import unittest
 
@@ -41,8 +42,8 @@ MINIMUM_BLOCK_RESERVED_WEIGHT = 2000
 MAX_BLOOM_FILTER_SIZE = 36000
 MAX_BLOOM_HASH_FUNCS = 50
 
-COIN = 100000000  # 1 btc in satoshis
-MAX_MONEY = 21000000 * COIN
+COIN = 100000000  # 1 syl in qirshs
+MAX_MONEY = 21000000000 * COIN
 
 MAX_BIP125_RBF_SEQUENCE = 0xfffffffd  # Sequence number that is rbf-opt-in (BIP 125) and csv-opt-out (BIP 68)
 MAX_SEQUENCE_NONFINAL = 0xfffffffe  # Sequence number that is csv-opt-out (BIP 68)
@@ -88,9 +89,9 @@ TX_MIN_STANDARD_VERSION = 1
 TX_MAX_STANDARD_VERSION = 3
 
 MAGIC_BYTES = {
-    "mainnet": b"\xf9\xbe\xb4\xd9",
-    "testnet4": b"\x1c\x16\x3f\x28",
-    "regtest": b"\xfa\xbf\xb5\xda",
+    "mainnet": b"\x53\x59\x4c\x4d",
+    "testnet4": b"\x53\x59\x4c\x34",
+    "regtest": b"\x53\x59\x4c\x52",
     "signet": b"\x0a\x03\xcf\x40",
 }
 
@@ -288,7 +289,7 @@ def from_binary(cls, stream):
     return obj
 
 
-# Objects that map to bitcoind objects, which can be serialized/deserialized
+# Objects that map to opensyd objects, which can be serialized/deserialized
 
 
 class CAddress:
@@ -465,7 +466,7 @@ class CBlockLocator:
 
     def serialize(self):
         r = b""
-        r += (0).to_bytes(4, "little", signed=True)  # Bitcoin Core ignores the version field. Set it to 0.
+        r += (0).to_bytes(4, "little", signed=True)  # OpenSY ignores the version field. Set it to 0.
         r += ser_uint256_vector(self.vHave)
         return r
 
@@ -637,7 +638,7 @@ class CTransaction:
         if len(self.vin) == 0:
             flags = int.from_bytes(f.read(1), "little")
             # Not sure why flags can't be zero, but this
-            # matches the implementation in bitcoind
+            # matches the implementation in opensyd
             if (flags != 0):
                 self.vin = deser_vector(f, CTxIn)
                 self.vout = deser_vector(f, CTxOut)
@@ -852,6 +853,56 @@ class CBlock(CBlockHeader):
         target = uint256_from_compact(self.nBits)
         while self.hash_int > target:
             self.nNonce += 1
+
+    def solve_randomx(self, util_binary_path, key_block_hash):
+        """
+        Solve the block using RandomX proof-of-work via opensy-util grind-randomx.
+
+        Args:
+            util_binary_path: Path to opensy-util binary (or list of argv)
+            key_block_hash: The key block hash for RandomX (as hex string or uint256)
+
+        Returns:
+            True if solved successfully, False otherwise
+        """
+        # Serialize only the block header (80 bytes) to hex
+        header_hex = self._serialize_header().hex()
+
+        # Convert key_block_hash to hex string if needed
+        if isinstance(key_block_hash, int):
+            key_hex = "%064x" % key_block_hash
+        elif isinstance(key_block_hash, bytes):
+            key_hex = key_block_hash.hex()
+        else:
+            key_hex = str(key_block_hash)
+
+        # Build command
+        if isinstance(util_binary_path, list):
+            cmd = util_binary_path + ["grind-randomx", header_hex, key_hex]
+        else:
+            cmd = [util_binary_path, "grind-randomx", header_hex, key_hex]
+
+        try:
+            result = subprocess.run(cmd, capture_output=True, text=True, timeout=300)
+            if result.returncode == 0:
+                # Parse the solved header from output
+                solved_header_hex = result.stdout.strip()
+                solved_header_bytes = bytes.fromhex(solved_header_hex)
+                # Deserialize the solved header and extract nNonce
+                f = BytesIO(solved_header_bytes)
+                solved = CBlockHeader()
+                solved.deserialize(f)
+                self.nNonce = solved.nNonce
+                # Verify the merkle root and other fields are unchanged
+                assert self.hashMerkleRoot == solved.hashMerkleRoot
+                self.rehash()
+                return True
+            else:
+                return False
+        except subprocess.TimeoutExpired:
+            return False
+        except Exception:
+            return False
 
     # Calculate the block weight using witness and non-witness
     # serialization size (does NOT use sigops).
@@ -1169,7 +1220,7 @@ class msg_version:
         self.nStartingHeight = int.from_bytes(f.read(4), "little", signed=True)
 
         # Relay field is optional for version 70001 onwards
-        # But, unconditionally check it to match behaviour in bitcoind
+        # But, unconditionally check it to match behaviour in opensyd
         self.relay = int.from_bytes(f.read(1), "little")  # f.read(1) may return an empty b''
 
     def serialize(self):
@@ -1550,7 +1601,7 @@ class msg_headers:
         self.headers = headers if headers is not None else []
 
     def deserialize(self, f):
-        # comment in bitcoind indicates these should be deserialized as blocks
+        # comment in opensyd indicates these should be deserialized as blocks
         blocks = deser_vector(f, CBlock)
         for x in blocks:
             self.headers.append(CBlockHeader(x))

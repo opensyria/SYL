@@ -1,0 +1,148 @@
+{
+  "description": "BIP-174 PSBT Test Vectors for OpenSY",
+  "source": "https://github.com/bitcoin/bips/blob/master/bip-0174.mediawiki",
+  "version": "1.0.0",
+  "test_cases": [
+    {
+      "id": "valid_psbt_1",
+      "description": "Valid PSBT with one P2PKH input and two outputs",
+      "input_hex": "70736274ff0100750200000001268171371edff285e937adeea4b37b78000c0566cbb3ad64641713ca42171bf60000000000feffffff02d3dff505000000001976a914d0c59903c5bac2868760e90fd521a4665aa7652088teleac3b010000000000160014d85c2b71d0060b09c9886aeb815e50991dda124d00000000000100fda5010100000000010289a3c71eab4d20e0371bbba4cc698fa295c9463afa2e397f8533ccb62f9567e50100000017160014be18d152a9b012039daf3da7de4f53349eecb985ffffffff86f8aa43a71dff1448893a530a7237ef6b4608bbb2dd2d0171e63aec6a4890b40100000017160014fe3e9ef1a745e974d902c4355943abcb34bd5353ffffffff0200c2eb0b000000001976a91485cff1097fd9e008bb34af709c62197b38978a4888ac72fef84e2c00000017a914339725ba21efd62ac753a9bcd067d6c7a6a39d05870247304402202712be22e0270f394f568311dc7ca9a68970b8025fdd3b240229f07f8a5f3a240220018b38d7dcd314e734c9276bd6fb40f673325bc4baa144c800d2f2f02db2765c012103d2e15674941bad4a996372cb87e1856d3652606d98562fe39c5e9e7e413f210502483045022100d12b852d85dcd961d2f5f4ab660654df6eedcc794c0c33ce5cc309ffb5fce58d022067571a1afb6a755a4fa7b8b3f86b58d7e70e3c9e127a5c6b5f9f9cda1f79d6410121024ec1e9c34bbe3c11ae0fdd50c5dae8872b4a79c82df1aebc1fb13f7f5f7f19c600000000",
+      "expected_valid": true,
+      "comment": "Standard PSBT with UTXO data"
+    },
+    {
+      "id": "valid_psbt_2",
+      "description": "Valid PSBT with one P2WPKH input",
+      "input_hex": "70736274ff0100520200000001aad73931018bd25f84ae400b68df0b1b91ca4a8f5dfc5dca6f3b99b71c54a8b80000000000ffffffff0110270000000000001976a914e4b65e0a9e1f5e8ed1d66a8db60169c1f48e4e3d88ac0000000000010120955eea00000000001600145f275f436b09a8cc9a2eb2a2f528485c68a56323ffffffff",
+      "expected_valid": true,
+      "comment": "SegWit input PSBT"
+    },
+    {
+      "id": "invalid_magic",
+      "description": "Invalid PSBT - wrong magic bytes",
+      "input_hex": "00000000ff0100520200000001aad73931018bd25f84ae400b68df0b1b91ca4a8f5dfc5dca6f3b99b71c54a8b80000000000ffffffff0110270000000000001976a914e4b65e0a9e1f5e8ed1d66a8db60169c1f48e4e3d88ac0000000000010120955eea00000000001600145f275f436b09a8cc9a2eb2a2f528485c68a56323ffffffff",
+      "expected_valid": false,
+      "expected_error": "InvalidMagic",
+      "comment": "Magic bytes should be 0x70736274"
+    },
+    {
+      "id": "invalid_separator",
+      "description": "Invalid PSBT - missing separator",
+      "input_hex": "70736274010100520200000001aad73931018bd25f84ae400b68df0b1b91ca4a8f5dfc5dca6f3b99b71c54a8b80000000000ffffffff0110270000000000001976a914e4b65e0a9e1f5e8ed1d66a8db60169c1f48e4e3d88ac0000000000010120955eea00000000001600145f275f436b09a8cc9a2eb2a2f528485c68a56323ffffffff",
+      "expected_valid": false,
+      "expected_error": "InvalidSeparator",
+      "comment": "Separator byte should be 0xff after magic"
+    },
+    {
+      "id": "unsigned_tx_key",
+      "description": "PSBT with unsigned transaction",
+      "key_type": "0x00",
+      "key_description": "Unsigned transaction",
+      "expected_unique": true,
+      "comment": "Key 0x00 must be unique in global map"
+    },
+    {
+      "id": "witness_utxo",
+      "description": "PSBT with witness UTXO",
+      "key_type": "0x01",
+      "key_description": "Witness UTXO",
+      "per_input": true,
+      "comment": "Used for SegWit inputs"
+    },
+    {
+      "id": "non_witness_utxo",
+      "description": "PSBT with non-witness UTXO",
+      "key_type": "0x00",
+      "key_description": "Non-witness UTXO (full prev tx)",
+      "per_input": true,
+      "comment": "Used for legacy inputs"
+    },
+    {
+      "id": "partial_sig",
+      "description": "PSBT with partial signature",
+      "key_type": "0x02",
+      "key_description": "Partial signature",
+      "per_input": true,
+      "key_data": "public_key",
+      "value_data": "signature",
+      "comment": "Can have multiple partial sigs per input"
+    },
+    {
+      "id": "sighash_type",
+      "description": "PSBT with sighash type",
+      "key_type": "0x03",
+      "key_description": "Sighash type",
+      "per_input": true,
+      "value_format": "4-byte little-endian",
+      "valid_values": [1, 2, 3, 129, 130, 131],
+      "comment": "SIGHASH_ALL=1, SIGHASH_NONE=2, SIGHASH_SINGLE=3"
+    },
+    {
+      "id": "redeem_script",
+      "description": "PSBT with redeem script",
+      "key_type": "0x04",
+      "key_description": "Redeem script",
+      "per_input": true,
+      "comment": "For P2SH inputs"
+    },
+    {
+      "id": "witness_script",
+      "description": "PSBT with witness script",
+      "key_type": "0x05",
+      "key_description": "Witness script",
+      "per_input": true,
+      "comment": "For P2WSH inputs"
+    },
+    {
+      "id": "bip32_derivation",
+      "description": "PSBT with BIP32 derivation path",
+      "key_type": "0x06",
+      "key_description": "BIP32 derivation",
+      "per_input": true,
+      "key_data": "public_key",
+      "value_data": "fingerprint + path",
+      "comment": "For hardware wallet signing"
+    },
+    {
+      "id": "finalized_scriptsig",
+      "description": "PSBT with finalized scriptSig",
+      "key_type": "0x07",
+      "key_description": "Final scriptSig",
+      "per_input": true,
+      "comment": "Indicates input is fully signed (legacy)"
+    },
+    {
+      "id": "finalized_witness",
+      "description": "PSBT with finalized witness",
+      "key_type": "0x08",
+      "key_description": "Final witness",
+      "per_input": true,
+      "comment": "Indicates input is fully signed (SegWit)"
+    }
+  ],
+  "serialization_tests": [
+    {
+      "id": "round_trip_1",
+      "description": "Serialize and deserialize should produce identical bytes",
+      "input_hex": "70736274ff0100750200000001268171371edff285e937adeea4b37b78000c0566cbb3ad64641713ca42171bf60000000000feffffff02d3dff505000000001976a914d0c59903c5bac2868760e90fd521a4665aa7652088ac00e1f5050000000017a9143545e6e33b832c47050f24d3eeb93c9c03948bc787b32e1300000100fda5010100000000010289a3c71eab4d20e0371bbba4cc698fa295c9463afa2e397f8533ccb62f9567e50100000017160014be18d152a9b012039daf3da7de4f53349eecb985ffffffff86f8aa43a71dff1448893a530a7237ef6b4608bbb2dd2d0171e63aec6a4890b40100000017160014fe3e9ef1a745e974d902c4355943abcb34bd5353ffffffff0200c2eb0b000000001976a91485cff1097fd9e008bb34af709c62197b38978a4888ac72fef84e2c00000017a914339725ba21efd62ac753a9bcd067d6c7a6a39d05870247304402202712be22e0270f394f568311dc7ca9a68970b8025fdd3b240229f07f8a5f3a240220018b38d7dcd314e734c9276bd6fb40f673325bc4baa144c800d2f2f02db2765c012103d2e15674941bad4a996372cb87e1856d3652606d98562fe39c5e9e7e413f210502483045022100d12b852d85dcd961d2f5f4ab660654df6eedcc794c0c33ce5cc309ffb5fce58d022067571a1afb6a755a4fa7b8b3f86b58d7e70e3c9e127a5c6b5f9f9cda1f79d6410121024ec1e9c34bbe3c11ae0fdd50c5dae8872b4a79c82df1aebc1fb13f7f5f7f19c600000000"
+    }
+  ],
+  "opensy_specific_tests": [
+    {
+      "id": "opensy_network_1",
+      "description": "PSBT for OpenSY mainnet transaction",
+      "network": "mainnet",
+      "coin_type": 9633,
+      "derivation_path": "m/84'/9633'/0'/0/0",
+      "comment": "Standard OpenSY SegWit derivation"
+    },
+    {
+      "id": "opensy_testnet_1",
+      "description": "PSBT for OpenSY testnet transaction",
+      "network": "testnet",
+      "coin_type": 1,
+      "derivation_path": "m/84'/1'/0'/0/0",
+      "comment": "Testnet uses coin type 1"
+    }
+  ]
+}

@@ -4,13 +4,14 @@
 
 # Do not use generator expressions in test sources because the
 # SOURCES property is processed to gather test suite macros.
-add_executable(test_bitcoin
+add_executable(test_opensy
   main.cpp
   addrman_tests.cpp
   allocator_tests.cpp
   amount_tests.cpp
   argsman_tests.cpp
   arith_uint256_tests.cpp
+  audit_enhancement_tests.cpp
   banman_tests.cpp
   base32_tests.cpp
   base58_tests.cpp
@@ -18,6 +19,7 @@ add_executable(test_bitcoin
   bech32_tests.cpp
   bip32_tests.cpp
   bip324_tests.cpp
+  blake2b_tests.cpp
   blockchain_tests.cpp
   blockencodings_tests.cpp
   blockfilter_index_tests.cpp
@@ -28,6 +30,7 @@ add_executable(test_bitcoin
   caches_tests.cpp
   chain_tests.cpp
   chainstate_write_tests.cpp
+  check_tx_inputs_tests.cpp
   checkqueue_tests.cpp
   cluster_linearize_tests.cpp
   coins_tests.cpp
@@ -62,7 +65,6 @@ add_executable(test_bitcoin
   miniscript_tests.cpp
   minisketch_tests.cpp
   multisig_tests.cpp
-  bip328_tests.cpp
   net_peer_connection_tests.cpp
   net_peer_eviction_tests.cpp
   net_tests.cpp
@@ -77,9 +79,31 @@ add_executable(test_bitcoin
   pool_tests.cpp
   pow_tests.cpp
   prevector_tests.cpp
-  private_broadcast_tests.cpp
   raii_event_tests.cpp
   random_tests.cpp
+  randomx_tests.cpp
+  randomx_fork_transition_tests.cpp
+  randomx_mining_context_tests.cpp
+  randomx_pool_tests.cpp
+  randomx_reorg_tests.cpp
+  randomx_high_priority_tests.cpp
+  randomx_medium_priority_tests.cpp
+  randomx_adversarial_tests.cpp
+  randomx_pool_priority_tests.cpp
+  randomx_boundary_tests.cpp
+  argon2_fallback_tests.cpp
+  src20_tests.cpp
+  token_validation_tests.cpp
+  tokendb_disconnect_tests.cpp
+  randomx_init_failure_tests.cpp
+  token_empty_sender_tests.cpp
+  wallet_token_ordering_tests.cpp
+  randomx_starvation_tests.cpp
+  token_rate_limit_tests.cpp
+  token_concurrent_tests.cpp
+  rpc_rate_limit_tests.cpp
+  token_holder_perf_tests.cpp
+  token_fee_estimation_tests.cpp
   rbf_tests.cpp
   rest_tests.cpp
   result_tests.cpp
@@ -121,7 +145,6 @@ add_executable(test_bitcoin
   txvalidationcache_tests.cpp
   uint256_tests.cpp
   util_check_tests.cpp
-  util_expected_tests.cpp
   util_string_tests.cpp
   util_tests.cpp
   util_threadnames_tests.cpp
@@ -134,9 +157,11 @@ add_executable(test_bitcoin
   validationinterface_tests.cpp
   versionbits_tests.cpp
 )
+set_target_properties(test_opensy PROPERTIES OUTPUT_NAME test_opensy)
+set_target_properties(test_opensy PROPERTIES OUTPUT_NAME test_opensy)
 
 include(TargetDataSources)
-target_json_data_sources(test_bitcoin
+target_json_data_sources(test_opensy
   data/base58_encode_decode.json
   data/bip341_wallet_vectors.json
   data/blockfilters.json
@@ -147,20 +172,21 @@ target_json_data_sources(test_bitcoin
   data/tx_invalid.json
   data/tx_valid.json
 )
-target_raw_data_sources(test_bitcoin NAMESPACE test::data
+target_raw_data_sources(test_opensy NAMESPACE test::data
   data/asmap.raw
 )
 
-add_windows_application_manifest(test_bitcoin)
+add_windows_application_manifest(test_opensy)
 
-target_link_libraries(test_bitcoin
+# Get secp256k1 include paths without linking (it's already linked transitively via opensy_common)
+target_include_directories(test_opensy PRIVATE $<TARGET_PROPERTY:secp256k1,INTERFACE_INCLUDE_DIRECTORIES>)
+
+target_link_libraries(test_opensy
   core_interface
   test_util
-  bitcoin_cli
-  bitcoin_node
-  bitcoin_consensus
+  opensy_cli
+  opensy_node
   minisketch
-  secp256k1
   Boost::headers
   libevent::extra
 )
@@ -170,7 +196,20 @@ if(ENABLE_WALLET)
 endif()
 
 if(ENABLE_IPC)
-  add_subdirectory(${PROJECT_SOURCE_DIR}/src/ipc/test ipc)
+  target_link_libraries(opensy_ipc_test
+    PRIVATE
+      core_interface
+      univalue
+      Boost::headers
+  )
+
+  target_sources(test_opensy
+    PRIVATE
+      ipc_tests.cpp
+  )
+  target_link_libraries(test_opensy opensy_ipc_test opensy_ipc)
+
+  configure_file(.clang-tidy.in .clang-tidy USE_SOURCE_PERMISSIONS COPYONLY)
 endif()
 
 function(add_boost_test source_file)
@@ -188,7 +227,7 @@ function(add_boost_test source_file)
   )
   foreach(test_suite_name IN LISTS test_suite_macro)
     add_test(NAME ${test_suite_name}
-      COMMAND test_bitcoin --run_test=${test_suite_name} --catch_system_error=no --log_level=test_suite -- DEBUG_LOG_OUT
+      COMMAND test_opensy --run_test=${test_suite_name} --catch_system_error=no --log_level=test_suite -- DEBUG_LOG_OUT
     )
     set_property(TEST ${test_suite_name} PROPERTY
       SKIP_REGULAR_EXPRESSION
@@ -200,8 +239,8 @@ function(add_boost_test source_file)
 endfunction()
 
 function(add_all_test_targets)
-  get_target_property(test_source_dir test_bitcoin SOURCE_DIR)
-  get_target_property(test_sources test_bitcoin SOURCES)
+  get_target_property(test_source_dir test_opensy SOURCE_DIR)
+  get_target_property(test_sources test_opensy SOURCES)
   foreach(test_source ${test_sources})
     cmake_path(IS_RELATIVE test_source result)
     if(result)
@@ -213,4 +252,4 @@ endfunction()
 
 add_all_test_targets()
 
-install_binary_component(test_bitcoin INTERNAL)
+install_binary_component(test_opensy INTERNAL)

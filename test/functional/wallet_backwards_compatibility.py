@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-# Copyright (c) 2018-present The Bitcoin Core developers
+# Copyright (c) 2018-present The OpenSY developers
 # Distributed under the MIT software license, see the accompanying
 # file COPYING or http://www.opensource.org/licenses/mit-license.php.
 """Backwards compatibility functional test
@@ -19,7 +19,7 @@ import os
 import shutil
 
 from test_framework.blocktools import COINBASE_MATURITY
-from test_framework.test_framework import BitcoinTestFramework
+from test_framework.test_framework import OpenSYTestFramework
 from test_framework.descriptors import descsum_create
 from test_framework.messages import ser_string
 
@@ -31,7 +31,7 @@ from test_framework.util import (
 
 LAST_KEYPOOL_INDEX = 9 # Index of the last derived address with the keypool size of 10
 
-class BackwardsCompatibilityTest(BitcoinTestFramework):
+class BackwardsCompatibilityTest(OpenSYTestFramework):
     def set_test_params(self):
         self.setup_clean_chain = True
         self.num_nodes = 8
@@ -70,7 +70,7 @@ class BackwardsCompatibilityTest(BitcoinTestFramework):
     def split_version(self, node):
         major = node.version // 10000
         minor = (node.version % 10000) // 100
-        patch = (node.version % 100)
+        patch = (node.version % 20000)
         return (major, minor, patch)
 
     def major_version_equals(self, node, major):
@@ -100,7 +100,7 @@ class BackwardsCompatibilityTest(BitcoinTestFramework):
         bad_deriv_wallet.dumpwallet(dump_path)
         addr = None
         seed = None
-        with open(dump_path) as f:
+        with open(dump_path, encoding="utf8") as f:
             for line in f:
                 if f"hdkeypath=m/0'/0'/{LAST_KEYPOOL_INDEX}'" in line:
                     addr = line.split(" ")[4].split("=")[1]
@@ -123,7 +123,7 @@ class BackwardsCompatibilityTest(BitcoinTestFramework):
         os.unlink(dump_path)
         bad_deriv_wallet.dumpwallet(dump_path)
         bad_path_addr = None
-        with open(dump_path) as f:
+        with open(dump_path, encoding="utf8") as f:
             for line in f:
                 if f"hdkeypath={bad_deriv_path}" in line:
                     bad_path_addr = line.split(" ")[4].split("=")[1]

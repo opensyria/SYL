@@ -1,13 +1,12 @@
-// Copyright (c) 2018-present The Bitcoin Core developers
+// Copyright (c) 2018-present The OpenSY developers
 // Distributed under the MIT software license, see the accompanying
 // file COPYING or http://www.opensource.org/licenses/mit-license.php.
 
-#ifndef BITCOIN_INTERFACES_CHAIN_H
-#define BITCOIN_INTERFACES_CHAIN_H
+#ifndef OPENSY_INTERFACES_CHAIN_H
+#define OPENSY_INTERFACES_CHAIN_H
 
 #include <blockfilter.h>
 #include <common/settings.h>
-#include <kernel/chain.h> // IWYU pragma: export
 #include <node/types.h>
 #include <primitives/transaction.h>
 #include <util/result.h>
@@ -31,12 +30,10 @@ class Coin;
 class uint256;
 enum class MemPoolRemovalReason;
 enum class RBFTransactionState;
+enum class ChainstateRole;
 struct bilingual_str;
 struct CBlockLocator;
 struct FeeCalculation;
-namespace kernel {
-struct ChainstateRole;
-} // namespace kernel
 namespace node {
 struct NodeContext;
 } // namespace node
@@ -79,6 +76,22 @@ public:
     mutable bool found = false;
 };
 
+//! Block data sent with blockConnected, blockDisconnected notifications.
+struct BlockInfo {
+    const uint256& hash;
+    const uint256* prev_hash = nullptr;
+    int height = -1;
+    int file_number = -1;
+    unsigned data_pos = 0;
+    const CBlock* data = nullptr;
+    const CBlockUndo* undo_data = nullptr;
+    // The maximum time in the chain up to and including this block.
+    // A timestamp that can only move forward.
+    unsigned int chain_time_max{0};
+
+    BlockInfo(const uint256& hash LIFETIMEBOUND) : hash(hash) {}
+};
+
 //! The action to be taken after updating a settings value.
 //! WRITE indicates that the updated value must be written to disk,
 //! while SKIP_WRITE indicates that the change will be kept in memory-only
@@ -95,13 +108,13 @@ using SettingsUpdate = std::function<std::optional<interfaces::SettingsAction>(c
 //! estimate fees, and submit transactions.
 //!
 //! TODO: Current chain methods are too low level, exposing too much of the
-//! internal workings of the bitcoin node, and not being very convenient to use.
+//! internal workings of the opensy node, and not being very convenient to use.
 //! Chain methods should be cleaned up and simplified over time. Examples:
 //!
 //! * The initMessages() and showProgress() methods which the wallet uses to send
 //!   notifications to the GUI should go away when GUI and wallet can directly
 //!   communicate with each other without going through the node
-//!   (https://github.com/bitcoin/bitcoin/pull/15288#discussion_r253321096).
+//!   (https://github.com/opensyria/OpenSY/pull/15288#discussion_r253321096).
 //!
 //! * The handleRpc, registerRpcs, rpcEnableDeprecated methods and other RPC
 //!   methods can go away if wallets listen for HTTP requests on their own
@@ -113,7 +126,7 @@ using SettingsUpdate = std::function<std::optional<interfaces::SettingsAction>(c
 //!
 //! * `guessVerificationProgress` and similar methods can go away if rescan
 //!   logic moves out of the wallet, and the wallet just requests scans from the
-//!   node (https://github.com/bitcoin/bitcoin/issues/11756)
+//!   node (https://github.com/opensyria/OpenSY/issues/11756)
 class Chain
 {
 public:
@@ -208,14 +221,14 @@ public:
                                       node::TxBroadcast broadcast_method,
                                       std::string& err_string) = 0;
 
-    //! Calculate mempool ancestor and cluster counts for the given transaction.
-    virtual void getTransactionAncestry(const Txid& txid, size_t& ancestors, size_t& cluster_count, size_t* ancestorsize = nullptr, CAmount* ancestorfees = nullptr) = 0;
+    //! Calculate mempool ancestor and descendant counts for the given transaction.
+    virtual void getTransactionAncestry(const Txid& txid, size_t& ancestors, size_t& descendants, size_t* ancestorsize = nullptr, CAmount* ancestorfees = nullptr) = 0;
 
     //! For each outpoint, calculate the fee-bumping cost to spend this outpoint at the specified
-    //  feerate, including bumping its ancestors. For example, if the target feerate is 10sat/vbyte
-    //  and this outpoint refers to a mempool transaction at 3sat/vbyte, the bump fee includes the
-    //  cost to bump the mempool transaction to 10sat/vbyte (i.e. 7 * mempooltx.vsize). If that
-    //  transaction also has, say, an unconfirmed parent with a feerate of 1sat/vbyte, the bump fee
+    //  feerate, including bumping its ancestors. For example, if the target feerate is 10qrs/vbyte
+    //  and this outpoint refers to a mempool transaction at 3qrs/vbyte, the bump fee includes the
+    //  cost to bump the mempool transaction to 10qrs/vbyte (i.e. 7 * mempooltx.vsize). If that
+    //  transaction also has, say, an unconfirmed parent with a feerate of 1qrs/vbyte, the bump fee
     //  includes the cost to bump the parent (i.e. 9 * parentmempooltx.vsize).
     //
     //  If the outpoint comes from an unconfirmed transaction that is already above the target
@@ -308,10 +321,10 @@ public:
         virtual ~Notifications() = default;
         virtual void transactionAddedToMempool(const CTransactionRef& tx) {}
         virtual void transactionRemovedFromMempool(const CTransactionRef& tx, MemPoolRemovalReason reason) {}
-        virtual void blockConnected(const kernel::ChainstateRole& role, const BlockInfo& block) {}
+        virtual void blockConnected(ChainstateRole role, const BlockInfo& block) {}
         virtual void blockDisconnected(const BlockInfo& block) {}
         virtual void updatedBlockTip() {}
-        virtual void chainStateFlushed(const kernel::ChainstateRole& role, const CBlockLocator& locator) {}
+        virtual void chainStateFlushed(ChainstateRole role, const CBlockLocator& locator) {}
     };
 
     //! Options specifying which chain notifications are required.
@@ -376,9 +389,7 @@ public:
     //! removed transactions and already added new transactions.
     virtual void requestMempoolTransactions(Notifications& notifications) = 0;
 
-    //! Return true if an assumed-valid snapshot is in use. Note that this
-    //! returns true even after the snapshot is validated, until the next node
-    //! restart.
+    //! Return true if an assumed-valid chain is in use.
     virtual bool hasAssumedValidChain() = 0;
 
     //! Get internal node context. Useful for testing, but not
@@ -420,4 +431,4 @@ std::unique_ptr<Chain> MakeChain(node::NodeContext& node);
 
 } // namespace interfaces
 
-#endif // BITCOIN_INTERFACES_CHAIN_H
+#endif // OPENSY_INTERFACES_CHAIN_H

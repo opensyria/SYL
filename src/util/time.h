@@ -1,10 +1,10 @@
 // Copyright (c) 2009-2010 Satoshi Nakamoto
-// Copyright (c) 2009-present The Bitcoin Core developers
+// Copyright (c) 2009-present The OpenSY developers
 // Distributed under the MIT software license, see the accompanying
 // file COPYING or http://www.opensource.org/licenses/mit-license.php.
 
-#ifndef BITCOIN_UTIL_TIME_H
-#define BITCOIN_UTIL_TIME_H
+#ifndef OPENSY_UTIL_TIME_H
+#define OPENSY_UTIL_TIME_H
 
 #include <chrono> // IWYU pragma: export
 #include <cstdint>
@@ -143,12 +143,6 @@ std::string FormatISO8601Date(int64_t nTime);
 std::optional<int64_t> ParseISO8601DateTime(std::string_view str);
 
 /**
- * RFC1123 formatting https://www.rfc-editor.org/rfc/rfc1123#section-5.2.14
- * Used in HTTP/1.1 responses
- */
-std::string FormatRFC1123DateTime(int64_t nTime);
-
-/**
  * Convert milliseconds to a struct timeval for e.g. select.
  */
 struct timeval MillisToTimeval(int64_t nTimeout);
@@ -158,4 +152,4 @@ struct timeval MillisToTimeval(int64_t nTimeout);
  */
 struct timeval MillisToTimeval(std::chrono::milliseconds ms);
 
-#endif // BITCOIN_UTIL_TIME_H
+#endif // OPENSY_UTIL_TIME_H

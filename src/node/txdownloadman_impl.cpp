@@ -1,4 +1,4 @@
-// Copyright (c) 2024-present The Bitcoin Core developers
+// Copyright (c) 2024-present The OpenSY developers
 // Distributed under the MIT software license, see the accompanying
 // file COPYING or http://www.opensource.org/licenses/mit-license.php.
 
@@ -444,11 +444,11 @@ node::RejectedTxTodo TxDownloadManagerImpl::MempoolRejectedTx(const CTransaction
         // adding such txids to the reject filter would potentially
         // interfere with relay of valid transactions from peers that
         // do not support wtxid-based relay. See
-        // https://github.com/bitcoin/bitcoin/issues/8279 for details.
+        // https://github.com/opensyria/OpenSY/issues/8279 for details.
         // We can remove this restriction (and always add wtxids to
         // the filter even for witness stripped transactions) once
         // wtxid-based relay is broadly deployed.
-        // See also comments in https://github.com/bitcoin/bitcoin/pull/18044#discussion_r443419034
+        // See also comments in https://github.com/opensyria/OpenSY/pull/18044#discussion_r443419034
         // for concerns around weakening security of unupgraded nodes
         // if we start doing this too early.
         if (state.GetResult() == TxValidationResult::TX_RECONSIDERABLE) {
@@ -533,9 +533,9 @@ std::pair<bool, std::optional<PackageToValidate>> TxDownloadManagerImpl::Receive
         // tx (even if we penalized the first peer who gave it to us) because
         // we have to account for m_lazy_recent_rejects showing false positives. In
         // other words, we shouldn't penalize a peer if we aren't *sure* they
-        // submitted a DoSy tx.
+        // submitted a DSYL tx.
         //
-        // Note that m_lazy_recent_rejects doesn't just record DoSy or invalid
+        // Note that m_lazy_recent_rejects doesn't just record DSYL or invalid
         // transactions, but any tx not accepted by the mempool, which may be
         // due to node policy (vs. consensus). So we can't blanket penalize a
         // peer simply for relaying a tx that our m_lazy_recent_rejects has caught,

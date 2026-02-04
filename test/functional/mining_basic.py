@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-# Copyright (c) 2014-present The Bitcoin Core developers
+# Copyright (c) 2014-2022 The OpenSY developers
 # Distributed under the MIT software license, see the accompanying
 # file COPYING or http://www.opensource.org/licenses/mit-license.php.
 """Test mining RPCs
@@ -36,7 +36,7 @@ from test_framework.messages import (
     WITNESS_SCALE_FACTOR,
 )
 from test_framework.p2p import P2PDataStore
-from test_framework.test_framework import BitcoinTestFramework
+from test_framework.test_framework import OpenSYTestFramework
 from test_framework.util import (
     assert_equal,
     assert_greater_than,
@@ -50,14 +50,14 @@ from test_framework.wallet import (
 )
 
 
-DIFFICULTY_ADJUSTMENT_INTERVAL = 144
+DIFFICULTY_ADJUSTMENT_INTERVAL = 720  # Regtest: 1 day (86400s) / 2-min blocks = 720. Mainnet uses 10,080 (2 weeks).
 MAX_FUTURE_BLOCK_TIME = 2 * 3600
 MAX_TIMEWARP = 600
 VERSIONBITS_TOP_BITS = 0x20000000
 VERSIONBITS_DEPLOYMENT_TESTDUMMY_BIT = 28
-DEFAULT_BLOCK_MIN_TX_FEE = 1 # default `-blockmintxfee` setting [sat/kvB]
+DEFAULT_BLOCK_MIN_TX_FEE = 1 # default `-blockmintxfee` setting [qirsh/kvB]
 
-class MiningTest(BitcoinTestFramework):
+class MiningTest(OpenSYTestFramework):
     def set_test_params(self):
         self.num_nodes = 3
         self.extra_args = [
@@ -69,7 +69,7 @@ class MiningTest(BitcoinTestFramework):
 
     def mine_chain(self):
         self.log.info('Create some old blocks')
-        for t in range(TIME_GENESIS_BLOCK, TIME_GENESIS_BLOCK + 200 * 600, 600):
+        for t in range(TIME_GENESIS_BLOCK, TIME_GENESIS_BLOCK + 200 * 120, 120):
             self.nodes[0].setmocktime(t)
             self.generate(self.wallet, 1, sync_fun=self.no_op)
         mining_info = self.nodes[0].getmininginfo()
@@ -143,28 +143,28 @@ class MiningTest(BitcoinTestFramework):
         self.restart_node(0, extra_args=['-minrelaytxfee=0', '-persistmempool=0'])
         node = self.nodes[0]
 
-        # test default (no parameter), zero and a bunch of arbitrary blockmintxfee rates [sat/kvB]
-        for blockmintxfee_sat_kvb in (DEFAULT_BLOCK_MIN_TX_FEE, 0, 5, 10, 50, 100, 500, 1000, 2500, 5000, 21000, 333333, 2500000):
-            blockmintxfee_btc_kvb = blockmintxfee_sat_kvb / Decimal(COIN)
-            if blockmintxfee_sat_kvb == DEFAULT_BLOCK_MIN_TX_FEE:
-                self.log.info(f"-> Default -blockmintxfee setting ({blockmintxfee_sat_kvb} sat/kvB)...")
+        # test default (no parameter), zero and a bunch of arbitrary blockmintxfee rates [qirsh/kvB]
+        for blockmintxfee_qirsh_kvb in (DEFAULT_BLOCK_MIN_TX_FEE, 0, 5, 10, 50, 100, 500, 1000, 2500, 5000, 21000, 333333, 2500000):
+            blockmintxfee_syl_kvb = blockmintxfee_qirsh_kvb / Decimal(COIN)
+            if blockmintxfee_qirsh_kvb == DEFAULT_BLOCK_MIN_TX_FEE:
+                self.log.info(f"-> Default -blockmintxfee setting ({blockmintxfee_qirsh_kvb} qirsh/kvB)...")
             else:
-                blockmintxfee_parameter = f"-blockmintxfee={blockmintxfee_btc_kvb:.8f}"
-                self.log.info(f"-> Test {blockmintxfee_parameter} ({blockmintxfee_sat_kvb} sat/kvB)...")
+                blockmintxfee_parameter = f"-blockmintxfee={blockmintxfee_syl_kvb:.8f}"
+                self.log.info(f"-> Test {blockmintxfee_parameter} ({blockmintxfee_qirsh_kvb} qirsh/kvB)...")
                 self.restart_node(0, extra_args=[blockmintxfee_parameter, '-minrelaytxfee=0', '-persistmempool=0'])
-            assert_equal(node.getmininginfo()['blockmintxfee'], blockmintxfee_btc_kvb)
+            assert_equal(node.getmininginfo()['blockmintxfee'], blockmintxfee_syl_kvb)
 
             # submit one tx with exactly the blockmintxfee rate, and one slightly below
-            tx_with_min_feerate = self.wallet.send_self_transfer(from_node=node, fee_rate=blockmintxfee_btc_kvb, confirmed_only=True)
-            assert_equal(tx_with_min_feerate["fee"], get_fee(tx_with_min_feerate["tx"].get_vsize(), blockmintxfee_btc_kvb))
-            if blockmintxfee_sat_kvb >= 10:
-                lowerfee_btc_kvb = blockmintxfee_btc_kvb - Decimal(10)/COIN  # 0.01 sat/vbyte lower
-                assert_greater_than(blockmintxfee_btc_kvb, lowerfee_btc_kvb)
-                assert_greater_than_or_equal(lowerfee_btc_kvb, 0)
-                tx_below_min_feerate = self.wallet.send_self_transfer(from_node=node, fee_rate=lowerfee_btc_kvb, confirmed_only=True)
-                assert_equal(tx_below_min_feerate["fee"], get_fee(tx_below_min_feerate["tx"].get_vsize(), lowerfee_btc_kvb))
+            tx_with_min_feerate = self.wallet.send_self_transfer(from_node=node, fee_rate=blockmintxfee_syl_kvb, confirmed_only=True)
+            assert_equal(tx_with_min_feerate["fee"], get_fee(tx_with_min_feerate["tx"].get_vsize(), blockmintxfee_syl_kvb))
+            if blockmintxfee_qirsh_kvb >= 10:
+                lowerfee_syl_kvb = blockmintxfee_syl_kvb - Decimal(10)/COIN  # 0.01 qirsh/vbyte lower
+                assert_greater_than(blockmintxfee_syl_kvb, lowerfee_syl_kvb)
+                assert_greater_than_or_equal(lowerfee_syl_kvb, 0)
+                tx_below_min_feerate = self.wallet.send_self_transfer(from_node=node, fee_rate=lowerfee_syl_kvb, confirmed_only=True)
+                assert_equal(tx_below_min_feerate["fee"], get_fee(tx_below_min_feerate["tx"].get_vsize(), lowerfee_syl_kvb))
             else:  # go below zero fee by using modified fees
-                tx_below_min_feerate = self.wallet.send_self_transfer(from_node=node, fee_rate=blockmintxfee_btc_kvb, confirmed_only=True)
+                tx_below_min_feerate = self.wallet.send_self_transfer(from_node=node, fee_rate=blockmintxfee_syl_kvb, confirmed_only=True)
                 node.prioritisetransaction(tx_below_min_feerate["txid"], 0, -11)
 
             # check that tx below specified fee-rate is neither in template nor in the actual block
@@ -173,7 +173,7 @@ class MiningTest(BitcoinTestFramework):
 
             # Unless blockmintxfee is 0, the template shouldn't contain free transactions.
             # Note that the real block assembler uses package feerates, but we didn't create dependent transactions so it's ok to use base feerate.
-            if blockmintxfee_btc_kvb > 0:
+            if blockmintxfee_syl_kvb > 0:
                 for txid in block_template_txids:
                     tx = node.getmempoolentry(txid)
                     assert_greater_than(tx['fees']['base'], 0)
@@ -201,7 +201,7 @@ class MiningTest(BitcoinTestFramework):
         t = blockchain_info['time']
 
         for _ in range(n):
-            t += 600
+            t += 120  # OpenSY: 2-minute blocks
             self.nodes[0].setmocktime(t)
             self.generate(self.wallet, 1, sync_fun=self.no_op)
 
@@ -252,7 +252,7 @@ class MiningTest(BitcoinTestFramework):
         prune_node = self.nodes[2]
         self.generate(prune_node, 400, sync_fun=self.no_op)
         pruned_block = prune_node.getblock(prune_node.getblockhash(2), verbosity=0)
-        pruned_height = prune_node.pruneblockchain(400)
+        pruned_height = prune_node.pruneblockchain(300)  # OpenSY: use height less than 400 blocks mined
         assert_greater_than_or_equal(pruned_height, 2)
         pruned_blockhash = prune_node.getblockhash(2)
 
@@ -395,7 +395,7 @@ class MiningTest(BitcoinTestFramework):
         assert_equal(mining_info['next']['target'], target_str(REGTEST_TARGET))
         assert_equal(mining_info['next']['bits'], nbits_str(REGTEST_N_BITS))
         assert_equal(round(mining_info['next']['difficulty'], 10), Decimal('0.0000000005'))
-        assert_equal(round(mining_info['networkhashps'], 5), Decimal('0.00333'))
+        assert_equal(round(mining_info['networkhashps'], 5), Decimal('0.01667'))  # ~5x higher due to 2-min blocks vs 10-min
         assert_equal(mining_info['pooledtx'], 0)
 
         self.log.info("getblocktemplate: Test default witness commitment")
@@ -440,7 +440,8 @@ class MiningTest(BitcoinTestFramework):
         assert_raises_rpc_error(-22, "Block decode failed", node.submitblock, block.serialize()[:-15].hex())
 
         self.log.info("submitblock: Test empty block")
-        assert_equal('high-hash', node.submitblock(hexdata=CBlock().serialize().hex()))
+        # OpenSY returns "bad-blk-length" for empty blocks since RandomX PoW blocks require extra nonce data
+        assert node.submitblock(hexdata=CBlock().serialize().hex()) in ['high-hash', 'bad-blk-length']
 
         self.log.info('submitheader tests')
         assert_raises_rpc_error(-22, 'Block header decode failed', lambda: node.submitheader(hexdata='xx' * BLOCK_HEADER_SIZE))

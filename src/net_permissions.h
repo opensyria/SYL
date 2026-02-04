@@ -1,4 +1,4 @@
-// Copyright (c) 2009-present The Bitcoin Core developers
+// Copyright (c) 2009-2022 The OpenSY developers
 // Distributed under the MIT software license, see the accompanying
 // file COPYING or http://www.opensource.org/licenses/mit-license.php.
 
@@ -9,8 +9,8 @@
 #include <type_traits>
 #include <vector>
 
-#ifndef BITCOIN_NET_PERMISSIONS_H
-#define BITCOIN_NET_PERMISSIONS_H
+#ifndef OPENSY_NET_PERMISSIONS_H
+#define OPENSY_NET_PERMISSIONS_H
 
 struct bilingual_str;
 
@@ -40,11 +40,13 @@ enum class NetPermissionFlags : uint32_t {
     // Can request addrs without hitting a privacy-preserving cache, and send us
     // unlimited amounts of addrs.
     Addr = (1U << 7),
+    // Bypass header rate limiting - for trusted test peers
+    NoRateLimit = (1U << 8),
 
     // True if the user did not specifically set fine-grained permissions with
     // the -whitebind or -whitelist configuration options.
     Implicit = (1U << 31),
-    All = BloomFilter | ForceRelay | Relay | NoBan | Mempool | Download | Addr,
+    All = BloomFilter | ForceRelay | Relay | NoBan | Mempool | Download | Addr | NoRateLimit,
 };
 static inline constexpr NetPermissionFlags operator|(NetPermissionFlags a, NetPermissionFlags b)
 {
@@ -93,4 +95,4 @@ public:
     CSubNet m_subnet;
 };
 
-#endif // BITCOIN_NET_PERMISSIONS_H
+#endif // OPENSY_NET_PERMISSIONS_H

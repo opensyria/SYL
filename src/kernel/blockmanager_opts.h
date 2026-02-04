@@ -1,9 +1,9 @@
-// Copyright (c) 2022-present The Bitcoin Core developers
+// Copyright (c) 2022 The OpenSY developers
 // Distributed under the MIT software license, see the accompanying
 // file COPYING or http://www.opensource.org/licenses/mit-license.php.
 
-#ifndef BITCOIN_KERNEL_BLOCKMANAGER_OPTS_H
-#define BITCOIN_KERNEL_BLOCKMANAGER_OPTS_H
+#ifndef OPENSY_KERNEL_BLOCKMANAGER_OPTS_H
+#define OPENSY_KERNEL_BLOCKMANAGER_OPTS_H
 
 #include <dbwrapper.h>
 #include <kernel/notifications_interface.h>
@@ -33,4 +33,4 @@ struct BlockManagerOpts {
 
 } // namespace kernel
 
-#endif // BITCOIN_KERNEL_BLOCKMANAGER_OPTS_H
+#endif // OPENSY_KERNEL_BLOCKMANAGER_OPTS_H

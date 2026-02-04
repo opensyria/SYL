@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-# Copyright (c) 2014-present The Bitcoin Core developers
+# Copyright (c) 2014-2022 The OpenSY developers
 # Distributed under the MIT software license, see the accompanying
 # file COPYING or http://www.opensource.org/licenses/mit-license.php.
 """Test mempool re-org scenarios.
@@ -19,7 +19,7 @@ from test_framework.p2p import (
     P2PTxInvStore,
     p2p_lock,
 )
-from test_framework.test_framework import BitcoinTestFramework
+from test_framework.test_framework import OpenSYTestFramework
 from test_framework.util import assert_equal, assert_raises_rpc_error
 from test_framework.wallet import MiniWallet
 from test_framework.blocktools import (
@@ -30,7 +30,7 @@ from test_framework.blocktools import (
 # needs to be long enough to allow MTP to move arbitrarily forward
 FORK_LENGTH = 20
 
-class MempoolCoinbaseTest(BitcoinTestFramework):
+class MempoolCoinbaseTest(OpenSYTestFramework):
     def set_test_params(self):
         self.num_nodes = 2
         self.extra_args = [
@@ -130,7 +130,7 @@ class MempoolCoinbaseTest(BitcoinTestFramework):
         self.nodes[0].setmocktime(now)
 
         # Start with a 200 block chain
-        assert_equal(self.nodes[0].getblockcount(), 200)
+        assert_equal(self.nodes[0].getblockcount(), 200)  # OpenSY: shorter chain
 
         self.log.info("Add 4 coinbase utxos to the miniwallet")
         # Block 76 contains the first spendable coinbase txs.
@@ -164,7 +164,7 @@ class MempoolCoinbaseTest(BitcoinTestFramework):
         assert_raises_rpc_error(-26, "non-final", self.nodes[0].sendrawtransaction, timelock_tx)
 
         self.log.info("Broadcast and mine spend_2 and spend_3")
-        spend_2_id = wallet.sendrawtransaction(from_node=self.nodes[0], tx_hex=spend_2['hex'])
+        wallet.sendrawtransaction(from_node=self.nodes[0], tx_hex=spend_2['hex'])
         wallet.sendrawtransaction(from_node=self.nodes[0], tx_hex=spend_3['hex'])
         self.log.info("Generate a block")
         self.generate(self.nodes[0], 1)
@@ -172,7 +172,7 @@ class MempoolCoinbaseTest(BitcoinTestFramework):
         assert_raises_rpc_error(-26, 'non-final', self.nodes[0].sendrawtransaction, timelock_tx)
 
         self.log.info("Create spend_2_1 and spend_3_1")
-        spend_2_1 = wallet.create_self_transfer(utxo_to_spend=spend_2["new_utxo"], version=1)
+        spend_2_1 = wallet.create_self_transfer(utxo_to_spend=spend_2["new_utxo"])
         spend_3_1 = wallet.create_self_transfer(utxo_to_spend=spend_3["new_utxo"])
 
         self.log.info("Broadcast and mine spend_3_1")
@@ -210,24 +210,6 @@ class MempoolCoinbaseTest(BitcoinTestFramework):
         self.log.info("The time-locked transaction is now too immature and has been removed from the mempool")
         self.log.info("spend_3_1 has been re-orged out of the chain and is back in the mempool")
         assert_equal(set(self.nodes[0].getrawmempool()), {spend_1_id, spend_2_1_id, spend_3_1_id})
-
-        self.log.info("Reorg out enough blocks to get spend_2 back in the mempool, along with its child")
-
-        while (spend_2_id not in self.nodes[0].getrawmempool()):
-            b = self.nodes[0].getbestblockhash()
-            for node in self.nodes:
-                node.invalidateblock(b)
-
-        assert(spend_2_id in self.nodes[0].getrawmempool())
-        assert(spend_2_1_id in self.nodes[0].getrawmempool())
-
-        # Chain 10 more transactions off of spend_2_1
-        self.log.info("Give spend_2 some more descendants by creating a chain of 10 transactions spending from it")
-        parent_utxo = spend_2_1["new_utxo"]
-        for i in range(10):
-            tx = wallet.create_self_transfer(utxo_to_spend=parent_utxo, version=1)
-            self.nodes[0].sendrawtransaction(tx['hex'])
-            parent_utxo = tx["new_utxo"]
 
         self.log.info("Use invalidateblock to re-org back and make all those coinbase spends immature/invalid")
         b = self.nodes[0].getblockhash(first_block + 100)

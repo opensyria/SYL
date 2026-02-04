@@ -1,9 +1,9 @@
-// Copyright (c) 2023-present The Bitcoin Core developers
+// Copyright (c) 2023 The OpenSY developers
 // Distributed under the MIT software license, see the accompanying
 // file COPYING or http://www.opensource.org/licenses/mit-license.php.
 
-#ifndef BITCOIN_KERNEL_NOTIFICATIONS_INTERFACE_H
-#define BITCOIN_KERNEL_NOTIFICATIONS_INTERFACE_H
+#ifndef OPENSY_KERNEL_NOTIFICATIONS_INTERFACE_H
+#define OPENSY_KERNEL_NOTIFICATIONS_INTERFACE_H
 
 #include <cstdint>
 #include <variant>
@@ -62,4 +62,4 @@ public:
 };
 } // namespace kernel
 
-#endif // BITCOIN_KERNEL_NOTIFICATIONS_INTERFACE_H
+#endif // OPENSY_KERNEL_NOTIFICATIONS_INTERFACE_H

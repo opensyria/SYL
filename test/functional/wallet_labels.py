@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-# Copyright (c) 2016-present The Bitcoin Core developers
+# Copyright (c) 2016-2022 The OpenSY developers
 # Distributed under the MIT software license, see the accompanying
 # file COPYING or http://www.opensource.org/licenses/mit-license.php.
 """Test label RPCs.
@@ -13,12 +13,12 @@ from collections import defaultdict
 
 from test_framework.blocktools import COINBASE_MATURITY
 from test_framework.descriptors import descsum_create
-from test_framework.test_framework import BitcoinTestFramework
+from test_framework.test_framework import OpenSYTestFramework
 from test_framework.util import assert_equal, assert_raises_rpc_error
 from test_framework.wallet_util import test_address
 
 
-class WalletLabelsTest(BitcoinTestFramework):
+class WalletLabelsTest(OpenSYTestFramework):
     def set_test_params(self):
         self.setup_clean_chain = True
         self.num_nodes = 2
@@ -62,7 +62,7 @@ class WalletLabelsTest(BitcoinTestFramework):
         addr_info = node.getaddressinfo(address)
         assert_equal(addr_info.get('labels', []), [label_with_equals])
 
-        self.log.info("Test bitcoin-cli -named passes parameter containing '=' by position if it does not specify a known parameter name and is in a string position")
+        self.log.info("Test opensy-cli -named passes parameter containing '=' by position if it does not specify a known parameter name and is in a string position")
         equals_label = "my=label"
         result = node.cli("-named", "getnewaddress", equals_label).send_cli()
         address = result.strip()
@@ -84,10 +84,10 @@ class WalletLabelsTest(BitcoinTestFramework):
         # the same address, so we call twice to get two addresses w/50 each
         self.generatetoaddress(node, nblocks=1, address=node.getnewaddress(label='coinbase'))
         self.generatetoaddress(node, nblocks=COINBASE_MATURITY + 1, address=node.getnewaddress(label='coinbase'))
-        assert_equal(node.getbalance(), 100)
+        assert_equal(node.getbalance(), 20000)
 
         # there should be 2 address groups
-        # each with 1 address with a balance of 50 Bitcoins
+        # each with 1 address with a balance of 50 SYL
         address_groups = node.listaddressgroupings()
         assert_equal(len(address_groups), 2)
         # the addresses aren't linked now, but will be after we send to the
@@ -96,14 +96,16 @@ class WalletLabelsTest(BitcoinTestFramework):
         for address_group in address_groups:
             assert_equal(len(address_group), 1)
             assert_equal(len(address_group[0]), 3)
-            assert_equal(address_group[0][1], 50)
+            assert_equal(address_group[0][1], 10000)
             assert_equal(address_group[0][2], 'coinbase')
             linked_addresses.add(address_group[0][0])
 
-        # send 50 from each address to a third address not in this wallet
-        common_address = "msf4WtN1YQKXvNtvdFYt9JBnUD2FB41kjr"
+        # send from each address to a third address not in this wallet
+        # Use the full balance to ensure both UTXOs are used and addresses get linked
+        # with no change address created
+        common_address = self.nodes[1].getnewaddress()  # Use address from node 1 (not in node 0's wallet)
         node.sendmany(
-            amounts={common_address: 100},
+            amounts={common_address: 20000},  # Full balance (2 x 10,000 SYL coinbases)
             subtractfeefrom=[common_address],
             minconf=1,
         )
@@ -187,13 +189,13 @@ class WalletLabelsTest(BitcoinTestFramework):
         node.createwallet(wallet_name='watch_only', disable_private_keys=True)
         wallet_watch_only = node.get_wallet_rpc('watch_only')
         BECH32_VALID = {
-            '✔️_VER15_PROG40': 'bcrt10qqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqxkg7fn',
-            '✔️_VER16_PROG03': 'bcrt1sqqqqq8uhdgr',
-            '✔️_VER16_PROB02': 'bcrt1sqqqq4wstyw',
+            '✔️_VER15_PROG40': 'rsyl10qqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqmhjgw4',
+            '✔️_VER16_PROG03': 'rsyl1sqqqqqf880hn',
+            '✔️_VER16_PROB02': 'rsyl1sqqqqld67fu',
         }
         BECH32_INVALID = {
-            '❌_VER15_PROG41': 'bcrt1sqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqajlxj8',
-            '❌_VER16_PROB01': 'bcrt1sqq5r4036',
+            '❌_VER15_PROG41': 'rsyl1sqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqp4k9qn',
+            '❌_VER16_PROB01': 'rsyl1sqq9tgsu9',
         }
         for l in BECH32_VALID:
             ad = BECH32_VALID[l]

@@ -1,9 +1,9 @@
-// Copyright (c) 2022-present The Bitcoin Core developers
+// Copyright (c) 2022 The OpenSY developers
 // Distributed under the MIT software license, see the accompanying
 // file COPYING or http://www.opensource.org/licenses/mit-license.php.
 
-#ifndef BITCOIN_POLICY_TRUC_POLICY_H
-#define BITCOIN_POLICY_TRUC_POLICY_H
+#ifndef OPENSY_POLICY_TRUC_POLICY_H
+#define OPENSY_POLICY_TRUC_POLICY_H
 
 #include <consensus/amount.h>
 #include <policy/packages.h>
@@ -32,8 +32,9 @@ static constexpr int64_t TRUC_MAX_WEIGHT{TRUC_MAX_VSIZE * WITNESS_SCALE_FACTOR};
 /** Maximum sigop-adjusted virtual size of a tx which spends from an unconfirmed TRUC transaction. */
 static constexpr int64_t TRUC_CHILD_MAX_VSIZE{1000};
 static constexpr int64_t TRUC_CHILD_MAX_WEIGHT{TRUC_CHILD_MAX_VSIZE * WITNESS_SCALE_FACTOR};
-// These limits are within the default cluster limits.
-static_assert(TRUC_MAX_VSIZE + TRUC_CHILD_MAX_VSIZE <= DEFAULT_CLUSTER_SIZE_LIMIT_KVB * 1000);
+// These limits are within the default ancestor/descendant limits.
+static_assert(TRUC_MAX_VSIZE + TRUC_CHILD_MAX_VSIZE <= DEFAULT_ANCESTOR_SIZE_LIMIT_KVB * 1000);
+static_assert(TRUC_MAX_VSIZE + TRUC_CHILD_MAX_VSIZE <= DEFAULT_DESCENDANT_SIZE_LIMIT_KVB * 1000);
 
 /** Must be called for every transaction, even if not TRUC. Not strictly necessary for transactions
  * accepted through AcceptMultipleTransactions.
@@ -66,7 +67,7 @@ static_assert(TRUC_MAX_VSIZE + TRUC_CHILD_MAX_VSIZE <= DEFAULT_CLUSTER_SIZE_LIMI
 std::optional<std::pair<std::string, CTransactionRef>> SingleTRUCChecks(const CTxMemPool& pool, const CTransactionRef& ptx,
                                           const std::vector<CTxMemPoolEntry::CTxMemPoolEntryRef>& mempool_parents,
                                           const std::set<Txid>& direct_conflicts,
-                                          int64_t vsize) EXCLUSIVE_LOCKS_REQUIRED(pool.cs);
+                                          int64_t vsize);
 
 /** Must be called for every transaction that is submitted within a package, even if not TRUC.
  *
@@ -91,6 +92,6 @@ std::optional<std::pair<std::string, CTransactionRef>> SingleTRUCChecks(const CT
  * */
 std::optional<std::string> PackageTRUCChecks(const CTxMemPool& pool, const CTransactionRef& ptx, int64_t vsize,
                                            const Package& package,
-                                           const std::vector<CTxMemPoolEntry::CTxMemPoolEntryRef>& mempool_parents) EXCLUSIVE_LOCKS_REQUIRED(pool.cs);
+                                           const std::vector<CTxMemPoolEntry::CTxMemPoolEntryRef>& mempool_parents);
 
-#endif // BITCOIN_POLICY_TRUC_POLICY_H
+#endif // OPENSY_POLICY_TRUC_POLICY_H

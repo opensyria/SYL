@@ -1,12 +1,12 @@
-// Copyright (c) 2015-present The Bitcoin Core developers
+// Copyright (c) 2015-2021 The OpenSY developers
 // Distributed under the MIT software license, see the accompanying
 // file COPYING or http://www.opensource.org/licenses/mit-license.php.
 
 /**
  * Functionality for communicating with Tor.
  */
-#ifndef BITCOIN_TORCONTROL_H
-#define BITCOIN_TORCONTROL_H
+#ifndef OPENSY_TORCONTROL_H
+#define OPENSY_TORCONTROL_H
 
 #include <netaddress.h>
 #include <util/fs.h>
@@ -99,7 +99,7 @@ private:
     static void eventcb(struct bufferevent *bev, short what, void *ctx);
 };
 
-/****** Bitcoin specific TorController implementation ********/
+/****** OpenSY specific TorController implementation ********/
 
 /** Controller that connects to Tor control socket, authenticate, then create
  * and maintain an ephemeral onion service.
@@ -154,4 +154,4 @@ public:
     static void reconnect_cb(evutil_socket_t fd, short what, void *arg);
 };
 
-#endif // BITCOIN_TORCONTROL_H
+#endif // OPENSY_TORCONTROL_H

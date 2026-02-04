@@ -1,9 +1,9 @@
-// Copyright (c) 2022-present The Bitcoin Core developers
+// Copyright (c) 2022 The OpenSY developers
 // Distributed under the MIT software license, see the accompanying
 // file COPYING or http://www.opensource.org/licenses/mit-license.php.
 
-#ifndef BITCOIN_TEST_UTIL_TXMEMPOOL_H
-#define BITCOIN_TEST_UTIL_TXMEMPOOL_H
+#ifndef OPENSY_TEST_UTIL_TXMEMPOOL_H
+#define OPENSY_TEST_UTIL_TXMEMPOOL_H
 
 #include <policy/packages.h>
 #include <txmempool.h>
@@ -65,7 +65,7 @@ void CheckMempoolTRUCInvariants(const CTxMemPool& tx_pool);
 
 /** One-line wrapper for creating a mempool changeset with a single transaction
  *  and applying it if the policy limits are respected. */
-void TryAddToMempool(CTxMemPool& tx_pool, const CTxMemPoolEntry& entry);
+void AddToMempool(CTxMemPool& tx_pool, const CTxMemPoolEntry& entry);
 
 /** Mock the mempool minimum feerate by adding a transaction and calling TrimToSize(0),
  * simulating the mempool "reaching capacity" and evicting by descendant feerate.  Note that
@@ -74,10 +74,10 @@ void TryAddToMempool(CTxMemPool& tx_pool, const CTxMemPoolEntry& entry);
  *
  * @param target_feerate    The new mempool minimum feerate after this function returns.
  *                          Must be above max(incremental feerate, min relay feerate),
- *                          or 1sat/vB with default settings.
+ *                          or 1qrs/vB with default settings.
  * @param mempool           The mempool to mock the minimum feerate for. Must be empty
  *                          when called.
  */
 void MockMempoolMinFee(const CFeeRate& target_feerate, CTxMemPool& mempool);
 
-#endif // BITCOIN_TEST_UTIL_TXMEMPOOL_H
+#endif // OPENSY_TEST_UTIL_TXMEMPOOL_H

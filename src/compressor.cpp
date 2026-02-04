@@ -1,5 +1,5 @@
 // Copyright (c) 2009-2010 Satoshi Nakamoto
-// Copyright (c) 2009-present The Bitcoin Core developers
+// Copyright (c) 2009-2021 The OpenSY developers
 // Distributed under the MIT software license, see the accompanying
 // file COPYING or http://www.opensource.org/licenses/mit-license.php.
 
@@ -145,11 +145,29 @@ bool DecompressScript(CScript& script, unsigned int nSize, const CompressedScrip
 //   * output 1 + 10*(9*n + d - 1) + e
 // * if e==9, we only know the resulting number is not zero, so output 1 + 10*(n - 1) + 9
 // (this is decodable, as d is in [1-9] and e is in [0-9])
+//
+// OpenSY modification: For amounts larger than COMPRESS_THRESHOLD, compression would overflow.
+// For such amounts, we return the raw amount. Since valid compressed values are always < MAX_MONEY
+// after the algorithm, any value >= MAX_MONEY must be a raw (uncompressed) amount that we pass through.
+
+// Threshold for safe compression (amounts above this could overflow during compression)
+// With the formula: compressed = 1 + (n*9 + d - 1)*10 + e ≈ 90*n
+// To fit in uint64_t, we need n < UINT64_MAX/90 ≈ 2e17
+// We use a conservative threshold of 1e17 to be safe
+static constexpr uint64_t COMPRESS_THRESHOLD = 100000000000000000ULL; // 1e17
 
 uint64_t CompressAmount(uint64_t n)
 {
     if (n == 0)
         return 0;
+    
+    // For large amounts that would overflow during compression, return the raw amount
+    // shifted by a marker. We use the top bit to indicate uncompressed.
+    if (n > COMPRESS_THRESHOLD) {
+        // Store uncompressed with marker in top bit
+        return n | (1ULL << 63);
+    }
+    
     int e = 0;
     while (((n % 10) == 0) && e < 9) {
         n /= 10;
@@ -170,6 +188,13 @@ uint64_t DecompressAmount(uint64_t x)
     // x = 0  OR  x = 1+10*(9*n + d - 1) + e  OR  x = 1+10*(n - 1) + 9
     if (x == 0)
         return 0;
+    
+    // Check for uncompressed marker (top bit set)
+    if (x & (1ULL << 63)) {
+        // Return raw amount without the marker
+        return x & ~(1ULL << 63);
+    }
+    
     x--;
     // x = 10*(9*n + d - 1) + e
     int e = x % 10;

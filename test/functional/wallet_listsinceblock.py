@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-# Copyright (c) 2017-present The Bitcoin Core developers
+# Copyright (c) 2017-2022 The OpenSY developers
 # Distributed under the MIT software license, see the accompanying
 # file COPYING or http://www.opensource.org/licenses/mit-license.php.
 """Test the listsinceblock RPC."""
@@ -7,7 +7,7 @@
 from test_framework.address import key_to_p2wpkh
 from test_framework.blocktools import COINBASE_MATURITY
 from test_framework.descriptors import descsum_create
-from test_framework.test_framework import BitcoinTestFramework
+from test_framework.test_framework import OpenSYTestFramework
 from test_framework.messages import MAX_BIP125_RBF_SEQUENCE
 from test_framework.util import (
     assert_array_result,
@@ -19,7 +19,7 @@ from test_framework.wallet_util import generate_keypair
 
 from decimal import Decimal
 
-class ListSinceBlockTest(BitcoinTestFramework):
+class ListSinceBlockTest(OpenSYTestFramework):
     def set_test_params(self):
         self.num_nodes = 4
         self.setup_clean_chain = True
@@ -111,7 +111,7 @@ class ListSinceBlockTest(BitcoinTestFramework):
             self.nodes[0].listsinceblock(blockhash, blockheight + 1)['lastblock'])
         assert_equal(
             self.nodes[0].getblockhash(0),
-            self.nodes[0].listsinceblock(blockhash, blockheight + 1000)['lastblock'])
+            self.nodes[0].listsinceblock(blockhash, blockheight + 200000)['lastblock'])
         assert_raises_rpc_error(-8, "Invalid parameter",
             self.nodes[0].listsinceblock, blockhash, 0)
 
@@ -207,8 +207,8 @@ class ListSinceBlockTest(BitcoinTestFramework):
 
         Problematic case:
 
-        1. User 1 receives BTC in tx1 from utxo1 in block aa1.
-        2. User 2 receives BTC in tx2 from utxo1 (same) in block bb1
+        1. User 1 receives SYL in tx1 from utxo1 in block aa1.
+        2. User 2 receives SYL in tx2 from utxo1 (same) in block bb1
         3. User 1 sees 2 confirmations at block aa3.
         4. Reorg into bb chain.
         5. User 1 asks `listsinceblock aa3` and does not see that tx1 is now

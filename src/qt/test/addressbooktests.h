@@ -1,9 +1,9 @@
-// Copyright (c) 2018-present The Bitcoin Core developers
+// Copyright (c) 2018-2020 The OpenSY developers
 // Distributed under the MIT software license, see the accompanying
 // file COPYING or http://www.opensource.org/licenses/mit-license.php.
 
-#ifndef BITCOIN_QT_TEST_ADDRESSBOOKTESTS_H
-#define BITCOIN_QT_TEST_ADDRESSBOOKTESTS_H
+#ifndef OPENSY_QT_TEST_ADDRESSBOOKTESTS_H
+#define OPENSY_QT_TEST_ADDRESSBOOKTESTS_H
 
 #include <QObject>
 #include <QTest>
@@ -24,4 +24,4 @@ private Q_SLOTS:
     void addressBookTests();
 };
 
-#endif // BITCOIN_QT_TEST_ADDRESSBOOKTESTS_H
+#endif // OPENSY_QT_TEST_ADDRESSBOOKTESTS_H

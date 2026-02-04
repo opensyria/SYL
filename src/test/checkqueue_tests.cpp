@@ -1,4 +1,4 @@
-// Copyright (c) 2012-present The Bitcoin Core developers
+// Copyright (c) 2012-2022 The OpenSY developers
 // Distributed under the MIT software license, see the accompanying
 // file COPYING or http://www.opensource.org/licenses/mit-license.php.
 
@@ -28,9 +28,9 @@
 struct NoLockLoggingTestingSetup : public TestingSetup {
     NoLockLoggingTestingSetup()
 #ifdef DEBUG_LOCKCONTENTION
-        : TestingSetup{ChainType::MAIN, {.extra_args = { "-debugexclude=lock" } }} {}
+        : TestingSetup{ChainType::REGTEST, {.extra_args = { "-debugexclude=lock" } }} {}
 #else
-        : TestingSetup{ChainType::MAIN} {}
+        : TestingSetup{ChainType::REGTEST} {}
 #endif
 };
 

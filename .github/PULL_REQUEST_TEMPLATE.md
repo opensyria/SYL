@@ -1,43 +1,65 @@
-<!--
-*** Please remove the following help text before submitting: ***
+# Pull Request Template
 
-Pull requests without a rationale and clear improvement may be closed
-immediately.
+## Description
 
-GUI-related pull requests should be opened against
-https://github.com/bitcoin-core/gui
-first. See CONTRIBUTING.md
--->
+<!-- Describe your changes in detail. What problem does this PR solve? -->
 
-<!--
-Please provide clear motivation for your patch and explain how it improves
-Bitcoin Core user experience or Bitcoin Core developer experience
-significantly:
+## Type of Change
 
-* Any test improvements or new tests that improve coverage are always welcome.
-* All other changes should have accompanying unit tests (see `src/test/`) or
-  functional tests (see `test/`). Contributors should note which tests cover
-  modified code. If no tests exist for a region of modified code, new tests
-  should accompany the change.
-* Bug fixes are most welcome when they come with steps to reproduce or an
-  explanation of the potential issue as well as reasoning for the way the bug
-  was fixed.
-* Features are welcome, but might be rejected due to design or scope issues.
-  If a feature is based on a lot of dependencies, contributors should first
-  consider building the system outside of Bitcoin Core, if possible.
-* Refactoring changes are only accepted if they are required for a feature or
-  bug fix or otherwise improve developer experience significantly. For example,
-  most "code style" refactoring changes require a thorough explanation why they
-  are useful, what downsides they have and why they *significantly* improve
-  developer experience or avoid serious programming bugs. Note that code style
-  is often a subjective matter. Unless they are explicitly mentioned to be
-  preferred in the [developer notes](/doc/developer-notes.md), stylistic code
-  changes are usually rejected.
--->
+<!-- Put an 'x' in all boxes that apply -->
 
-<!--
-Bitcoin Core has a thorough review process and even the most trivial change
-needs to pass a lot of eyes and requires non-zero or even substantial time
-effort to review. There is a huge lack of active reviewers on the project, so
-patches often sit for a long time.
--->
+- [ ] Bug fix (non-breaking change fixing an issue)
+- [ ] New feature (non-breaking change adding functionality)
+- [ ] Breaking change (fix or feature causing existing functionality to change)
+- [ ] Consensus change (affects consensus rules - REQUIRES EXTRA REVIEW)
+- [ ] Documentation update
+- [ ] Refactoring (no functional changes)
+- [ ] Tests (adding or updating tests)
+- [ ] CI/Build (changes to build system or CI configuration)
+
+## Consensus Impact
+
+<!-- If this affects consensus, explain in detail -->
+
+- [ ] This PR does NOT affect consensus rules
+- [ ] This PR affects consensus and I have:
+  - [ ] Updated relevant tests
+  - [ ] Documented the change
+  - [ ] Considered backward compatibility
+
+## Testing
+
+<!-- Describe the tests you ran -->
+
+- [ ] All unit tests pass (`ctest`)
+- [ ] All functional tests pass (`test/functional/test_runner.py`)
+- [ ] I have added new tests for my changes
+- [ ] Manual testing performed (describe below)
+
+### Manual Testing Steps
+
+<!-- If applicable, describe manual testing steps -->
+
+## Checklist
+
+- [ ] My code follows the project's style guidelines
+- [ ] I have performed a self-review of my code
+- [ ] I have commented my code, particularly in hard-to-understand areas
+- [ ] I have made corresponding changes to the documentation
+- [ ] My changes generate no new warnings
+- [ ] I have added tests that prove my fix is effective or my feature works
+- [ ] New and existing unit tests pass locally with my changes
+
+## Related Issues
+
+<!-- Link any related issues here -->
+
+Fixes #
+
+## Screenshots (if applicable)
+
+<!-- Add screenshots to help explain your changes -->
+
+## Additional Notes
+
+<!-- Any additional information reviewers should know -->

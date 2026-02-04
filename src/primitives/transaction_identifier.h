@@ -1,20 +1,17 @@
-// Copyright (c) 2023-present The Bitcoin Core developers
+// Copyright (c) 2023-present The OpenSY developers
 // Distributed under the MIT software license, see the accompanying
 // file COPYING or https://opensource.org/license/mit.
 
-#ifndef BITCOIN_PRIMITIVES_TRANSACTION_IDENTIFIER_H
-#define BITCOIN_PRIMITIVES_TRANSACTION_IDENTIFIER_H
+#ifndef OPENSY_PRIMITIVES_TRANSACTION_IDENTIFIER_H
+#define OPENSY_PRIMITIVES_TRANSACTION_IDENTIFIER_H
 
 #include <attributes.h>
 #include <uint256.h>
 #include <util/types.h>
 
-#include <cstddef>
-#include <optional>
-#include <string>
-#include <string_view>
+#include <compare>
+#include <concepts>
 #include <tuple>
-#include <type_traits>
 #include <variant>
 
 /** transaction_identifier represents the two canonical transaction identifier
@@ -37,10 +34,11 @@ class transaction_identifier
 
 public:
     transaction_identifier() : m_wrapped{} {}
-    consteval explicit transaction_identifier(std::string_view hex_str) : m_wrapped{uint256{hex_str}} {}
 
     template <typename Other>
     bool operator==(const Other& other) const { return Compare(other) == 0; }
+    template <typename Other>
+    bool operator!=(const Other& other) const { return Compare(other) != 0; }
     template <typename Other>
     bool operator<(const Other& other) const { return Compare(other) < 0; }
 
@@ -93,4 +91,4 @@ public:
     }
 };
 
-#endif // BITCOIN_PRIMITIVES_TRANSACTION_IDENTIFIER_H
+#endif // OPENSY_PRIMITIVES_TRANSACTION_IDENTIFIER_H

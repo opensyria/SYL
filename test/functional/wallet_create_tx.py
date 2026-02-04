@@ -1,12 +1,12 @@
 #!/usr/bin/env python3
-# Copyright (c) 2018-present The Bitcoin Core developers
+# Copyright (c) 2018-2022 The OpenSY developers
 # Distributed under the MIT software license, see the accompanying
 # file COPYING or http://www.opensource.org/licenses/mit-license.php.
 
 from test_framework.messages import (
     tx_from_hex,
 )
-from test_framework.test_framework import BitcoinTestFramework
+from test_framework.test_framework import OpenSYTestFramework
 from test_framework.util import (
     assert_equal,
     assert_raises_rpc_error,
@@ -16,7 +16,7 @@ from test_framework.blocktools import (
 )
 
 
-class CreateTxWalletTest(BitcoinTestFramework):
+class CreateTxWalletTest(OpenSYTestFramework):
     def set_test_params(self):
         self.setup_clean_chain = True
         self.num_nodes = 1
@@ -28,7 +28,7 @@ class CreateTxWalletTest(BitcoinTestFramework):
     def run_test(self):
         self.log.info('Create some old blocks')
         self.nodes[0].setmocktime(TIME_GENESIS_BLOCK)
-        self.generate(self.nodes[0], 200)
+        self.generate(self.nodes[0], 200)  # OpenSY: fewer blocks for faster test
         self.nodes[0].setmocktime(0)
 
         self.test_anti_fee_sniping()
@@ -38,7 +38,7 @@ class CreateTxWalletTest(BitcoinTestFramework):
 
     def test_anti_fee_sniping(self):
         self.log.info('Check that we have some (old) blocks and that anti-fee-sniping is disabled')
-        assert_equal(self.nodes[0].getblockchaininfo()['blocks'], 200)
+        assert_equal(self.nodes[0].getblockchaininfo()['blocks'], 200)  # OpenSY: matches generated blocks
         txid = self.nodes[0].sendtoaddress(self.nodes[0].getnewaddress(), 1)
         tx = self.nodes[0].gettransaction(txid=txid, verbose=True)['decoded']
         assert_equal(tx['locktime'], 0)

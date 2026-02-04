@@ -1,19 +1,18 @@
 // Copyright (c) 2009-2010 Satoshi Nakamoto
-// Copyright (c) 2009-present The Bitcoin Core developers
+// Copyright (c) 2009-present The OpenSY developers
 // Distributed under the MIT software license, see the accompanying
 // file COPYING or http://www.opensource.org/licenses/mit-license.php.
 
 /**
  * Utilities for converting data from/to strings.
  */
-#ifndef BITCOIN_UTIL_STRENCODINGS_H
-#define BITCOIN_UTIL_STRENCODINGS_H
+#ifndef OPENSY_UTIL_STRENCODINGS_H
+#define OPENSY_UTIL_STRENCODINGS_H
 
-#include <crypto/hex_base.h>
+#include <crypto/hex_base.h> // IWYU pragma: export
 #include <span.h>
 #include <util/string.h>
 
-#include <algorithm>
 #include <array>
 #include <bit>
 #include <charconv>
@@ -21,8 +20,8 @@
 #include <cstdint>
 #include <limits>
 #include <optional>
-#include <string>
-#include <string_view>
+#include <string>      // IWYU pragma: export
+#include <string_view> // IWYU pragma: export
 #include <system_error>
 #include <type_traits>
 #include <vector>
@@ -170,18 +169,17 @@ constexpr inline bool IsSpace(char c) noexcept {
 /**
  * Convert string to integral type T. Leading whitespace, a leading +, or any
  * trailing character fail the parsing. The required format expressed as regex
- * is `-?[0-9]+` by default (or `-?[0-9a-fA-F]+` if base = 16).
- * The minus sign is only permitted for signed integer types.
+ * is `-?[0-9]+`. The minus sign is only permitted for signed integer types.
  *
  * @returns std::nullopt if the entire string could not be parsed, or if the
  *   parsed value is not in the range representable by the type T.
  */
 template <typename T>
-std::optional<T> ToIntegral(std::string_view str, size_t base = 10)
+std::optional<T> ToIntegral(std::string_view str)
 {
     static_assert(std::is_integral_v<T>);
     T result;
-    const auto [first_nonmatching, error_condition] = std::from_chars(str.data(), str.data() + str.size(), result, base);
+    const auto [first_nonmatching, error_condition] = std::from_chars(str.data(), str.data() + str.size(), result);
     if (first_nonmatching != str.data() + str.size() || error_condition != std::errc{}) {
         return std::nullopt;
     }
@@ -354,20 +352,6 @@ struct Hex {
 };
 } // namespace detail
 
-struct AsciiCaseInsensitiveKeyEqual {
-    bool operator()(std::string_view s1, std::string_view s2) const
-    {
-        return ToLower(s1) == ToLower(s2);
-    }
-};
-
-struct AsciiCaseInsensitiveHash {
-    size_t operator()(std::string_view s) const
-    {
-        return std::hash<std::string>{}(ToLower(s));
-    }
-};
-
 /**
  * ""_hex is a compile-time user-defined literal returning a
  * `std::array<std::byte>`, equivalent to ParseHex(). Variants provided:
@@ -414,4 +398,4 @@ inline auto operator""_hex_v_u8() { return std::vector<uint8_t>{UCharCast(str.by
 } // inline namespace hex_literals
 } // namespace util
 
-#endif // BITCOIN_UTIL_STRENCODINGS_H
+#endif // OPENSY_UTIL_STRENCODINGS_H

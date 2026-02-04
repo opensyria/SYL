@@ -97,18 +97,15 @@ ForEachMacros:
   - BOOST_FOREACH
 IfMacros:
   - KJ_IF_MAYBE
-IncludeBlocks:   Regroup
+IncludeBlocks:   Preserve
 IncludeCategories:
-  - Regex:           '^<bitcoin-build-config\.h>'
+  - Regex:           '^<opensy-build-config\.h>'
     Priority:        -1
     CaseSensitive:   true
   - Regex:           '^<boost/'
     Priority:        2
     CaseSensitive:   true
   - Regex:           '^<Q'
-    Priority:        2
-    CaseSensitive:   true
-  - Regex:           '^<zmq.h>$'
     Priority:        2
     CaseSensitive:   true
   - Regex:           '^<[^>.]*>'
@@ -145,7 +142,6 @@ LambdaBodyIndentation: Signature
 LineEnding:      DeriveLF
 MacroBlockBegin: ''
 MacroBlockEnd:   ''
-MainIncludeChar: AngleBracket
 MaxEmptyLinesToKeep: 2
 NamespaceIndentation: None
 ObjCBinPackProtocolList: Auto

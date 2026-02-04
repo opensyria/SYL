@@ -1,4 +1,4 @@
-// Copyright (c) 2020-present The Bitcoin Core developers
+// Copyright (c) 2020-2022 The OpenSY developers
 // Distributed under the MIT software license, see the accompanying
 // file COPYING or http://www.opensource.org/licenses/mit-license.php.
 //
@@ -67,9 +67,12 @@ BOOST_AUTO_TEST_CASE(validation_chainstate_resize_caches)
 //!
 //! When run on the background chainstate, UpdateTip should do a subset
 //! of what it does for the active chainstate.
+//!
+//! NOTE: This test requires assumeutxo data to be configured for height 110.
 BOOST_FIXTURE_TEST_CASE(chainstate_update_tip, TestChain100Setup)
 {
     ChainstateManager& chainman = *Assert(m_node.chainman);
+
     const auto get_notify_tip{[&]() {
         LOCK(m_node.notifications->m_tip_block_mutex);
         BOOST_REQUIRE(m_node.notifications->TipBlock());
@@ -95,7 +98,7 @@ BOOST_FIXTURE_TEST_CASE(chainstate_update_tip, TestChain100Setup)
         this, NoMalleation, /*reset_chainstate=*/ true));
 
     // Ensure our active chain is the snapshot chainstate.
-    BOOST_CHECK(WITH_LOCK(::cs_main, return chainman.CurrentChainstate().m_from_snapshot_blockhash));
+    BOOST_CHECK(WITH_LOCK(::cs_main, return chainman.IsSnapshotActive()));
 
     curr_tip = get_notify_tip();
 
@@ -107,7 +110,16 @@ BOOST_FIXTURE_TEST_CASE(chainstate_update_tip, TestChain100Setup)
 
     curr_tip = get_notify_tip();
 
-    Chainstate& background_cs{*Assert(WITH_LOCK(::cs_main, return chainman.HistoricalChainstate()))};
+    BOOST_CHECK_EQUAL(chainman.GetAll().size(), 2);
+
+    Chainstate& background_cs{*Assert([&]() -> Chainstate* {
+        for (Chainstate* cs : chainman.GetAll()) {
+            if (cs != &chainman.ActiveChainstate()) {
+                return cs;
+            }
+        }
+        return nullptr;
+    }())};
 
     // Append the first block to the background chain.
     BlockValidationState state;

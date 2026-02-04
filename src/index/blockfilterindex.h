@@ -1,9 +1,9 @@
-// Copyright (c) 2018-present The Bitcoin Core developers
+// Copyright (c) 2018-2022 The OpenSY developers
 // Distributed under the MIT software license, see the accompanying
 // file COPYING or http://www.opensource.org/licenses/mit-license.php.
 
-#ifndef BITCOIN_INDEX_BLOCKFILTERINDEX_H
-#define BITCOIN_INDEX_BLOCKFILTERINDEX_H
+#ifndef OPENSY_INDEX_BLOCKFILTERINDEX_H
+#define OPENSY_INDEX_BLOCKFILTERINDEX_H
 
 #include <attributes.h>
 #include <flatfile.h>
@@ -25,7 +25,9 @@ class BlockFilter;
 class CBlockIndex;
 enum class BlockFilterType : uint8_t;
 
-static const char* const DEFAULT_BLOCKFILTERINDEX = "0";
+// OpenSY: Enable basic block filters by default to support light clients (BIP 157/158)
+// This is critical for mobile wallet support in Syria where 95%+ use mobile internet
+static const char* const DEFAULT_BLOCKFILTERINDEX = "basic";
 
 /** Interval between compact filter checkpoints. See BIP 157. */
 static constexpr int CFCHECKPT_INTERVAL = 1000;
@@ -51,7 +53,7 @@ private:
 
     Mutex m_cs_headers_cache;
     /** cache of block hash to filter header, to avoid disk access when responding to getcfcheckpt. */
-    std::unordered_map<uint256, uint256, BlockHasher> m_headers_cache GUARDED_BY(m_cs_headers_cache);
+    std::unordered_map<uint256, uint256, FilterHeaderHasher> m_headers_cache GUARDED_BY(m_cs_headers_cache);
 
     // Last computed header to avoid disk reads on every new block.
     uint256 m_last_header{};
@@ -123,4 +125,4 @@ bool DestroyBlockFilterIndex(BlockFilterType filter_type);
 /** Destroy all open block filter indexes. */
 void DestroyAllBlockFilterIndexes();
 
-#endif // BITCOIN_INDEX_BLOCKFILTERINDEX_H
+#endif // OPENSY_INDEX_BLOCKFILTERINDEX_H

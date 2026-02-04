@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-# Copyright (c) 2015-present The Bitcoin Core developers
+# Copyright (c) 2015-2022 The OpenSY developers
 # Distributed under the MIT software license, see the accompanying
 # file COPYING or http://www.opensource.org/licenses/mit-license.php.
 """Test transaction signing using the signrawtransactionwithwallet RPC."""
@@ -10,7 +10,7 @@ from test_framework.blocktools import (
 from test_framework.address import (
     script_to_p2wsh,
 )
-from test_framework.test_framework import BitcoinTestFramework
+from test_framework.test_framework import OpenSYTestFramework
 from test_framework.util import (
     assert_equal,
     assert_raises_rpc_error,
@@ -36,7 +36,7 @@ from decimal import (
 RAW_TX = '020000000156b958f78e3f24e0b2f4e4db1255426b0902027cb37e3ddadb52e37c3557dddb0000000000ffffffff01c0a6b929010000001600149a2ee8c77140a053f36018ac8124a6ececc1668a00000000'
 
 
-class SignRawTransactionWithWalletTest(BitcoinTestFramework):
+class SignRawTransactionWithWalletTest(OpenSYTestFramework):
     def set_test_params(self):
         self.setup_clean_chain = True
         self.num_nodes = 2
@@ -84,7 +84,7 @@ class SignRawTransactionWithWalletTest(BitcoinTestFramework):
              'scriptPubKey': 'badbadbadbad'}
         ]
 
-        outputs = {'mpLQjfK79b7CCV4VMJWEWAj5Mpx8Up5zxB': 0.1}
+        outputs = {'fNvkyvYVnhhB7Yq6xbB8kANVHkq39QiSD9': 0.1}
 
         rawTx = self.nodes[0].createrawtransaction(inputs, outputs)
 
@@ -193,7 +193,7 @@ class SignRawTransactionWithWalletTest(BitcoinTestFramework):
         utxo1 = self.create_outpoints(self.nodes[0], outputs=[{address: 1}])[0]
         self.generate(self.nodes[0], 1)
         utxo2 = self.nodes[0].listunspent()[0]
-        amt = Decimal(1) + utxo2["amount"] - Decimal(0.00001)
+        amt = Decimal(1) + utxo2["amount"] - Decimal('0.001')
         tx = self.nodes[0].createrawtransaction(
             [{**utxo1, "sequence": 1},{"txid": utxo2["txid"], "vout": utxo2["vout"]}],
             [{self.nodes[0].getnewaddress(): amt}],
@@ -227,7 +227,7 @@ class SignRawTransactionWithWalletTest(BitcoinTestFramework):
         utxo1 = self.create_outpoints(self.nodes[0], outputs=[{address: 1}])[0]
         self.generate(self.nodes[0], 1)
         utxo2 = self.nodes[0].listunspent()[0]
-        amt = Decimal(1) + utxo2["amount"] - Decimal(0.00001)
+        amt = Decimal(1) + utxo2["amount"] - Decimal('0.001')
         tx = self.nodes[0].createrawtransaction(
             [utxo1, {"txid": utxo2["txid"], "vout": utxo2["vout"]}],
             [{self.nodes[0].getnewaddress(): amt}],

@@ -1,4 +1,4 @@
-// Copyright (c) 2010-present The Bitcoin Core developers
+// Copyright (c) 2010-2021 The OpenSY developers
 // Distributed under the MIT software license, see the accompanying
 // file COPYING or http://www.opensource.org/licenses/mit-license.php.
 
@@ -10,19 +10,16 @@
 //! dependencies. More complicated types should be defined in dedicated header
 //! files.
 
-#ifndef BITCOIN_NODE_TYPES_H
-#define BITCOIN_NODE_TYPES_H
+#ifndef OPENSY_NODE_TYPES_H
+#define OPENSY_NODE_TYPES_H
 
 #include <consensus/amount.h>
 #include <cstddef>
 #include <cstdint>
-#include <optional>
 #include <policy/policy.h>
-#include <primitives/transaction.h>
 #include <script/script.h>
 #include <uint256.h>
 #include <util/time.h>
-#include <vector>
 
 namespace node {
 enum class TransactionError {
@@ -67,10 +64,6 @@ struct BlockCreateOptions {
      * coinbase_max_additional_weight and coinbase_output_max_additional_sigops.
      */
     CScript coinbase_output_script{CScript() << OP_TRUE};
-    /**
-     * Whether to include an OP_0 as a dummy extraNonce in the template's coinbase
-     */
-    bool include_dummy_extranonce{false};
 };
 
 struct BlockWaitOptions {
@@ -107,53 +100,6 @@ struct BlockCheckOptions {
 };
 
 /**
- * Template containing all coinbase transaction fields that are set by our
- * miner code. Clients are expected to add their own outputs and typically
- * also expand the scriptSig.
- */
-struct CoinbaseTx {
-    /* nVersion */
-    uint32_t version;
-    /* nSequence for the only coinbase transaction input */
-    uint32_t sequence;
-    /**
-     * Prefix which needs to be placed at the beginning of the scriptSig.
-     * Clients may append extra data to this as long as the overall scriptSig
-     * size is 100 bytes or less, to avoid the block being rejected with
-     * "bad-cb-length" error.
-     *
-     * Currently with BIP 34, the prefix is guaranteed to be less than 8 bytes,
-     * but future soft forks could require longer prefixes.
-     */
-    CScript script_sig_prefix;
-    /**
-     * The first (and only) witness stack element of the coinbase input.
-     *
-     * Omitted for block templates without witness data.
-     *
-     * This is currently the BIP 141 witness reserved value, and can be chosen
-     * arbitrarily by the node, but future soft forks may constrain it.
-     */
-    std::optional<uint256> witness;
-    /**
-     * Block subsidy plus fees, minus any non-zero required_outputs.
-     *
-     * Currently there are no non-zero required_outputs, so block_reward_remaining
-     * is the entire block reward. See also required_outputs.
-     */
-    CAmount block_reward_remaining;
-    /*
-     * To be included as the last outputs in the coinbase transaction.
-     * Currently this is only the witness commitment OP_RETURN, but future
-     * softforks or a custom mining patch could add more.
-     *
-     * The dummy output that spends the full reward is excluded.
-     */
-    std::vector<CTxOut> required_outputs;
-    uint32_t lock_time;
-};
-
-/**
  * How to broadcast a local transaction.
  * Used to influence `BroadcastTransaction()` and its callers.
  */
@@ -162,11 +108,8 @@ enum class TxBroadcast : uint8_t {
     MEMPOOL_AND_BROADCAST_TO_ALL,
     /// Add the transaction to the mempool, but don't broadcast to anybody.
     MEMPOOL_NO_BROADCAST,
-    /// Omit the mempool and directly send the transaction via a few dedicated connections to
-    /// peers on privacy networks.
-    NO_MEMPOOL_PRIVATE_BROADCAST,
 };
 
 } // namespace node
 
-#endif // BITCOIN_NODE_TYPES_H
+#endif // OPENSY_NODE_TYPES_H

@@ -1,9 +1,9 @@
-// Copyright (c) The Bitcoin Core developers
+// Copyright (c) The OpenSY developers
 // Distributed under the MIT software license, see the accompanying
 // file COPYING or http://www.opensource.org/licenses/mit-license.php.
 
-#ifndef BITCOIN_TEST_UTIL_TIME_H
-#define BITCOIN_TEST_UTIL_TIME_H
+#ifndef OPENSY_TEST_UTIL_TIME_H
+#define OPENSY_TEST_UTIL_TIME_H
 
 #include <util/check.h>
 #include <util/time.h>
@@ -34,4 +34,4 @@ public:
     }
 };
 
-#endif // BITCOIN_TEST_UTIL_TIME_H
+#endif // OPENSY_TEST_UTIL_TIME_H

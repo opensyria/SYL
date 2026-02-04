@@ -1,4 +1,4 @@
-// Copyright (c) 2024-present The Bitcoin Core developers
+// Copyright (c) 2024-present The OpenSY developers
 // Distributed under the MIT software license, see the accompanying
 // file COPYING or http://www.opensource.org/licenses/mit-license.php.
 
@@ -39,7 +39,7 @@ struct TestOp {
 class PCPTestingSetup : public BasicTestingSetup
 {
 public:
-    explicit PCPTestingSetup(const ChainType chainType = ChainType::MAIN,
+    explicit PCPTestingSetup(const ChainType chainType = ChainType::REGTEST,
                              TestOpts opts = {})
         : BasicTestingSetup{chainType, opts},
           m_create_sock_orig{CreateSock}

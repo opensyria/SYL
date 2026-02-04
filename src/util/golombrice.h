@@ -1,9 +1,9 @@
-// Copyright (c) 2018-present The Bitcoin Core developers
+// Copyright (c) 2018-2022 The OpenSY developers
 // Distributed under the MIT software license, see the accompanying
 // file COPYING or http://www.opensource.org/licenses/mit-license.php.
 
-#ifndef BITCOIN_UTIL_GOLOMBRICE_H
-#define BITCOIN_UTIL_GOLOMBRICE_H
+#ifndef OPENSY_UTIL_GOLOMBRICE_H
+#define OPENSY_UTIL_GOLOMBRICE_H
 
 #include <util/fastrange.h>
 
@@ -42,4 +42,4 @@ uint64_t GolombRiceDecode(BitStreamReader<IStream>& bitreader, uint8_t P)
     return (q << P) + r;
 }
 
-#endif // BITCOIN_UTIL_GOLOMBRICE_H
+#endif // OPENSY_UTIL_GOLOMBRICE_H

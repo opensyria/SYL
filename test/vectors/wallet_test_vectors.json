@@ -1,0 +1,241 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "OpenSY Wallet Test Vectors",
+  "description": "Cross-platform test vectors for validating wallet implementations",
+  "version": "1.0.0",
+  "created": "2026-01-02",
+  "network": "mainnet",
+  "constants": {
+    "slip44_coin_type": 9633,
+    "legacy_address_version": 35,
+    "legacy_address_prefix": "F",
+    "segwit_hrp": "syl",
+    "bip44_purpose": 44,
+    "bip84_purpose": 84
+  },
+  "mnemonics": [
+    {
+      "id": "mnemonic_1",
+      "description": "12-word mnemonic for basic wallet operations",
+      "words": 12,
+      "mnemonic": "abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon about",
+      "passphrase": "",
+      "seed_hex": "5eb00bbddcf069084889a8ab9155568165f5c453ccb85e70811aaed6f6da5fc19a5ac40b389cd370d086206dec8aa6c43daea6690f20ad3d8d48b2d2ce9e38e4",
+      "bip32_root_key": "xprv9s21ZrQH143K3GJpoapnV8SFfuZcEEb1qzBsMTqEPJpRjLiPEWP4gANJzNqM1AzzpQmWHvYVhPfPpVqfx8xPbxvKGAZJfRLpLJAiKRd5whe",
+      "derivation_paths": {
+        "bip44_account0": "m/44'/9633'/0'",
+        "bip84_account0": "m/84'/9633'/0'"
+      }
+    },
+    {
+      "id": "mnemonic_2",
+      "description": "24-word mnemonic with passphrase",
+      "words": 24,
+      "mnemonic": "abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon art",
+      "passphrase": "OPENSY",
+      "seed_hex": "note: compute from mnemonic + passphrase using PBKDF2-HMAC-SHA512",
+      "comment": "Used for testing passphrase-protected wallets"
+    },
+    {
+      "id": "mnemonic_3",
+      "description": "Arabic mnemonic test (if BIP39 Arabic wordlist supported)",
+      "words": 12,
+      "mnemonic": "أبجد أبجد أبجد أبجد أبجد أبجد أبجد أبجد أبجد أبجد أبجد أبجد",
+      "note": "Placeholder - Arabic BIP39 wordlist is non-standard"
+    }
+  ],
+  "addresses": {
+    "legacy": [
+      {
+        "id": "legacy_1",
+        "description": "First receive address from mnemonic_1",
+        "derivation_path": "m/44'/9633'/0'/0/0",
+        "address": "FDKNcgrrH6kU8mnwirMg8vJKiG1oG5CWDn"
+      },
+      {
+        "id": "legacy_2", 
+        "description": "Second receive address from mnemonic_1",
+        "derivation_path": "m/44'/9633'/0'/0/1",
+        "address": "FG1TYs82DzAphYdEghC8VDd3yzPz1rPapN"
+      },
+      {
+        "id": "legacy_3",
+        "description": "Third receive address from mnemonic_1",
+        "derivation_path": "m/44'/9633'/0'/0/2",
+        "address": "FQW8Kz34kmQzFFmtVjV4tVTPKTNAw1YRFy"
+      },
+      {
+        "id": "legacy_change",
+        "description": "First change address from mnemonic_1",
+        "derivation_path": "m/44'/9633'/0'/1/0",
+        "address": "FHpGBydGHm2dLxv6sWxiuaq1TeEd42YYGS"
+      }
+    ],
+    "segwit": [
+      {
+        "id": "segwit_1",
+        "description": "First native SegWit (P2WPKH) address from mnemonic_1",
+        "derivation_path": "m/84'/9633'/0'/0/0",
+        "address": "syl1qz8c94lfzv5mvm8htrvzcdfdtcjaxgv4lv9yn9x6"
+      },
+      {
+        "id": "segwit_2",
+        "description": "Second native SegWit address from mnemonic_1",
+        "derivation_path": "m/84'/9633'/0'/0/1",
+        "address": "syl1qqll6tggsm8npx50vymqcchd46j97hz6ksagwq4p"
+      },
+      {
+        "id": "segwit_3",
+        "description": "Third native SegWit address from mnemonic_1",
+        "derivation_path": "m/84'/9633'/0'/0/2",
+        "address": "syl1qr3d2y6q2gxshq9fflly5nrk368d3nna2swhs626"
+      }
+    ],
+    "validation": [
+      {
+        "address": "FaKe1nVaL1dAdDrEsS12345",
+        "valid": false,
+        "reason": "Invalid checksum"
+      },
+      {
+        "address": "1BvBMSEYstWetqTFn5Au4m4GFg7xJaNVN2",
+        "valid": false,
+        "reason": "Bitcoin address, not OpenSY (wrong version byte)"
+      },
+      {
+        "address": "bc1qw508d6qejxtdg4y5r3zarvary0c5xw7kv8f3t4",
+        "valid": false,
+        "reason": "Bitcoin bech32, not OpenSY (wrong HRP)"
+      },
+      {
+        "address": "syl1qw508d6qejxtdg4y5r3zarvary0c5xw7k",
+        "valid": false,
+        "reason": "Incomplete bech32 (truncated)"
+      }
+    ]
+  },
+  "transactions": [
+    {
+      "id": "tx_simple_send",
+      "description": "Simple single-input single-output transaction",
+      "inputs": [
+        {
+          "txid": "note: use testnet transaction",
+          "vout": 0,
+          "amount_syl": "100.00000000",
+          "derivation_path": "m/84'/9633'/0'/0/0"
+        }
+      ],
+      "outputs": [
+        {
+          "address": "syl1destinationaddress",
+          "amount_syl": "99.99990000"
+        }
+      ],
+      "fee_syl": "0.00010000",
+      "comment": "10,000 qirsh fee (0.0001 SYL)"
+    },
+    {
+      "id": "tx_multi_output",
+      "description": "Single input, multiple outputs with change",
+      "inputs": [
+        {
+          "txid": "note: use testnet transaction",
+          "vout": 0,
+          "amount_syl": "1000.00000000"
+        }
+      ],
+      "outputs": [
+        {
+          "address": "syl1recipient1",
+          "amount_syl": "500.00000000"
+        },
+        {
+          "address": "syl1recipient2",
+          "amount_syl": "300.00000000"
+        },
+        {
+          "address": "syl1changeaddress",
+          "amount_syl": "199.99980000",
+          "is_change": true
+        }
+      ],
+      "fee_syl": "0.00020000"
+    }
+  ],
+  "signatures": [
+    {
+      "id": "sig_1",
+      "description": "ECDSA signature verification test",
+      "message_hash_hex": "0000000000000000000000000000000000000000000000000000000000000001",
+      "private_key_hex": "note: derive from mnemonic_1 path m/84'/9633'/0'/0/0",
+      "signature_der_hex": "note: compute signature",
+      "public_key_hex": "note: derive from private key",
+      "valid": true
+    },
+    {
+      "id": "sig_invalid",
+      "description": "Invalid signature (wrong message)",
+      "message_hash_hex": "0000000000000000000000000000000000000000000000000000000000000002",
+      "signature_der_hex": "same signature as sig_1",
+      "public_key_hex": "same public key as sig_1",
+      "valid": false,
+      "reason": "Signature was for different message"
+    }
+  ],
+  "encryption": [
+    {
+      "id": "enc_wallet_file",
+      "description": "Wallet file encryption with ChaCha20-Poly1305 + Argon2id KDF",
+      "password": "testpassword123",
+      "salt_hex": "0102030405060708091011121314151617181920212223242526272829303132",
+      "argon2id_params": {
+        "memory_cost_kb": 65536,
+        "time_cost": 3,
+        "parallelism": 4
+      },
+      "derived_key_hex": "note: compute from password + salt using Argon2id",
+      "plaintext_hex": "48656c6c6f204f70656e5359",
+      "nonce_hex": "000000000000000000000000",
+      "ciphertext_hex": "note: compute ChaCha20-Poly1305 encryption",
+      "tag_hex": "note: authentication tag"
+    }
+  ],
+  "electrum_protocol": [
+    {
+      "id": "scripthash_legacy",
+      "description": "Electrum script hash for legacy P2PKH address",
+      "address": "FxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxNOTE",
+      "script_hex": "76a914<pubkey_hash>88ac",
+      "scripthash_hex": "note: SHA256 of script, reversed for Electrum",
+      "comment": "Electrum uses reversed SHA256 of scriptPubKey"
+    },
+    {
+      "id": "scripthash_segwit",
+      "description": "Electrum script hash for native SegWit address",
+      "address": "syl1xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxNOTE",
+      "script_hex": "0014<pubkey_hash>",
+      "scripthash_hex": "note: SHA256 of script, reversed for Electrum"
+    }
+  ],
+  "notes": {
+    "qirsh_definition": "1 SYL = 100,000,000 qirsh (same ratio as BTC/satoshi)",
+    "network_ports": {
+      "p2p": 9633,
+      "rpc": 9632,
+      "electrumx": 50002
+    },
+    "implementation_notes": [
+      "All addresses must validate with OpenSY network parameters",
+      "Legacy addresses start with 'F' (version byte 0x23 / decimal 35)",
+      "SegWit addresses use HRP 'syl' (P2WPKH format syl1...)",
+      "SLIP-0044 coin type 9633 - OFFICIALLY REGISTERED (PR #1958, Jan 2026)",
+      "Test vectors with 'note:' require computation during implementation"
+    ],
+    "update_instructions": [
+      "When generating real test vectors, compute all values marked 'note:'",
+      "Validate across Rust core, iOS, Android, and Desktop implementations",
+      "Add vectors for edge cases as discovered in testing"
+    ]
+  }
+}

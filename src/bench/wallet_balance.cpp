@@ -1,4 +1,4 @@
-// Copyright (c) 2012-present The Bitcoin Core developers
+// Copyright (c) 2012-2022 The OpenSY developers
 // Distributed under the MIT software license, see the accompanying
 // file COPYING or http://www.opensource.org/licenses/mit-license.php.
 
@@ -28,7 +28,7 @@ static void WalletBalance(benchmark::Bench& bench, const bool set_dirty, const b
 {
     const auto test_setup = MakeNoLogFileContext<const TestingSetup>();
 
-    const auto& ADDRESS_WATCHONLY = ADDRESS_BCRT1_UNSPENDABLE;
+    const auto& ADDRESS_WATCHONLY = ADDRESS_RSYL1_UNSPENDABLE;
 
     // Set clock to genesis block, so the descriptors/keys creation time don't interfere with the blocks scanning process.
     // The reason is 'generatetoaddress', which creates a chain with deterministic timestamps in the past.
@@ -64,8 +64,8 @@ static void WalletBalanceClean(benchmark::Bench& bench) { WalletBalance(bench, /
 static void WalletBalanceMine(benchmark::Bench& bench) { WalletBalance(bench, /*set_dirty=*/false, /*add_mine=*/true); }
 static void WalletBalanceWatch(benchmark::Bench& bench) { WalletBalance(bench, /*set_dirty=*/false, /*add_mine=*/false); }
 
-BENCHMARK(WalletBalanceDirty);
-BENCHMARK(WalletBalanceClean);
-BENCHMARK(WalletBalanceMine);
-BENCHMARK(WalletBalanceWatch);
+BENCHMARK(WalletBalanceDirty, benchmark::PriorityLevel::HIGH);
+BENCHMARK(WalletBalanceClean, benchmark::PriorityLevel::HIGH);
+BENCHMARK(WalletBalanceMine, benchmark::PriorityLevel::HIGH);
+BENCHMARK(WalletBalanceWatch, benchmark::PriorityLevel::HIGH);
 } // namespace wallet

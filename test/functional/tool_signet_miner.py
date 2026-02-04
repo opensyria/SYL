@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-# Copyright (c) 2022-present The Bitcoin Core developers
+# Copyright (c) 2022 The OpenSY developers
 # Distributed under the MIT software license, see the accompanying
 # file COPYING or http://www.opensource.org/licenses/mit-license.php.
 """Test signet miner tool"""
@@ -14,7 +14,7 @@ import time
 from test_framework.blocktools import DIFF_1_N_BITS, SIGNET_HEADER
 from test_framework.key import ECKey
 from test_framework.script_util import CScript, key_to_p2wpkh_script
-from test_framework.test_framework import BitcoinTestFramework
+from test_framework.test_framework import OpenSYTestFramework, SkipTest
 from test_framework.util import (
     assert_equal,
     wallet_importprivkey,
@@ -36,7 +36,7 @@ def get_signet_commitment(segwit_commitment):
             return el[4:].hex()
     return None
 
-class SignetMinerTest(BitcoinTestFramework):
+class SignetMinerTest(OpenSYTestFramework):
     def set_test_params(self):
         self.chain = "signet"
         self.setup_clean_chain = True
@@ -49,16 +49,19 @@ class SignetMinerTest(BitcoinTestFramework):
         challenge = key_to_p2wpkh_script(pubkey)
 
         self.extra_args = [
-            [f'-signetchallenge={challenge.hex()}'],
-            ["-signetchallenge=51"], # OP_TRUE
-            ["-signetchallenge=60"], # OP_16
-            ["-signetchallenge=202cf24dba5fb0a30e26e83b2ac5b9e29e1b161e5c1fa7425e73043362938b9824"], # sha256("hello")
+            [f'-signetchallenge={challenge.hex()}', '-randomxforkheight=10000'],
+            ["-signetchallenge=51", '-randomxforkheight=10000'], # OP_TRUE
+            ["-signetchallenge=60", '-randomxforkheight=10000'], # OP_16
+            ["-signetchallenge=202cf24dba5fb0a30e26e83b2ac5b9e29e1b161e5c1fa7425e73043362938b9824", '-randomxforkheight=10000'], # sha256("hello")
         ]
 
     def skip_test_if_missing_module(self):
         self.skip_if_no_cli()
         self.skip_if_no_wallet()
-        self.skip_if_no_bitcoin_util()
+        self.skip_if_no_opensy_util()
+        # The Python signet miner only works with SHA256d PoW, but OpenSY uses RandomX
+        # and doesn't allow -randomxforkheight on signet (only regtest). Skip this test.
+        raise SkipTest("Signet miner requires SHA256d PoW but OpenSY uses RandomX")
 
     def setup_network(self):
         self.setup_nodes()
@@ -102,8 +105,8 @@ class SignetMinerTest(BitcoinTestFramework):
                 'genpsbt',
                 f'--address={node.getnewaddress()}',
                 '--poolnum=98',
-            ], check=True, text=True, input=json.dumps(template), capture_output=True)
-        psbt = genpsbt.stdout.strip()
+            ], check=True, input=json.dumps(template).encode('utf8'), capture_output=True)
+        psbt = genpsbt.stdout.decode('utf8').strip()
         if sign:
             self.log.debug("Sign the PSBT")
             res = node.walletprocesspsbt(psbt=psbt, sign=True, sighashtype='ALL')
@@ -112,8 +115,8 @@ class SignetMinerTest(BitcoinTestFramework):
         solvepsbt = subprocess.run(base_cmd + [
                 'solvepsbt',
                 f'--grind-cmd={shlex.join(util_argv)}',
-            ], check=True, text=True, input=psbt, capture_output=True)
-        node.submitblock(solvepsbt.stdout.strip())
+            ], check=True, input=psbt.encode('utf8'), capture_output=True)
+        node.submitblock(solvepsbt.stdout.decode('utf8').strip())
         assert_equal(node.getblockcount(), n_blocks + 1)
 
     def run_test(self):

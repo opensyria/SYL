@@ -1,7 +1,17 @@
 // Copyright (c) 2009-2010 Satoshi Nakamoto
-// Copyright (c) 2009-present The Bitcoin Core developers
+// Copyright (c) 2009-2022 The OpenSY developers
 // Distributed under the MIT software license, see the accompanying
 // file COPYING or http://www.opensource.org/licenses/mit-license.php.
+
+// NOTE [RANDOMX CPU MINING]:
+// OpenSY uses RandomX proof-of-work from block 1, enabling fair CPU mining.
+// No ASIC or GPU advantage - anyone with a modern CPU can participate.
+//
+// MINING RECOMMENDATIONS:
+// 1. Use high-core-count CPUs for best performance (AMD EPYC, Intel Xeon)
+// 2. Allocate 2GB+ RAM per mining thread for full dataset mode
+// 3. Consider mining pools for more consistent rewards
+// 4. Monitor network difficulty to optimize hardware allocation
 
 #include <node/miner.h>
 
@@ -158,58 +168,19 @@ std::unique_ptr<CBlockTemplate> BlockAssembler::CreateNewBlock()
 
     // Create coinbase transaction.
     CMutableTransaction coinbaseTx;
-
-    // Construct coinbase transaction struct in parallel
-    CoinbaseTx& coinbase_tx{pblocktemplate->m_coinbase_tx};
-    coinbase_tx.version = coinbaseTx.version;
-
     coinbaseTx.vin.resize(1);
     coinbaseTx.vin[0].prevout.SetNull();
     coinbaseTx.vin[0].nSequence = CTxIn::MAX_SEQUENCE_NONFINAL; // Make sure timelock is enforced.
-    coinbase_tx.sequence = coinbaseTx.vin[0].nSequence;
-
-    // Add an output that spends the full coinbase reward.
     coinbaseTx.vout.resize(1);
     coinbaseTx.vout[0].scriptPubKey = m_options.coinbase_output_script;
-    // Block subsidy + fees
-    const CAmount block_reward{nFees + GetBlockSubsidy(nHeight, chainparams.GetConsensus())};
-    coinbaseTx.vout[0].nValue = block_reward;
-    coinbase_tx.block_reward_remaining = block_reward;
-
-    // Start the coinbase scriptSig with the block height as required by BIP34.
-    // Mining clients are expected to append extra data to this prefix, so
-    // increasing its length would reduce the space they can use and may break
-    // existing clients.
-    coinbaseTx.vin[0].scriptSig = CScript() << nHeight;
-    if (m_options.include_dummy_extranonce) {
-        // For blocks at heights <= 16, the BIP34-encoded height alone is only
-        // one byte. Consensus requires coinbase scriptSigs to be at least two
-        // bytes long (bad-cb-length), so tests and regtest include a dummy
-        // extraNonce (OP_0)
-        coinbaseTx.vin[0].scriptSig << OP_0;
-    }
-    coinbase_tx.script_sig_prefix = coinbaseTx.vin[0].scriptSig;
+    coinbaseTx.vout[0].nValue = nFees + GetBlockSubsidy(nHeight, chainparams.GetConsensus());
+    coinbaseTx.vin[0].scriptSig = CScript() << nHeight << OP_0;
     Assert(nHeight > 0);
     coinbaseTx.nLockTime = static_cast<uint32_t>(nHeight - 1);
-    coinbase_tx.lock_time = coinbaseTx.nLockTime;
-
     pblock->vtx[0] = MakeTransactionRef(std::move(coinbaseTx));
     pblocktemplate->vchCoinbaseCommitment = m_chainstate.m_chainman.GenerateCoinbaseCommitment(*pblock, pindexPrev);
 
-    const CTransactionRef& final_coinbase{pblock->vtx[0]};
-    if (final_coinbase->HasWitness()) {
-        const auto& witness_stack{final_coinbase->vin[0].scriptWitness.stack};
-        // Consensus requires the coinbase witness stack to have exactly one
-        // element of 32 bytes.
-        Assert(witness_stack.size() == 1 && witness_stack[0].size() == 32);
-        coinbase_tx.witness = uint256(witness_stack[0]);
-    }
-    if (const int witness_index = GetWitnessCommitmentIndex(*pblock); witness_index != NO_WITNESS_COMMITMENT) {
-        Assert(witness_index >= 0 && static_cast<size_t>(witness_index) < final_coinbase->vout.size());
-        coinbase_tx.required_outputs.push_back(final_coinbase->vout[witness_index]);
-    }
-
-    LogInfo("CreateNewBlock(): block weight: %u txs: %u fees: %ld sigops %d\n", GetBlockWeight(*pblock), nBlockTx, nFees, nBlockSigOpsCost);
+    LogPrintf("CreateNewBlock(): block weight: %u txs: %u fees: %ld sigops %d\n", GetBlockWeight(*pblock), nBlockTx, nFees, nBlockSigOpsCost);
 
     // Fill in header
     pblock->hashPrevBlock  = pindexPrev->GetBlockHash();
@@ -218,7 +189,6 @@ std::unique_ptr<CBlockTemplate> BlockAssembler::CreateNewBlock()
     pblock->nNonce         = 0;
 
     if (m_options.test_block_validity) {
-        // if nHeight <= 16, and include_dummy_extranonce=false this will fail due to bad-cb-length.
         if (BlockValidationState state{TestBlockValidity(m_chainstate, *pblock, /*check_pow=*/false, /*check_merkle_root=*/false)}; !state.IsValid()) {
             throw std::runtime_error(strprintf("TestBlockValidity failed: %s", state.ToString()));
         }
@@ -233,12 +203,12 @@ std::unique_ptr<CBlockTemplate> BlockAssembler::CreateNewBlock()
     return std::move(pblocktemplate);
 }
 
-bool BlockAssembler::TestChunkBlockLimits(FeePerWeight chunk_feerate, int64_t chunk_sigops_cost) const
+bool BlockAssembler::TestPackage(FeePerWeight package_feerate, int64_t packageSigOpsCost) const
 {
-    if (nBlockWeight + chunk_feerate.size >= m_options.nBlockMaxWeight) {
+    if (nBlockWeight + package_feerate.size >= m_options.nBlockMaxWeight) {
         return false;
     }
-    if (nBlockSigOpsCost + chunk_sigops_cost >= MAX_BLOCK_SIGOPS_COST) {
+    if (nBlockSigOpsCost + packageSigOpsCost >= MAX_BLOCK_SIGOPS_COST) {
         return false;
     }
     return true;
@@ -246,7 +216,7 @@ bool BlockAssembler::TestChunkBlockLimits(FeePerWeight chunk_feerate, int64_t ch
 
 // Perform transaction-level checks before adding to block:
 // - transaction finality (locktime)
-bool BlockAssembler::TestChunkTransactions(const std::vector<CTxMemPoolEntryRef>& txs) const
+bool BlockAssembler::TestPackageTransactions(const std::vector<CTxMemPoolEntryRef>& txs) const
 {
     for (const auto tx : txs) {
         if (!IsFinalTx(tx.get().GetTx(), nHeight, m_lock_time_cutoff)) {
@@ -267,7 +237,7 @@ void BlockAssembler::AddToBlock(const CTxMemPoolEntry& entry)
     nFees += entry.GetFee();
 
     if (m_options.print_modified_fee) {
-        LogInfo("fee rate %s txid %s\n",
+        LogPrintf("fee rate %s txid %s\n",
                   CFeeRate(entry.GetModifiedFee(), entry.GetTxSize()).ToString(),
                   entry.GetTx().GetHash().ToString());
     }
@@ -292,18 +262,18 @@ void BlockAssembler::addChunks()
 
     while (selected_transactions.size() > 0) {
         // Check to see if min fee rate is still respected.
-        if (chunk_feerate_vsize << m_options.blockMinFeeRate.GetFeePerVSize()) {
+        if (chunk_feerate.fee < m_options.blockMinFeeRate.GetFee(chunk_feerate_vsize.size)) {
             // Everything else we might consider has a lower feerate
             return;
         }
 
-        int64_t chunk_sig_ops = 0;
+        int64_t package_sig_ops = 0;
         for (const auto& tx : selected_transactions) {
-            chunk_sig_ops += tx.get().GetSigOpCost();
+            package_sig_ops += tx.get().GetSigOpCost();
         }
 
         // Check to see if this chunk will fit.
-        if (!TestChunkBlockLimits(chunk_feerate, chunk_sig_ops) || !TestChunkTransactions(selected_transactions)) {
+        if (!TestPackage(chunk_feerate, package_sig_ops) || !TestPackageTransactions(selected_transactions)) {
             // This chunk won't fit, so we skip it and will try the next best one.
             m_mempool->SkipBuilderChunk();
             ++nConsecutiveFailed;
@@ -480,5 +450,4 @@ std::optional<BlockRef> WaitTipChanged(ChainstateManager& chainman, KernelNotifi
     // avoid deadlocks.
     return GetTip(chainman);
 }
-
 } // namespace node

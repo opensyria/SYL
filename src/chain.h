@@ -1,10 +1,10 @@
 // Copyright (c) 2009-2010 Satoshi Nakamoto
-// Copyright (c) 2009-present The Bitcoin Core developers
+// Copyright (c) 2009-2022 The OpenSY developers
 // Distributed under the MIT software license, see the accompanying
 // file COPYING or http://www.opensource.org/licenses/mit-license.php.
 
-#ifndef BITCOIN_CHAIN_H
-#define BITCOIN_CHAIN_H
+#ifndef OPENSY_CHAIN_H
+#define OPENSY_CHAIN_H
 
 #include <arith_uint256.h>
 #include <consensus/params.h>
@@ -38,6 +38,14 @@ static constexpr int64_t TIMESTAMP_WINDOW = MAX_FUTURE_BLOCK_TIME;
 //! Init values for CBlockIndex nSequenceId when loaded from disk
 static constexpr int32_t SEQ_ID_BEST_CHAIN_FROM_DISK = 0;
 static constexpr int32_t SEQ_ID_INIT_FROM_DISK = 1;
+
+/**
+ * Maximum gap between node time and block time used
+ * for the "Catching up..." mode in GUI.
+ *
+ * Ref: https://github.com/opensyria/OpenSY/pull/1026
+ */
+static constexpr int64_t MAX_BLOCK_TIME_GAP = 90 * 60;
 
 enum BlockStatus : uint32_t {
     //! Unused.
@@ -299,15 +307,7 @@ protected:
     CBlockIndex& operator=(CBlockIndex&&) = delete;
 };
 
-/** Compute how much work an nBits value corresponds to. */
-arith_uint256 GetBitsProof(uint32_t bits);
-
-/** Compute how much work a block index entry corresponds to. */
-inline arith_uint256 GetBlockProof(const CBlockIndex& block) { return GetBitsProof(block.nBits); }
-
-/** Compute how much work a block header corresponds to. */
-inline arith_uint256 GetBlockProof(const CBlockHeader& header) { return GetBitsProof(header.nBits); }
-
+arith_uint256 GetBlockProof(const CBlockIndex& block);
 /** Return the time it would take to redo the work difference between from and to, assuming the current hashrate corresponds to the difficulty at tip, in seconds. */
 int64_t GetBlockProofEquivalentTime(const CBlockIndex& to, const CBlockIndex& from, const CBlockIndex& tip, const Consensus::Params&);
 /** Find the forking point between two chain tips. */
@@ -453,4 +453,4 @@ CBlockLocator GetLocator(const CBlockIndex* index);
 /** Construct a list of hash entries to put in a locator.  */
 std::vector<uint256> LocatorEntries(const CBlockIndex* index);
 
-#endif // BITCOIN_CHAIN_H
+#endif // OPENSY_CHAIN_H

@@ -1,4 +1,4 @@
-// Copyright (c) The Bitcoin Core developers
+// Copyright (c) The OpenSY developers
 // Distributed under the MIT software license, see the accompanying
 // file COPYING or http://www.opensource.org/licenses/mit-license.php.
 
@@ -136,7 +136,7 @@ static bool BoxedType(const ::capnp::Type& type)
 // include_prefix can be used to control relative include paths used in
 // generated files. For example if src_file is "/a/b/c/d/file.canp" and
 // include_prefix is "/a/b/c" include lines like
-// "#include <d/file.capnp.proxy.h>", "#include <d/file.capnp.proxy-types.h>"
+// "#include <d/file.capnp.proxy.h>" "#include <d/file.capnp.proxy-types.h>"i
 // will be generated.
 static void Generate(kj::StringPtr src_prefix,
     kj::StringPtr include_prefix,

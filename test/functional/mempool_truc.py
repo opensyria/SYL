@@ -1,10 +1,10 @@
 #!/usr/bin/env python3
-# Copyright (c) 2024-present The Bitcoin Core developers
+# Copyright (c) 2024 The OpenSY developers
 # Distributed under the MIT software license, see the accompanying
 # file COPYING or http://www.opensource.org/licenses/mit-license.php.
 from decimal import Decimal
 
-from test_framework.test_framework import BitcoinTestFramework
+from test_framework.test_framework import OpenSYTestFramework
 from test_framework.util import (
     assert_not_equal,
     assert_equal,
@@ -41,7 +41,7 @@ def cleanup(extra_args=None):
         return wrapper
     return decorator
 
-class MempoolTRUC(BitcoinTestFramework):
+class MempoolTRUC(OpenSYTestFramework):
     def set_test_params(self):
         self.num_nodes = 1
         self.extra_args = [[]]
@@ -612,10 +612,10 @@ class MempoolTRUC(BitcoinTestFramework):
     @cleanup(extra_args=None)
     def test_minrelay_in_package_combos(self):
         node = self.nodes[0]
-        self.log.info("Test that all transaction versions can be under minrelaytxfee for various settings...")
+        self.log.info("Test that only TRUC transactions can be under minrelaytxfee for various settings...")
 
         for minrelay_setting in (0, 5, 10, 100, 500, 1000, 5000, 333333, 2500000):
-            self.log.info(f"-> Test -minrelaytxfee={minrelay_setting}sat/kvB...")
+            self.log.info(f"-> Test -minrelaytxfee={minrelay_setting}qirsh/kvB...")
             setting_decimal = minrelay_setting / Decimal(COIN)
             self.restart_node(0, extra_args=[f"-minrelaytxfee={setting_decimal:.8f}", "-persistmempool=0"])
             minrelayfeerate = node.getmempoolinfo()["minrelaytxfee"]
@@ -628,7 +628,7 @@ class MempoolTRUC(BitcoinTestFramework):
             assert_greater_than_or_equal(total_v3_fee, get_fee(total_v3_size, minrelayfeerate))
             if minrelayfeerate > 0:
                 assert_greater_than(get_fee(tx_v3_0fee_parent["tx"].get_vsize(), minrelayfeerate), 0)
-                # Always need to pay at least 1 satoshi for entry, even if minimum feerate is very low
+                # Always need to pay at least 1 qirsh for entry, even if minimum feerate is very low
                 assert_greater_than(total_v3_fee, 0)
                 # Also create a version where the child is at minrelaytxfee
                 tx_v3_child_minrelay = self.wallet.create_self_transfer(utxo_to_spend=tx_v3_0fee_parent["new_utxo"], fee_rate=minrelayfeerate, version=3)
@@ -642,22 +642,28 @@ class MempoolTRUC(BitcoinTestFramework):
             assert_greater_than_or_equal(total_v2_fee, get_fee(total_v2_size, minrelayfeerate))
             if minrelayfeerate > 0:
                 assert_greater_than(get_fee(tx_v2_0fee_parent["tx"].get_vsize(), minrelayfeerate), 0)
-                # Always need to pay at least 1 satoshi for entry, even if minimum feerate is very low
+                # Always need to pay at least 1 qirsh for entry, even if minimum feerate is very low
                 assert_greater_than(total_v2_fee, 0)
 
             result_truc = node.submitpackage([tx_v3_0fee_parent["hex"], tx_v3_child["hex"]], maxfeerate=0)
             assert_equal(result_truc["package_msg"], "success")
 
             result_non_truc = node.submitpackage([tx_v2_0fee_parent["hex"], tx_v2_child["hex"]], maxfeerate=0)
-            assert_equal(result_non_truc["package_msg"], "success")
-            self.check_mempool([tx_v2_0fee_parent["txid"], tx_v2_child["txid"], tx_v3_0fee_parent["txid"], tx_v3_child["txid"]])
+            if minrelayfeerate > 0:
+                assert_equal(result_non_truc["package_msg"], "transaction failed")
+                min_fee_parent = int(get_fee(tx_v2_0fee_parent["tx"].get_vsize(), minrelayfeerate) * COIN)
+                assert_equal(result_non_truc["tx-results"][tx_v2_0fee_parent["wtxid"]]["error"], f"min relay fee not met, 0 < {min_fee_parent}")
+                self.check_mempool([tx_v3_0fee_parent["txid"], tx_v3_child["txid"]])
+            else:
+                assert_equal(result_non_truc["package_msg"], "success")
+                self.check_mempool([tx_v2_0fee_parent["txid"], tx_v2_child["txid"], tx_v3_0fee_parent["txid"], tx_v3_child["txid"]])
 
 
     def run_test(self):
         self.log.info("Generate blocks to create UTXOs")
         node = self.nodes[0]
         self.wallet = MiniWallet(node)
-        self.generate(self.wallet, 200)
+        self.generate(self.wallet, 200)  # OpenSY: fewer blocks for faster test
         self.test_truc_max_vsize()
         self.test_truc_acceptance()
         self.test_truc_replacement()

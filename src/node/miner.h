@@ -1,10 +1,10 @@
 // Copyright (c) 2009-2010 Satoshi Nakamoto
-// Copyright (c) 2009-present The Bitcoin Core developers
+// Copyright (c) 2009-present The OpenSY developers
 // Distributed under the MIT software license, see the accompanying
 // file COPYING or http://www.opensource.org/licenses/mit-license.php.
 
-#ifndef BITCOIN_NODE_MINER_H
-#define BITCOIN_NODE_MINER_H
+#ifndef OPENSY_NODE_MINER_H
+#define OPENSY_NODE_MINER_H
 
 #include <interfaces/types.h>
 #include <node/types.h>
@@ -50,11 +50,6 @@ struct CBlockTemplate
     /* A vector of package fee rates, ordered by the sequence in which
      * packages are selected for inclusion in the block template.*/
     std::vector<FeePerVSize> m_package_feerates;
-    /*
-     * Template containing all coinbase transaction fields that are set by our
-     * miner code.
-     */
-    CoinbaseTx m_coinbase_tx;
 };
 
 /** Generate a new block, without valid proof-of-work */
@@ -115,12 +110,13 @@ private:
     void addChunks() EXCLUSIVE_LOCKS_REQUIRED(m_mempool->cs);
 
     // helper functions for addChunks()
-    /** Test if a new chunk would "fit" in the block */
-    bool TestChunkBlockLimits(FeePerWeight chunk_feerate, int64_t chunk_sigops_cost) const;
-    /** Perform locktime checks on each transaction in a chunk:
-      * This check should always succeed, and is here
-      * only as an extra check in case of a bug */
-    bool TestChunkTransactions(const std::vector<CTxMemPoolEntryRef>& txs) const;
+    /** Test if a new package would "fit" in the block */
+    bool TestPackage(FeePerWeight package_feerate, int64_t packageSigOpsCost) const;
+    /** Perform checks on each transaction in a package:
+      * locktime, premature-witness, serialized size (if necessary)
+      * These checks should always succeed, and they're here
+      * only as an extra check in case of suboptimal node configuration */
+    bool TestPackageTransactions(const std::vector<CTxMemPoolEntryRef>& txs) const;
 };
 
 /**
@@ -128,7 +124,7 @@ private:
  * accounts for the BIP94 timewarp rule, so does not necessarily reflect the
  * consensus limit.
  */
-int64_t GetMinimumTime(const CBlockIndex* pindexPrev, int64_t difficulty_adjustment_interval);
+int64_t GetMinimumTime(const CBlockIndex* pindexPrev, const int64_t difficulty_adjustment_interval);
 
 int64_t UpdateTime(CBlockHeader* pblock, const Consensus::Params& consensusParams, const CBlockIndex* pindexPrev);
 
@@ -162,7 +158,6 @@ std::optional<BlockRef> GetTip(ChainstateManager& chainman);
 /* Waits for the connected tip to change until timeout has elapsed. During node initialization, this will wait until the tip is connected (regardless of `timeout`).
  * Returns the current tip, or nullopt if the node is shutting down. */
 std::optional<BlockRef> WaitTipChanged(ChainstateManager& chainman, KernelNotifications& kernel_notifications, const uint256& current_tip, MillisecondsDouble& timeout);
-
 } // namespace node
 
-#endif // BITCOIN_NODE_MINER_H
+#endif // OPENSY_NODE_MINER_H

@@ -1,7 +1,8 @@
-// Copyright (c) 2018-present The Bitcoin Core developers
+// Copyright (c) 2018-present The OpenSY developers
 // Distributed under the MIT software license, see the accompanying
 // file COPYING or http://www.opensource.org/licenses/mit-license.php.
 
+#include <chainparams.h>
 #include <pubkey.h>
 #include <script/descriptor.h>
 #include <script/sign.h>
@@ -49,7 +50,7 @@ constexpr int SIGNABLE = 1 << 3; // We can sign with this descriptor (this is no
 constexpr int DERIVE_HARDENED = 1 << 4; // The final derivation is hardened, i.e. ends with *' or *h
 constexpr int MIXED_PUBKEYS = 1 << 5;
 constexpr int XONLY_KEYS = 1 << 6; // X-only pubkeys are in use (and thus inferring/caching may swap parity of pubkeys/keyids)
-constexpr int MISSING_PRIVKEYS = 1 << 7; // Not all private keys are available. ToPrivateString() will return true if there is at least one private key and HavePrivateKeys() will return `false`.
+constexpr int MISSING_PRIVKEYS = 1 << 7; // Not all private keys are available, so ToPrivateString will fail.
 constexpr int SIGNABLE_FAILS = 1 << 8; // We can sign with this descriptor, but actually trying to sign will fail
 constexpr int MUSIG = 1 << 9; // This is a MuSig so key counts will have an extra key
 constexpr int MUSIG_DERIVATION = 1 << 10; // MuSig with BIP 328 derivation from the aggregate key
@@ -243,9 +244,6 @@ void DoCheck(std::string prv, std::string pub, const std::string& norm_pub, int 
         } else {
             BOOST_CHECK_MESSAGE(EqualDescriptor(prv, prv1), "Private ser: " + prv1 + " Private desc: " + prv);
         }
-        BOOST_CHECK(!parse_priv->HavePrivateKeys(keys_pub));
-        BOOST_CHECK(parse_pub->HavePrivateKeys(keys_priv));
-
         BOOST_CHECK(!parse_priv->ToPrivateString(keys_pub, prv1));
         BOOST_CHECK(parse_pub->ToPrivateString(keys_priv, prv1));
         if (expected_prv) {
@@ -264,12 +262,6 @@ void DoCheck(std::string prv, std::string pub, const std::string& norm_pub, int 
         parse_pub->ExpandPrivate(0, keys_priv, pub_prov);
 
         BOOST_CHECK_MESSAGE(EqualSigningProviders(priv_prov, pub_prov), "Private desc: " + prv + " Pub desc: " + pub);
-    } else if (keys_priv.keys.size() > 0) {
-        // If there is at least one private key, ToPrivateString() should return true and include that key
-        std::string prv_str;
-        BOOST_CHECK(parse_priv->ToPrivateString(keys_priv, prv_str));
-        size_t checksum_len = 9; // Including the '#' character
-        BOOST_CHECK_MESSAGE(prv == prv_str.substr(0, prv_str.length() - checksum_len), prv);
     }
 
     // Check that private can produce the normalized descriptors
@@ -465,7 +457,7 @@ void DoCheck(std::string prv, std::string pub, const std::string& norm_pub, int 
             // Test whether the observed key path is present in the 'paths' variable (which contains expected, unobserved paths),
             // and then remove it from that set.
             for (const auto& origin : script_provider.origins) {
-                BOOST_CHECK_MESSAGE(paths.contains(origin.second.second.path), "Unexpected key path: " + prv);
+                BOOST_CHECK_MESSAGE(paths.count(origin.second.second.path), "Unexpected key path: " + prv);
                 left_paths.erase(origin.second.second.path);
             }
         }
@@ -583,6 +575,9 @@ BOOST_FIXTURE_TEST_SUITE(descriptor_tests, BasicTestingSetup)
 
 BOOST_AUTO_TEST_CASE(descriptor_test)
 {
+    // WIF keys use version 128 which is same for Bitcoin and OpenSY mainnet
+    SelectParams(ChainType::MAIN);
+    
     // Basic single-key compressed
     Check("combo(L4rK1yDtCWekvXuE6oXD9jCYfFNV2cWRpVuPLBcCU2z8TrisoyY1)", "combo(03a34b99f22c790c4e36b2b3c2c35a36db06226e41c692fc82b8b56ac1c540c5bd)", "combo(03a34b99f22c790c4e36b2b3c2c35a36db06226e41c692fc82b8b56ac1c540c5bd)", SIGNABLE, {{"2103a34b99f22c790c4e36b2b3c2c35a36db06226e41c692fc82b8b56ac1c540c5bdac","76a9149a1c78a507689f6f54b847ad1cef1e614ee23f1e88ac","00149a1c78a507689f6f54b847ad1cef1e614ee23f1e","a91484ab21b1b2fd065d4504ff693d832434b6108d7b87"}}, std::nullopt, /*op_desc_id=*/uint256{"8ef71f7b6ac0918663f6706be469d6109f6922e21f484009d7ab49d77da36e8b"});
     Check("pk(L4rK1yDtCWekvXuE6oXD9jCYfFNV2cWRpVuPLBcCU2z8TrisoyY1)", "pk(03a34b99f22c790c4e36b2b3c2c35a36db06226e41c692fc82b8b56ac1c540c5bd)", "pk(03a34b99f22c790c4e36b2b3c2c35a36db06226e41c692fc82b8b56ac1c540c5bd)", SIGNABLE, {{"2103a34b99f22c790c4e36b2b3c2c35a36db06226e41c692fc82b8b56ac1c540c5bdac"}}, std::nullopt, /*op_desc_id=*/uint256{"5fe175b43c58ac2cdde40521dc7d1dbc607f3dd795d00770206f4fdefb42229e"});
@@ -1139,10 +1134,10 @@ BOOST_AUTO_TEST_CASE(descriptor_test)
     CheckInferDescriptor("a9141a31ad23bf49c247dd531a623c2ef57da3c400c587", "sh(pkh([deadbeef/0h/0h/0]03a34b99f22c790c4e36b2b3c2c35a36db06226e41c692fc82b8b56ac1c540c5bd))", {"76a9149a1c78a507689f6f54b847ad1cef1e614ee23f1e88ac"}, {{"03a34b99f22c790c4e36b2b3c2c35a36db06226e41c692fc82b8b56ac1c540c5bd", "deadbeef/0h/0h/0"}});
     // p2pk script with hybrid key must infer as raw()
     CheckInferDescriptor("41069228de6902abb4f541791f6d7f925b10e2078ccb1298856e5ea5cc5fd667f930eac37a00cc07f9a91ef3c2d17bf7a17db04552ff90ac312a5b8b4caca6c97aa4ac", "raw(41069228de6902abb4f541791f6d7f925b10e2078ccb1298856e5ea5cc5fd667f930eac37a00cc07f9a91ef3c2d17bf7a17db04552ff90ac312a5b8b4caca6c97aa4ac)", {}, {{"069228de6902abb4f541791f6d7f925b10e2078ccb1298856e5ea5cc5fd667f930eac37a00cc07f9a91ef3c2d17bf7a17db04552ff90ac312a5b8b4caca6c97aa4", ""}});
-    // p2pkh script with hybrid key must infer as addr()
-    CheckInferDescriptor("76a91445ff7c2327866472639d507334a9a00119dfd32688ac", "addr(17P7ge56F2QcdHxxRBa2NyzmejFggPwBJ9)", {}, {{"069228de6902abb4f541791f6d7f925b10e2078ccb1298856e5ea5cc5fd667f930eac37a00cc07f9a91ef3c2d17bf7a17db04552ff90ac312a5b8b4caca6c97aa4", ""}});
+    // p2pkh script with hybrid key must infer as addr() - OpenSY mainnet address
+    CheckInferDescriptor("76a91445ff7c2327866472639d507334a9a00119dfd32688ac", "addr(FCDE9SWB6LdHFTqzGsEBMNXJgPGhXjK86t)", {}, {{"069228de6902abb4f541791f6d7f925b10e2078ccb1298856e5ea5cc5fd667f930eac37a00cc07f9a91ef3c2d17bf7a17db04552ff90ac312a5b8b4caca6c97aa4", ""}});
     // p2wpkh script with uncompressed key must infer as addr()
-    CheckInferDescriptor("001422e363a523947a110d9a9eb114820de183aca313", "addr(bc1qyt3k8ffrj3apzrv6n6c3fqsduxp6egcnk2r66j)", {}, {{"049228de6902abb4f541791f6d7f925b10e2078ccb1298856e5ea5cc5fd667f930eac37a00cc07f9a91ef3c2d17bf7a17db04552ff90ac312a5b8b4caca6c97aa4", ""}});
+    CheckInferDescriptor("001422e363a523947a110d9a9eb114820de183aca313", "addr(syl1qyt3k8ffrj3apzrv6n6c3fqsduxp6egcnqxhnlh)", {}, {{"049228de6902abb4f541791f6d7f925b10e2078ccb1298856e5ea5cc5fd667f930eac37a00cc07f9a91ef3c2d17bf7a17db04552ff90ac312a5b8b4caca6c97aa4", ""}});
     // Infer pkh() from p2pkh with uncompressed key
     CheckInferDescriptor("76a914a31725c74421fadc50d35520ab8751ed120af80588ac", "pkh(04c56fe4a92d401bcbf1b3dfbe4ac3dac5602ca155a3681497f02c1b9a733b92d704e2da6ec4162e4846af9236ef4171069ac8b7f8234a8405b6cadd96f34f5a31)", {}, {{"04c56fe4a92d401bcbf1b3dfbe4ac3dac5602ca155a3681497f02c1b9a733b92d704e2da6ec4162e4846af9236ef4171069ac8b7f8234a8405b6cadd96f34f5a31", ""}});
     // Infer pk() from p2pk with uncompressed key
@@ -1278,52 +1273,6 @@ BOOST_AUTO_TEST_CASE(descriptor_literal_null_byte)
     std::string err;
     auto descs = Parse("pk(0279be667ef9dcbbac55a06295ce870b07029bfcdb2dce28d959f2815b16f81798)", keys, err, /*require_checksum=*/false);
     BOOST_REQUIRE_MESSAGE(!descs.empty(), err);
-}
-
-BOOST_AUTO_TEST_CASE(descriptor_older_warnings)
-{
-    // A safe boundary value should yield no warnings.
-    {
-        FlatSigningProvider keys;
-        std::string err;
-        auto descs = Parse("wsh(and_v(v:pk(0379e45b3cf75f9c5f9befd8e9506fb962f6a9d185ac87001ec44a8d3df8d4a9e3),older(65535)))", keys, err, /*require_checksum=*/false);
-        BOOST_REQUIRE_MESSAGE(!descs.empty(), err);
-        BOOST_CHECK(descs[0]->Warnings().empty());
-    }
-
-    // Height-based unsafe value (65536) should produce one warning.
-    {
-        FlatSigningProvider keys;
-        std::string err;
-        const uint32_t height_unsafe = 65536;
-        auto descs = Parse(strprintf("wsh(and_v(v:pk(0379e45b3cf75f9c5f9befd8e9506fb962f6a9d185ac87001ec44a8d3df8d4a9e3),older(%u)))", height_unsafe), keys, err, /*require_checksum=*/false);
-        BOOST_REQUIRE_MESSAGE(!descs.empty(), err);
-        const auto& ws = descs[0]->Warnings();
-        BOOST_REQUIRE_EQUAL(ws.size(), 1U);
-        BOOST_CHECK_EQUAL(ws[0], strprintf("height-based relative locktime: older(%u) > 65535 blocks is unsafe", height_unsafe));
-    }
-
-    // Time-based unsafe value: add SEQUENCE_LOCKTIME_TYPE_FLAG (1<<22)
-    {
-        FlatSigningProvider keys;
-        std::string err;
-        const uint32_t time_unsafe = 65536 | CTxIn::SEQUENCE_LOCKTIME_TYPE_FLAG;
-        auto descs = Parse(strprintf("wsh(and_v(v:pk(0379e45b3cf75f9c5f9befd8e9506fb962f6a9d185ac87001ec44a8d3df8d4a9e3),older(%u)))", time_unsafe), keys, err, /*require_checksum=*/false);
-        BOOST_REQUIRE_MESSAGE(!descs.empty(), err);
-        const auto& warnings = descs[0]->Warnings();
-        BOOST_REQUIRE_EQUAL(warnings.size(), 1U);
-        BOOST_CHECK_EQUAL(warnings[0], strprintf("time-based relative locktime: older(%u) > (65535 * 512) seconds is unsafe", time_unsafe));
-    }
-
-    // Ensure no false positive warnings for absolute timelocks
-    {
-        FlatSigningProvider keys;
-        std::string err;
-        // Using after() with a large timestamp (> 65535)
-        auto descs = Parse("wsh(and_v(v:pk(0379e45b3cf75f9c5f9befd8e9506fb962f6a9d185ac87001ec44a8d3df8d4a9e3),after(1000000)))", keys, err, /*require_checksum=*/false);
-        BOOST_REQUIRE_MESSAGE(!descs.empty(), err);
-        BOOST_CHECK(descs[0]->Warnings().empty());
-    }
 }
 
 BOOST_AUTO_TEST_SUITE_END()

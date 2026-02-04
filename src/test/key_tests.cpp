@@ -1,4 +1,4 @@
-// Copyright (c) 2012-present The Bitcoin Core developers
+// Copyright (c) 2012-present The OpenSY developers
 // Distributed under the MIT software license, see the accompanying
 // file COPYING or http://www.opensource.org/licenses/mit-license.php.
 
@@ -23,14 +23,15 @@
 using namespace util::hex_literals;
 using util::ToString;
 
-static const std::string strSecret1 = "5HxWvvfubhXpYYpS3tJkw6fq9jE9j18THftkZjHHfmFiWtmAbrj";
-static const std::string strSecret2 = "5KC4ejrDjv152FGwP386VD1i2NYc5KkfSMyv1nGy1VGDxGHqVY3";
-static const std::string strSecret1C = "Kwr371tjA9u2rFSMZjTNun2PXXP3WPZu2afRHTcta6KxEUdm1vEw";
-static const std::string strSecret2C = "L3Hq7a8FEQwJkW1M2GNKDW28546Vp5miewcCzSqUD9kCAXrJdS3g";
-static const std::string addr1 = "1QFqqMUD55ZV3PJEJZtaKCsQmjLT6JkjvJ";
-static const std::string addr2 = "1F5y5E5FMc5YzdJtB9hLaUe43GDxEKXENJ";
-static const std::string addr1C = "1NoJrossxPBKfCHuJXT4HadJrXRE9Fxiqs";
-static const std::string addr2C = "1CRj2HyM1CXWzHAXLQtiGLyggNT9WQqsDs";
+// OpenSY regtest test vectors (prefix 239 for SECRET_KEY, 95 for PUBKEY_ADDRESS 'f')
+static const std::string strSecret1 = "91avARGdfge8E4tZfYLoxeJ5sGBdNJQH4kvjJoQFacbgwmaKkrx";
+static const std::string strSecret2 = "91avARGdfge8E4tZfYLoxeJ5sGBdNJQH4kvjJoQFacbgww7vXtT";
+static const std::string strSecret1C = "cMahea7zqjxrtgAbB7LSGbcQUr1uX1ojuat9jZodMN87JcbXMTcA";
+static const std::string strSecret2C = "cMahea7zqjxrtgAbB7LSGbcQUr1uX1ojuat9jZodMN87K7XCyj5v";
+static const std::string addr1 = "fTPg7QiRm849cYVBeunPq8unWg1KXFZ4Wx";
+static const std::string addr2 = "fZgypd4Pi7DiigF5h997jxYH3yw48SUWE1";
+static const std::string addr1C = "fQna6UCypCszqVSDYdkbtmGiv2vAYP9zmo";
+static const std::string addr2C = "fEifELLVjbDxdcNoCSE2M31sjv7crtKR3V";
 
 static const std::string strAddressBad = "1HV9Lc3sNHZxwj4Zk6fB38tEmBryq2cBiF";
 
@@ -144,22 +145,22 @@ BOOST_AUTO_TEST_CASE(key_test1)
     BOOST_CHECK(key1.Sign(hashMsg, detsig));
     BOOST_CHECK(key1C.Sign(hashMsg, detsigc));
     BOOST_CHECK(detsig == detsigc);
-    BOOST_CHECK_EQUAL(HexStr(detsig), "304402205dbbddda71772d95ce91cd2d14b592cfbc1dd0aabd6a394b6c2d377bbe59d31d022014ddda21494a4e221f0824f0b8b924c43fa43c0ad57dccdaa11f81a6bd4582f6");
+    BOOST_CHECK_EQUAL(HexStr(detsig), "30440220208fda5eac92f7d291e891e9a3e0a2f1a89c7a49517960dd76da30fc7da896a402205e2f81a84f829bca72f76c293457643cef1ab08196f0156cbae19312a1fec9b4");
 
     BOOST_CHECK(key2.Sign(hashMsg, detsig));
     BOOST_CHECK(key2C.Sign(hashMsg, detsigc));
     BOOST_CHECK(detsig == detsigc);
-    BOOST_CHECK_EQUAL(HexStr(detsig), "3044022052d8a32079c11e79db95af63bb9600c5b04f21a9ca33dc129c2bfa8ac9dc1cd5022061d8ae5e0f6c1a16bde3719c64c2fd70e404b6428ab9a69566962e8771b5944d");
+    BOOST_CHECK_EQUAL(HexStr(detsig), "304402207b75dc23f22dbb5d815a6ce64b00a62d462aa370fddeb91ebfa7397771f288670220218c20a4e46aff93ba502bf740b427b1e8b92b69f799623e4ba842ff1c4bc43a");
 
     BOOST_CHECK(key1.SignCompact(hashMsg, detsig));
     BOOST_CHECK(key1C.SignCompact(hashMsg, detsigc));
-    BOOST_CHECK_EQUAL(HexStr(detsig), "1c5dbbddda71772d95ce91cd2d14b592cfbc1dd0aabd6a394b6c2d377bbe59d31d14ddda21494a4e221f0824f0b8b924c43fa43c0ad57dccdaa11f81a6bd4582f6");
-    BOOST_CHECK_EQUAL(HexStr(detsigc), "205dbbddda71772d95ce91cd2d14b592cfbc1dd0aabd6a394b6c2d377bbe59d31d14ddda21494a4e221f0824f0b8b924c43fa43c0ad57dccdaa11f81a6bd4582f6");
+    BOOST_CHECK_EQUAL(HexStr(detsig), "1b208fda5eac92f7d291e891e9a3e0a2f1a89c7a49517960dd76da30fc7da896a45e2f81a84f829bca72f76c293457643cef1ab08196f0156cbae19312a1fec9b4");
+    BOOST_CHECK_EQUAL(HexStr(detsigc), "1f208fda5eac92f7d291e891e9a3e0a2f1a89c7a49517960dd76da30fc7da896a45e2f81a84f829bca72f76c293457643cef1ab08196f0156cbae19312a1fec9b4");
 
     BOOST_CHECK(key2.SignCompact(hashMsg, detsig));
     BOOST_CHECK(key2C.SignCompact(hashMsg, detsigc));
-    BOOST_CHECK_EQUAL(HexStr(detsig), "1c52d8a32079c11e79db95af63bb9600c5b04f21a9ca33dc129c2bfa8ac9dc1cd561d8ae5e0f6c1a16bde3719c64c2fd70e404b6428ab9a69566962e8771b5944d");
-    BOOST_CHECK_EQUAL(HexStr(detsigc), "2052d8a32079c11e79db95af63bb9600c5b04f21a9ca33dc129c2bfa8ac9dc1cd561d8ae5e0f6c1a16bde3719c64c2fd70e404b6428ab9a69566962e8771b5944d");
+    BOOST_CHECK_EQUAL(HexStr(detsig), "1b7b75dc23f22dbb5d815a6ce64b00a62d462aa370fddeb91ebfa7397771f28867218c20a4e46aff93ba502bf740b427b1e8b92b69f799623e4ba842ff1c4bc43a");
+    BOOST_CHECK_EQUAL(HexStr(detsigc), "1f7b75dc23f22dbb5d815a6ce64b00a62d462aa370fddeb91ebfa7397771f28867218c20a4e46aff93ba502bf740b427b1e8b92b69f799623e4ba842ff1c4bc43a");
 }
 
 BOOST_AUTO_TEST_CASE(key_signature_tests)

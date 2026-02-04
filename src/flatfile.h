@@ -1,10 +1,10 @@
 // Copyright (c) 2009-2010 Satoshi Nakamoto
-// Copyright (c) 2009-present The Bitcoin Core developers
+// Copyright (c) 2009-2020 The OpenSY developers
 // Distributed under the MIT software license, see the accompanying
 // file COPYING or http://www.opensource.org/licenses/mit-license.php.
 
-#ifndef BITCOIN_FLATFILE_H
-#define BITCOIN_FLATFILE_H
+#ifndef OPENSY_FLATFILE_H
+#define OPENSY_FLATFILE_H
 
 #include <string>
 
@@ -27,6 +27,10 @@ struct FlatFilePos
 
     friend bool operator==(const FlatFilePos &a, const FlatFilePos &b) {
         return (a.nFile == b.nFile && a.nPos == b.nPos);
+    }
+
+    friend bool operator!=(const FlatFilePos &a, const FlatFilePos &b) {
+        return !(a == b);
     }
 
     bool IsNull() const { return (nFile == -1); }
@@ -82,4 +86,4 @@ public:
     bool Flush(const FlatFilePos& pos, bool finalize = false) const;
 };
 
-#endif // BITCOIN_FLATFILE_H
+#endif // OPENSY_FLATFILE_H

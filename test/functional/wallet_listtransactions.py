@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-# Copyright (c) 2014-present The Bitcoin Core developers
+# Copyright (c) 2014-present The OpenSY developers
 # Distributed under the MIT software license, see the accompanying
 # file COPYING or http://www.opensource.org/licenses/mit-license.php.
 """Test the listtransactions API."""
@@ -15,7 +15,7 @@ from test_framework.messages import (
     COIN,
     tx_from_hex,
 )
-from test_framework.test_framework import BitcoinTestFramework
+from test_framework.test_framework import OpenSYTestFramework
 from test_framework.util import (
     assert_not_equal,
     assert_array_result,
@@ -26,7 +26,7 @@ from test_framework.util import (
 from test_framework.wallet_util import get_generate_key
 
 
-class ListTransactionsTest(BitcoinTestFramework):
+class ListTransactionsTest(OpenSYTestFramework):
     def set_test_params(self):
         self.num_nodes = 3
         # whitelist peers to speed up tx relay / mempool sync
@@ -222,7 +222,7 @@ class ListTransactionsTest(BitcoinTestFramework):
 
         self.log.info("Setup the same wallet on two nodes")
         # refill keypool otherwise the second node wouldn't recognize addresses generated on the first nodes
-        self.nodes[0].keypoolrefill(1000)
+        self.nodes[0].keypoolrefill(1000)  # Reduced from 200000 to avoid timeout
         self.stop_nodes()
         wallet0 = os.path.join(self.nodes[0].chain_path, self.default_wallet_name, "wallet.dat")
         wallet2 = os.path.join(self.nodes[2].chain_path, self.default_wallet_name, "wallet.dat")

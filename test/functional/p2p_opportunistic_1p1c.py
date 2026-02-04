@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-# Copyright (c) 2024-present The Bitcoin Core developers
+# Copyright (c) 2024-present The OpenSY developers
 # Distributed under the MIT software license, see the accompanying
 # file COPYING or http://www.opensource.org/licenses/mit-license.php.
 """
@@ -40,7 +40,7 @@ from test_framework.script import (
     OP_NOP,
     OP_RETURN,
 )
-from test_framework.test_framework import BitcoinTestFramework
+from test_framework.test_framework import OpenSYTestFramework
 from test_framework.util import (
     assert_equal,
     assert_greater_than,
@@ -51,7 +51,7 @@ from test_framework.wallet import (
     MiniWalletMode,
 )
 
-# 1sat/vB feerate denominated in BTC/KvB
+# 1qirsh/vB feerate denominated in SYL/KvB
 FEERATE_1SAT_VB = Decimal("0.00001000")
 # Number of seconds to wait to ensure no getdata is received
 GETDATA_WAIT = 60
@@ -72,7 +72,7 @@ def cleanup(func):
             self.nodes[0].setmocktime(0)
     return wrapper
 
-class PackageRelayTest(BitcoinTestFramework):
+class PackageRelayTest(OpenSYTestFramework):
     def set_test_params(self):
         self.setup_clean_chain = True
         self.num_nodes = 1
@@ -81,7 +81,7 @@ class PackageRelayTest(BitcoinTestFramework):
         ]]
 
     def create_tx_below_mempoolminfee(self, wallet, utxo_to_spend=None):
-        """Create a 1-input 0.1sat/vB transaction using a confirmed UTXO. Decrement and use
+        """Create a 1-input 0.1qirsh/vB transaction using a confirmed UTXO. Decrement and use
         self.sequence so that subsequent calls to this function result in unique transactions."""
 
         self.sequence -= 1
@@ -434,7 +434,7 @@ class PackageRelayTest(BitcoinTestFramework):
         peer_doser = node.add_p2p_connection(P2PInterface())
         num_individual_dosers = 10
 
-        self.log.info("Create very large orphans to be sent by DoSy peers (may take a while)")
+        self.log.info("Create very large orphans to be sent by DSYL peers (may take a while)")
         large_orphans = [create_large_orphan() for _ in range(50)]
         # Check to make sure these are orphans, within max standard size (to be accepted into the orphanage)
         for large_orphan in large_orphans:
@@ -460,7 +460,7 @@ class PackageRelayTest(BitcoinTestFramework):
         # normal package request to time out.
         self.wait_until(lambda: len(node.getorphantxs()) == num_individual_dosers)
 
-        self.log.info("Send an orphan from a non-DoSy peer. Its orphan should not be evicted.")
+        self.log.info("Send an orphan from a non-DSYL peer. Its orphan should not be evicted.")
         low_fee_parent = self.create_tx_below_mempoolminfee(self.wallet)
         high_fee_child = self.wallet.create_self_transfer(
             utxo_to_spend=low_fee_parent["new_utxo"],
@@ -483,7 +483,7 @@ class PackageRelayTest(BitcoinTestFramework):
         node.bumpmocktime(NONPREF_PEER_TX_DELAY + TXID_RELAY_DELAY)
         peer_normal.wait_for_getdata([parent_txid_int])
 
-        self.log.info("Send another round of very large orphans from a DoSy peer")
+        self.log.info("Send another round of very large orphans from a DSYL peer")
         for large_orphan in large_orphans[num_individual_dosers:]:
             peer_doser.send_and_ping(msg_tx(large_orphan))
 
@@ -510,7 +510,7 @@ class PackageRelayTest(BitcoinTestFramework):
         assert_greater_than(num_peers_shared * batch_size + batch_single_doser, 3000)
         # 60 peers * 51 orphans = 3060 announcements
         shared_orphans = [self.create_small_orphan() for _ in range(batch_size)]
-        self.log.info(f"Send the same {batch_size} orphans from {num_peers_shared} DoSy peers (may take a while)")
+        self.log.info(f"Send the same {batch_size} orphans from {num_peers_shared} DSYL peers (may take a while)")
         peer_doser_shared = [node.add_p2p_connection(P2PInterface()) for _ in range(num_peers_shared)]
         for i in range(num_peers_shared):
             for orphan in shared_orphans:
@@ -522,7 +522,7 @@ class PackageRelayTest(BitcoinTestFramework):
             peer_doser.sync_with_ping()
         self.wait_until(lambda: any([tx.txid_hex in node.getorphantxs() for tx in shared_orphans]))
 
-        self.log.info("Send an orphan from a non-DoSy peer. Its orphan should not be evicted.")
+        self.log.info("Send an orphan from a non-DSYL peer. Its orphan should not be evicted.")
         low_fee_parent = self.create_tx_below_mempoolminfee(self.wallet)
         high_fee_child = self.wallet.create_self_transfer(
             utxo_to_spend=low_fee_parent["new_utxo"],
@@ -547,7 +547,7 @@ class PackageRelayTest(BitcoinTestFramework):
         node.bumpmocktime(NONPREF_PEER_TX_DELAY + TXID_RELAY_DELAY)
         peer_normal.wait_for_getdata([parent_txid_int])
 
-        self.log.info(f"Send {batch_single_doser} new orphans from one DoSy peer")
+        self.log.info(f"Send {batch_single_doser} new orphans from one DSYL peer")
         peer_doser_batch = node.add_p2p_connection(P2PInterface())
         this_batch_orphans = [self.create_small_orphan() for _ in range(batch_single_doser)]
         for tx in this_batch_orphans:

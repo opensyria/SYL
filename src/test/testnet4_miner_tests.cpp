@@ -1,4 +1,5 @@
-// Copyright (c) 2025-present The Bitcoin Core developers
+// Copyright (c) 2025 The Bitcoin Core developers
+// Copyright (c) 2025 The OpenSY developers
 // Distributed under the MIT software license, see the accompanying
 // file COPYING or http://www.opensource.org/licenses/mit-license.php.
 
@@ -27,7 +28,7 @@ struct Testnet4MinerTestingSetup : public Testnet4Setup {
 };
 } // namespace testnet4_miner_tests
 
-BOOST_FIXTURE_TEST_SUITE(testnet4_miner_tests, Testnet4MinerTestingSetup)
+BOOST_FIXTURE_TEST_SUITE(testnet4_miner_tests, testnet4_miner_tests::Testnet4MinerTestingSetup)
 
 BOOST_AUTO_TEST_CASE(MiningInterface)
 {
@@ -35,7 +36,6 @@ BOOST_AUTO_TEST_CASE(MiningInterface)
     BOOST_REQUIRE(mining);
 
     BlockAssembler::Options options;
-    options.include_dummy_extranonce = true;
     std::unique_ptr<BlockTemplate> block_template;
 
     // Set node time a few minutes past the testnet4 genesis block

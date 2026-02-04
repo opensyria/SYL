@@ -1,4 +1,4 @@
-// Copyright (c) 2013-present The Bitcoin Core developers
+// Copyright (c) 2013-2022 The OpenSY developers
 // Distributed under the MIT software license, see the accompanying
 // file COPYING or http://www.opensource.org/licenses/mit-license.php.
 
@@ -8,6 +8,7 @@
 #include <key.h>
 #include <key_io.h>
 #include <streams.h>
+#include <common/args.h>
 #include <test/util/setup_common.h>
 #include <util/strencodings.h>
 
@@ -160,22 +161,27 @@ void RunTest(const TestVector& test)
 BOOST_FIXTURE_TEST_SUITE(bip32_tests, BasicTestingSetup)
 
 BOOST_AUTO_TEST_CASE(bip32_test1) {
+    SelectParams(ChainType::MAIN);
     RunTest(test1);
 }
 
 BOOST_AUTO_TEST_CASE(bip32_test2) {
+    SelectParams(ChainType::MAIN);
     RunTest(test2);
 }
 
 BOOST_AUTO_TEST_CASE(bip32_test3) {
+    SelectParams(ChainType::MAIN);
     RunTest(test3);
 }
 
 BOOST_AUTO_TEST_CASE(bip32_test4) {
+    SelectParams(ChainType::MAIN);
     RunTest(test4);
 }
 
 BOOST_AUTO_TEST_CASE(bip32_test5) {
+    SelectParams(ChainType::MAIN);
     for (const auto& str : TEST5) {
         auto dec_extkey = DecodeExtKey(str);
         auto dec_extpubkey = DecodeExtPubKey(str);
@@ -185,6 +191,7 @@ BOOST_AUTO_TEST_CASE(bip32_test5) {
 }
 
 BOOST_AUTO_TEST_CASE(bip32_max_depth) {
+    SelectParams(ChainType::MAIN);
     CExtKey key_parent{DecodeExtKey(test1.vDerive[0].prv)}, key_child;
     CExtPubKey pubkey_parent{DecodeExtPubKey(test1.vDerive[0].pub)}, pubkey_child;
 

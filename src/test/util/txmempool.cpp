@@ -1,4 +1,4 @@
-// Copyright (c) 2022-present The Bitcoin Core developers
+// Copyright (c) 2022 The OpenSY developers
 // Distributed under the MIT software license, see the accompanying
 // file COPYING or http://www.opensource.org/licenses/mit-license.php.
 
@@ -60,7 +60,7 @@ std::optional<std::string> CheckPackageMempoolAcceptResult(const Package& txns,
     }
     for (const auto& tx : txns) {
         const auto& wtxid = tx->GetWitnessHash();
-        if (!result.m_tx_results.contains(wtxid)) {
+        if (result.m_tx_results.count(wtxid) == 0) {
             return strprintf("result not found for tx %s", wtxid.ToString());
         }
 
@@ -212,7 +212,7 @@ void CheckMempoolTRUCInvariants(const CTxMemPool& tx_pool)
     }
 }
 
-void TryAddToMempool(CTxMemPool& tx_pool, const CTxMemPoolEntry& entry)
+void AddToMempool(CTxMemPool& tx_pool, const CTxMemPoolEntry& entry)
 {
     LOCK2(cs_main, tx_pool.cs);
     auto changeset = tx_pool.GetChangeSet();
@@ -238,7 +238,7 @@ void MockMempoolMinFee(const CFeeRate& target_feerate, CTxMemPool& mempool)
     CMutableTransaction mtx{};
     mtx.vin.emplace_back(COutPoint{Txid::FromUint256(uint256{123}), 0});
     mtx.vout.emplace_back(1 * COIN, GetScriptForDestination(WitnessV0ScriptHash(CScript() << OP_TRUE)));
-    // Set a large size so that the fee evaluated at target_feerate (which is usually in sats/kvB) is an integer.
+    // Set a large size so that the fee evaluated at target_feerate (which is usually in qirsh/kvB) is an integer.
     // Otherwise, GetMinFee() may end up slightly different from target_feerate.
     BulkTransaction(mtx, 4000);
     const auto tx{MakeTransactionRef(mtx)};

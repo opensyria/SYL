@@ -1,11 +1,12 @@
 // Copyright (c) 2010 Satoshi Nakamoto
-// Copyright (c) 2009-present The Bitcoin Core developers
+// Copyright (c) 2009-present The OpenSY developers
 // Distributed under the MIT software license, see the accompanying
 // file COPYING or http://www.opensource.org/licenses/mit-license.php.
 
-#include <bitcoin-build-config.h> // IWYU pragma: keep
+#include <opensy-build-config.h> // IWYU pragma: keep
 
 #include <chainparams.h>
+#include <crypto/randomx_pool.h>
 #include <httpserver.h>
 #include <index/blockfilterindex.h>
 #include <index/coinstatsindex.h>
@@ -166,6 +167,16 @@ static RPCHelpMan getmemoryinfo()
                                 {RPCResult::Type::NUM, "chunks_used", "Number allocated chunks"},
                                 {RPCResult::Type::NUM, "chunks_free", "Number unused chunks"},
                             }},
+                            {RPCResult::Type::OBJ, "randomx", "RandomX context information (SECURITY FIX H-01)",
+                            {
+                                {RPCResult::Type::NUM, "total_contexts", "Total contexts in the bounded pool"},
+                                {RPCResult::Type::NUM, "active_contexts", "Contexts currently in use"},
+                                {RPCResult::Type::NUM, "available_contexts", "Contexts ready for immediate use"},
+                                {RPCResult::Type::NUM, "total_acquisitions", "Total successful context acquisitions"},
+                                {RPCResult::Type::NUM, "total_waits", "Times a thread had to wait for a context"},
+                                {RPCResult::Type::NUM, "total_timeouts", "Times context acquisition timed out"},
+                                {RPCResult::Type::NUM, "key_reinitializations", "Times a context was reinitialized for a new key"},
+                            }},
                         }
                     },
                     RPCResult{"mode \"mallocinfo\"",
@@ -182,6 +193,19 @@ static RPCHelpMan getmemoryinfo()
     if (mode == "stats") {
         UniValue obj(UniValue::VOBJ);
         obj.pushKV("locked", RPCLockedMemoryInfo());
+
+        // SECURITY FIX [H-01]: Add RandomX context pool stats
+        UniValue randomx_obj(UniValue::VOBJ);
+        auto stats = g_randomx_pool.GetStats();
+        randomx_obj.pushKV("total_contexts", (int64_t)stats.total_contexts);
+        randomx_obj.pushKV("active_contexts", (int64_t)stats.active_contexts);
+        randomx_obj.pushKV("available_contexts", (int64_t)stats.available_contexts);
+        randomx_obj.pushKV("total_acquisitions", (int64_t)stats.total_acquisitions);
+        randomx_obj.pushKV("total_waits", (int64_t)stats.total_waits);
+        randomx_obj.pushKV("total_timeouts", (int64_t)stats.total_timeouts);
+        randomx_obj.pushKV("key_reinitializations", (int64_t)stats.key_reinitializations);
+        obj.pushKV("randomx", randomx_obj);
+
         return obj;
     } else if (mode == "mallocinfo") {
 #ifdef HAVE_MALLOC_INFO
@@ -280,7 +304,7 @@ static RPCHelpMan echo(const std::string& name)
         "Simply echo back the input arguments. This command is for testing.\n"
                 "\nIt will return an internal bug report when arg9='trigger_internal_bug' is passed.\n"
                 "\nThe difference between echo and echojson is that echojson has argument conversion enabled in the client-side table in "
-                "bitcoin-cli and the GUI. There is no server-side difference.",
+                "opensy-cli and the GUI. There is no server-side difference.",
         {
             {"arg0", RPCArg::Type::STR, RPCArg::Optional::OMITTED, "", RPCArgOptions{.skip_type_check = true}},
             {"arg1", RPCArg::Type::STR, RPCArg::Optional::OMITTED, "", RPCArgOptions{.skip_type_check = true}},
@@ -323,20 +347,20 @@ static RPCHelpMan echoipc()
             interfaces::Init& local_init = *EnsureAnyNodeContext(request.context).init;
             std::unique_ptr<interfaces::Echo> echo;
             if (interfaces::Ipc* ipc = local_init.ipc()) {
-                // Spawn a new bitcoin-node process and call makeEcho to get a
+                // Spawn a new opensy-node process and call makeEcho to get a
                 // client pointer to a interfaces::Echo instance running in
                 // that process. This is just for testing. A slightly more
                 // realistic test spawning a different executable instead of
-                // the same executable would add a new bitcoin-echo executable,
-                // and spawn bitcoin-echo below instead of bitcoin-node. But
-                // using bitcoin-node avoids the need to build and install a
+                // the same executable would add a new opensy-echo executable,
+                // and spawn opensy-echo below instead of opensy-node. But
+                // using opensy-node avoids the need to build and install a
                 // new executable just for this one test.
-                auto init = ipc->spawnProcess("bitcoin-node");
+                auto init = ipc->spawnProcess("opensy-node");
                 echo = init->makeEcho();
                 ipc->addCleanup(*echo, [init = init.release()] { delete init; });
             } else {
-                // IPC support is not available because this is a bitcoind
-                // process not a bitcoind-node process, so just create a local
+                // IPC support is not available because this is an opensyd
+                // process not an opensyd-node process, so just create a local
                 // interfaces::Echo object and return it so the `echoipc` RPC
                 // method will work, and the python test calling `echoipc`
                 // can expect the same result.

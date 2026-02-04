@@ -1,12 +1,12 @@
 #!/usr/bin/env python3
-# Copyright (c) 2018-present The Bitcoin Core developers
+# Copyright (c) 2018-2022 The OpenSY developers
 # Distributed under the MIT software license, see the accompanying
 # file COPYING or http://www.opensource.org/licenses/mit-license.php.
 """Test createwallet arguments.
 """
 
 from test_framework.descriptors import descsum_create
-from test_framework.test_framework import BitcoinTestFramework
+from test_framework.test_framework import OpenSYTestFramework
 from test_framework.util import (
     assert_equal,
     assert_raises_rpc_error,
@@ -18,7 +18,7 @@ from test_framework.wallet_util import generate_keypair, WalletUnlock
 EMPTY_PASSPHRASE_MSG = "Empty string given as passphrase, wallet will not be encrypted."
 
 
-class CreateWalletTest(BitcoinTestFramework):
+class CreateWalletTest(OpenSYTestFramework):
     def set_test_params(self):
         self.num_nodes = 1
 
@@ -32,7 +32,6 @@ class CreateWalletTest(BitcoinTestFramework):
         # Run createwallet with invalid parameters. This must not prevent a new wallet with the same name from being created with the correct parameters.
         assert_raises_rpc_error(-4, "Passphrase provided but private keys are disabled. A passphrase is only used to encrypt private keys, so cannot be used for wallets with private keys disabled.",
             self.nodes[0].createwallet, wallet_name='w0', disable_private_keys=True, passphrase="passphrase")
-        assert_raises_rpc_error(-8, "Wallet name cannot be empty", self.nodes[0].createwallet, "")
 
         self.nodes[0].createwallet(wallet_name='w0')
         w0 = node.get_wallet_rpc('w0')

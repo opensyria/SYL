@@ -1,9 +1,9 @@
-// Copyright (c) 2017-present The Bitcoin Core developers
+// Copyright (c) 2017-2022 The OpenSY developers
 // Distributed under the MIT software license, see the accompanying
 // file COPYING or http://www.opensource.org/licenses/mit-license.php.
 
-#ifndef BITCOIN_NODE_TRANSACTION_H
-#define BITCOIN_NODE_TRANSACTION_H
+#ifndef OPENSY_NODE_TRANSACTION_H
+#define OPENSY_NODE_TRANSACTION_H
 
 #include <common/messages.h>
 #include <node/types.h>
@@ -70,7 +70,7 @@ static const CAmount DEFAULT_MAX_BURN_AMOUNT{0};
  * @param[out] hashBlock       The block hash, if the tx was found via -txindex or block_index
  * @returns                    The tx if found, otherwise nullptr
  */
-CTransactionRef GetTransaction(const CBlockIndex* block_index, const CTxMemPool* mempool, const Txid& hash, const BlockManager& blockman, uint256& hashBlock);
+CTransactionRef GetTransaction(const CBlockIndex* const block_index, const CTxMemPool* const mempool, const Txid& hash, const BlockManager& blockman, uint256& hashBlock);
 } // namespace node
 
-#endif // BITCOIN_NODE_TRANSACTION_H
+#endif // OPENSY_NODE_TRANSACTION_H

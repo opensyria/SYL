@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-# Copyright (c) 2022-present The Bitcoin Core developers
+# Copyright (c) 2022 The OpenSY developers
 # Distributed under the MIT software license, see the accompanying
 # file COPYING or http://www.opensource.org/licenses/mit-license.php.
 """Test the sendall RPC command."""
@@ -7,7 +7,7 @@
 from decimal import Decimal, getcontext
 
 from test_framework.messages import SEQUENCE_FINAL
-from test_framework.test_framework import BitcoinTestFramework
+from test_framework.test_framework import OpenSYTestFramework
 from test_framework.util import (
     assert_equal,
     assert_greater_than,
@@ -26,7 +26,7 @@ def cleanup(func):
             assert_equal(0, self.wallet.getbalances()["mine"]["trusted"]) # wallet is empty
     return wrapper
 
-class SendallTest(BitcoinTestFramework):
+class SendallTest(OpenSYTestFramework):
     def skip_test_if_missing_module(self):
         self.skip_if_no_wallet()
 
@@ -285,7 +285,7 @@ class SendallTest(BitcoinTestFramework):
     @cleanup
     def sendall_fails_on_low_fee(self):
         self.log.info("Test sendall fails if the transaction fee is lower than the minimum fee rate setting")
-        assert_raises_rpc_error(-8, "Fee rate (0.999 sat/vB) is lower than the minimum fee rate setting (1.000 sat/vB)",
+        assert_raises_rpc_error(-8, "Fee rate (0.999 qirsh/vB) is lower than the minimum fee rate setting (1.000 qirsh/vB)",
         self.wallet.sendall, recipients=[self.recipient], fee_rate=0.999)
 
     @cleanup

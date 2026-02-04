@@ -1,10 +1,11 @@
 // Copyright (c) 2009-2010 Satoshi Nakamoto
-// Copyright (c) 2009-present The Bitcoin Core developers
+// Copyright (c) 2009-2022 The Bitcoin Core developers
+// Copyright (c) 2025-present The OpenSY developers
 // Distributed under the MIT software license, see the accompanying
 // file COPYING or http://www.opensource.org/licenses/mit-license.php.
 
-#ifndef BITCOIN_CONSENSUS_PARAMS_H
-#define BITCOIN_CONSENSUS_PARAMS_H
+#ifndef OPENSY_CONSENSUS_PARAMS_H
+#define OPENSY_CONSENSUS_PARAMS_H
 
 #include <script/verify_flags.h>
 #include <uint256.h>
@@ -130,11 +131,145 @@ struct Params {
     uint256 defaultAssumeValid;
 
     /**
-     * If true, witness commitments contain a payload equal to a Bitcoin Script solution
+     * If true, witness commitments contain a payload equal to an OpenSY Script solution
      * to the signet challenge. See BIP325.
      */
     bool signet_blocks{false};
     std::vector<uint8_t> signet_challenge;
+
+    /**
+     * RandomX Hard Fork Parameters
+     *
+     * OpenSY switches from SHA256d to RandomX proof-of-work at nRandomXForkHeight
+     * to democratize mining and prevent ASIC/GPU domination.
+     *
+     * KEY ROTATION (nRandomXKeyBlockInterval = 32 blocks):
+     * RandomX uses a "key" derived from a historical block hash. This key changes
+     * every 32 blocks (~64 minutes with 2-minute block times). This provides:
+     *   - Security: Prevents pre-computation of RandomX datasets
+     *   - Fairness: All miners must recompute their datasets regularly
+     *   - Anti-ASIC: Makes custom hardware less effective
+     *
+     * NOTE: Some documentation may reference 2048 blocks - this was an earlier
+     * design. The current value of 32 provides tighter security bounds.
+     */
+    int nRandomXForkHeight{210000};       //!< Block height at which RandomX activates (mainnet: 210,000 = 10% of supply)
+    int nRandomXKeyBlockInterval{32};     //!< How often the RandomX key changes (blocks) - 32 blocks = ~64 min
+    uint256 powLimitRandomX;              //!< Minimum difficulty for RandomX blocks (resets at fork)
+
+    /**
+     * Emergency Fallback PoW Parameters (Argon2id)
+     *
+     * If RandomX is compromised (cryptographic break, critical vulnerability),
+     * the network can activate Argon2id as an emergency CPU-friendly fallback.
+     *
+     * ACTIVATION: Via BIP9 signaling or emergency hard fork at nArgon2EmergencyHeight.
+     * This is a dormant mechanism - only activated if RandomX becomes unsafe.
+     *
+     * Argon2id chosen because:
+     *   - Password Hashing Competition winner (2015)
+     *   - Memory-hard and ASIC-resistant
+     *   - Resistant to side-channel attacks (id variant)
+     *   - Widely audited (1Password, Bitwarden, Signal, Cloudflare)
+     *   - Simpler than RandomX = smaller attack surface
+     */
+    int nArgon2EmergencyHeight{-1};       //!< Height at which Argon2id activates (-1 = never, emergency only)
+    uint32_t nArgon2MemoryCost{1 << 21};  //!< Memory in KiB (2GB = 2097152 KiB, matches RandomX)
+    uint32_t nArgon2TimeCost{1};          //!< Number of iterations
+    uint32_t nArgon2Parallelism{1};       //!< Parallelism factor
+    uint256 powLimitArgon2;               //!< Minimum difficulty for Argon2id blocks
+
+    /** Check if RandomX proof-of-work is active at the given height */
+    bool IsRandomXActive(int height) const
+    {
+        // RandomX is active after fork height, but NOT if Argon2 emergency is active
+        return height >= nRandomXForkHeight && !IsArgon2EmergencyActive(height);
+    }
+
+    /** Check if Argon2id emergency fallback is active at the given height */
+    bool IsArgon2EmergencyActive(int height) const
+    {
+        return nArgon2EmergencyHeight >= 0 && height >= nArgon2EmergencyHeight;
+    }
+
+    /**
+     * Proof-of-Work Algorithm Enumeration
+     * Used for explicit algorithm selection in validation and mining code.
+     */
+    enum class PowAlgorithm {
+        SHA256D,    //!< Genesis block only (or pre-fork if applicable)
+        RANDOMX,    //!< Primary algorithm from block 1
+        ARGON2ID    //!< Emergency fallback if RandomX compromised
+    };
+
+    /** Get the active PoW algorithm for a given block height */
+    PowAlgorithm GetPowAlgorithm(int height) const
+    {
+        if (IsArgon2EmergencyActive(height)) {
+            return PowAlgorithm::ARGON2ID;
+        }
+        if (IsRandomXActive(height)) {
+            return PowAlgorithm::RANDOMX;
+        }
+        return PowAlgorithm::SHA256D;
+    }
+
+    /** Get the appropriate powLimit based on block height and active algorithm */
+    const uint256& GetActivePowLimit(int height) const
+    {
+        switch (GetPowAlgorithm(height)) {
+        case PowAlgorithm::ARGON2ID:
+            return powLimitArgon2.IsNull() ? powLimitRandomX : powLimitArgon2;
+        case PowAlgorithm::RANDOMX:
+            return powLimitRandomX.IsNull() ? powLimit : powLimitRandomX;
+        case PowAlgorithm::SHA256D:
+        default:
+            return powLimit;
+        }
+    }
+
+    /** Get the appropriate powLimit based on block height (SHA256d vs RandomX) */
+    const uint256& GetRandomXPowLimit(int height) const
+    {
+        // Legacy function - calls GetActivePowLimit for backward compatibility
+        return GetActivePowLimit(height);
+    }
+
+    /** Get the key block height for RandomX at a given block height.
+     *  The key is derived from a block nRandomXKeyBlockInterval blocks before the current key interval.
+     *  @param height The block height to calculate key block for
+     *  @return Height of the block whose hash is used as RandomX key
+     *
+     *  KEY ROTATION MECHANICS:
+     *  - Key rotates every nRandomXKeyBlockInterval blocks (32 on mainnet)
+     *  - Key is derived from a block one interval behind the current interval
+     *  - This provides ~64 minutes of key stability (32 blocks * 2 min/block)
+     *
+     *  MAINNET BEHAVIOR (nRandomXForkHeight = 210,000):
+     *  - At fork height 210,000: keyHeight = 209,952 (plenty of chain history)
+     *  - First key rotation at 210,032 uses block 209,984 as key
+     *  - The "genesis key" edge case ONLY applies if fork height < 64
+     *  - Since mainnet fork is at 210,000, key derivation always has full history
+     *
+     *  REGTEST/EARLY FORK NOTE:
+     *  If nRandomXForkHeight < 64 (only possible in regtest), early blocks
+     *  would share genesis as their key block until height >= 2*interval.
+     */
+    int GetRandomXKeyBlockHeight(int height) const
+    {
+        // Key changes every nRandomXKeyBlockInterval blocks
+        // Key for height H is block at: (H / interval) * interval - interval
+        //
+        // Examples with interval=32 and fork at 210,000:
+        //   height 210000: keyHeight = 6562*32 - 32 = 209952
+        //   height 210032: keyHeight = 6563*32 - 32 = 209984
+        //   height 210064: keyHeight = 6564*32 - 32 = 210016
+        //
+        // The clamping to 0 only matters if (height / interval) < 1,
+        // which cannot happen when fork height >= interval.
+        int keyHeight = (height / nRandomXKeyBlockInterval) * nRandomXKeyBlockInterval - nRandomXKeyBlockInterval;
+        return keyHeight >= 0 ? keyHeight : 0;
+    }
 
     int DeploymentHeight(BuriedDeployment dep) const
     {
@@ -156,4 +291,4 @@ struct Params {
 
 } // namespace Consensus
 
-#endif // BITCOIN_CONSENSUS_PARAMS_H
+#endif // OPENSY_CONSENSUS_PARAMS_H

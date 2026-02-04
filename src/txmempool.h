@@ -1,10 +1,10 @@
 // Copyright (c) 2009-2010 Satoshi Nakamoto
-// Copyright (c) 2009-present The Bitcoin Core developers
+// Copyright (c) 2009-2022 The OpenSY developers
 // Distributed under the MIT software license, see the accompanying
 // file COPYING or http://www.opensource.org/licenses/mit-license.php.
 
-#ifndef BITCOIN_TXMEMPOOL_H
-#define BITCOIN_TXMEMPOOL_H
+#ifndef OPENSY_TXMEMPOOL_H
+#define OPENSY_TXMEMPOOL_H
 
 #include <coins.h>
 #include <consensus/amount.h>
@@ -20,6 +20,7 @@
 #include <primitives/transaction_identifier.h>
 #include <sync.h>
 #include <txgraph.h>
+#include <util/epochguard.h>
 #include <util/feefrac.h>
 #include <util/hasher.h>
 #include <util/result.h>
@@ -142,7 +143,7 @@ struct TxMempoolInfo
  *
  * TxGraph (CTxMemPool::m_txgraph) provides an abstraction layer for separating
  * the transaction graph parts of the mempool from the rest of the
- * Bitcoin-specific logic. Specifically, TxGraph handles (for each transaction)
+ * OpenSY-specific logic. Specifically, TxGraph handles (for each transaction)
  * managing the in-mempool parents and children, and has knowledge of the fee
  * and size of every transaction. It uses this to partition the mempool into
  * connected clusters, and it implements (among other things):
@@ -154,7 +155,7 @@ struct TxMempoolInfo
  *    after a reorg.
  * See txgraph.h and txgraph.cpp for more details.
  *
- * CTxMemPool itself handles the Bitcoin-specific parts of mempool
+ * CTxMemPool itself handles the OpenSY-specific parts of mempool
  * transactions; it stores the full transaction inside CTxMemPoolEntry, along
  * with other consensus-specific fields (such as whether a transaction spends a
  * coinbase, or the LockPoints for transaction finality). And it provides
@@ -196,6 +197,7 @@ protected:
     mutable int64_t lastRollingFeeUpdate GUARDED_BY(cs){GetTime()};
     mutable bool blockSinceLastRollingFeeBump GUARDED_BY(cs){false};
     mutable double rollingMinimumFeeRate GUARDED_BY(cs){0}; //!< minimum fee to get into the pool, decreases exponentially
+    mutable Epoch m_epoch GUARDED_BY(cs){};
 
     // In-memory counter for external mempool tracking purposes.
     // This number is incremented once every time a transaction
@@ -279,6 +281,9 @@ public:
     std::vector<CTxMemPoolEntry::CTxMemPoolEntryRef> GetParents(const CTxMemPoolEntry &entry) const;
 
 private:
+    typedef std::map<txiter, setEntries, CompareIteratorByHash> cacheMap;
+
+
     std::vector<indexed_transaction_set::const_iterator> GetSortedScoreWithTopology() const EXCLUSIVE_LOCKS_REQUIRED(cs);
 
     /**
@@ -318,11 +323,6 @@ public:
      */
     void check(const CCoinsViewCache& active_coins_tip, int64_t spendheight) const EXCLUSIVE_LOCKS_REQUIRED(::cs_main);
 
-    /**
-     * Remove a transaction from the mempool along with any descendants.
-     * If the transaction is not already in the mempool, find any descendants
-     * and remove them.
-     */
     void removeRecursive(const CTransaction& tx, MemPoolRemovalReason reason) EXCLUSIVE_LOCKS_REQUIRED(cs);
     /** After reorg, filter the entries that would no longer be valid in the next block, and update
      * the entries' cached LockPoints if needed.  The mempool does not have any knowledge of
@@ -392,7 +392,7 @@ public:
      * @param[in] vHashesToUpdate          The set of txids from the
      *     disconnected block that have been accepted back into the mempool.
      */
-    void UpdateTransactionsFromBlock(const std::vector<Txid>& vHashesToUpdate) EXCLUSIVE_LOCKS_REQUIRED(cs, cs_main);
+    void UpdateTransactionsFromBlock(const std::vector<Txid>& vHashesToUpdate) EXCLUSIVE_LOCKS_REQUIRED(cs, cs_main) LOCKS_EXCLUDED(m_epoch);
 
     std::vector<FeePerWeight> GetFeerateDiagram() const EXCLUSIVE_LOCKS_REQUIRED(cs);
     FeePerWeight GetMainChunkFeerate(const CTxMemPoolEntry& tx) const EXCLUSIVE_LOCKS_REQUIRED(cs) {
@@ -551,7 +551,7 @@ public:
     bool CheckPolicyLimits(const CTransactionRef& tx);
 
     /** Removes a transaction from the unbroadcast set */
-    void RemoveUnbroadcastTx(const Txid& txid, bool unchecked = false);
+    void RemoveUnbroadcastTx(const Txid& txid, const bool unchecked = false);
 
     /** Returns transactions in unbroadcast set */
     std::set<Txid> GetUnbroadcastTxs() const
@@ -564,7 +564,7 @@ public:
     bool IsUnbroadcastTx(const Txid& txid) const EXCLUSIVE_LOCKS_REQUIRED(cs)
     {
         AssertLockHeld(cs);
-        return m_unbroadcast_txids.contains(txid);
+        return m_unbroadcast_txids.count(txid) != 0;
     }
 
     /** Guards this internal counter for external reporting */
@@ -581,15 +581,40 @@ private:
      *  If a transaction is in this set, then all in-mempool descendants must
      *  also be in the set, unless this transaction is being removed for being
      *  in a block.
+     *  Set updateDescendants to true when removing a tx that was in a block, so
+     *  that any in-mempool descendants have their ancestor state updated.
      */
-    void RemoveStaged(setEntries& stage, MemPoolRemovalReason reason) EXCLUSIVE_LOCKS_REQUIRED(cs);
+    void RemoveStaged(setEntries& stage, bool updateDescendants, MemPoolRemovalReason reason) EXCLUSIVE_LOCKS_REQUIRED(cs);
 
-    /* Helper for the public removeRecursive() */
-    void removeRecursive(txiter to_remove, MemPoolRemovalReason reason) EXCLUSIVE_LOCKS_REQUIRED(cs);
-
-    /* Removal from the mempool also triggers removal of the entry's Ref from txgraph. */
+    /** Before calling removeUnchecked for a given transaction,
+     *  UpdateForRemoveFromMempool must be called on the entire (dependent) set
+     *  of transactions being removed at the same time.  We use each
+     *  CTxMemPoolEntry's m_parents in order to walk ancestors of a
+     *  given transaction that is removed, so we can't remove intermediate
+     *  transactions in a chain before we've updated all the state for the
+     *  removal.
+     */
     void removeUnchecked(txiter entry, MemPoolRemovalReason reason) EXCLUSIVE_LOCKS_REQUIRED(cs);
 public:
+    /** visited marks a CTxMemPoolEntry as having been traversed
+     * during the lifetime of the most recently created Epoch::Guard
+     * and returns false if we are the first visitor, true otherwise.
+     *
+     * An Epoch::Guard must be held when visited is called or an assert will be
+     * triggered.
+     *
+     */
+    bool visited(const txiter it) const EXCLUSIVE_LOCKS_REQUIRED(cs, m_epoch)
+    {
+        return m_epoch.visited(it->m_epoch_marker);
+    }
+
+    bool visited(std::optional<txiter> it) const EXCLUSIVE_LOCKS_REQUIRED(cs, m_epoch)
+    {
+        assert(m_epoch.guarded()); // verify guard even when it==nullopt
+        return !it || visited(*it);
+    }
+
     /*
      * CTxMemPool::ChangeSet:
      *
@@ -634,7 +659,7 @@ public:
 
         using TxHandle = CTxMemPool::txiter;
 
-        TxHandle StageAddition(const CTransactionRef& tx, CAmount fee, int64_t time, unsigned int entry_height, uint64_t entry_sequence, bool spends_coinbase, int64_t sigops_cost, LockPoints lp);
+        TxHandle StageAddition(const CTransactionRef& tx, const CAmount fee, int64_t time, unsigned int entry_height, uint64_t entry_sequence, bool spends_coinbase, int64_t sigops_cost, LockPoints lp);
 
         void StageRemoval(CTxMemPool::txiter it);
 
@@ -779,4 +804,4 @@ public:
     /** Clear m_temp_added and m_non_base_coins. */
     void Reset();
 };
-#endif // BITCOIN_TXMEMPOOL_H
+#endif // OPENSY_TXMEMPOOL_H

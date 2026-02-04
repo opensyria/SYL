@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-# Copyright (c) 2014-present The Bitcoin Core developers
+# Copyright (c) 2014-2022 The OpenSY developers
 # Distributed under the MIT software license, see the accompanying
 # file COPYING or http://www.opensource.org/licenses/mit-license.php.
 """Test descendant package tracking code."""
@@ -10,7 +10,7 @@ from test_framework.messages import (
     DEFAULT_CLUSTER_LIMIT,
 )
 from test_framework.p2p import P2PTxInvStore
-from test_framework.test_framework import BitcoinTestFramework
+from test_framework.test_framework import OpenSYTestFramework
 from test_framework.util import (
     assert_equal,
 )
@@ -21,7 +21,7 @@ from test_framework.blocktools import create_empty_fork
 CUSTOM_CLUSTER_LIMIT = 10
 assert CUSTOM_CLUSTER_LIMIT < DEFAULT_CLUSTER_LIMIT
 
-class MempoolPackagesTest(BitcoinTestFramework):
+class MempoolPackagesTest(OpenSYTestFramework):
     def set_test_params(self):
         self.num_nodes = 2
         # whitelist peers to speed up tx relay / mempool sync
@@ -148,25 +148,25 @@ class MempoolPackagesTest(BitcoinTestFramework):
 
         # Check that ancestor modified fees includes fee deltas from
         # prioritisetransaction
-        self.nodes[0].prioritisetransaction(txid=chain[0], fee_delta=1000)
+        self.nodes[0].prioritisetransaction(txid=chain[0], fee_delta=200000)
         ancestor_fees = 0
         for x in chain:
             entry = self.nodes[0].getmempoolentry(x)
             ancestor_fees += entry['fees']['base']
-            assert_equal(entry['fees']['ancestor'], ancestor_fees + Decimal('0.00001'))
+            assert_equal(entry['fees']['ancestor'], ancestor_fees + Decimal('0.00200000'))
 
         # Undo the prioritisetransaction for later tests
-        self.nodes[0].prioritisetransaction(txid=chain[0], fee_delta=-1000)
+        self.nodes[0].prioritisetransaction(txid=chain[0], fee_delta=-200000)
 
         # Check that descendant modified fees includes fee deltas from
         # prioritisetransaction
-        self.nodes[0].prioritisetransaction(txid=chain[-1], fee_delta=1000)
+        self.nodes[0].prioritisetransaction(txid=chain[-1], fee_delta=200000)
 
         descendant_fees = 0
         for x in reversed(chain):
             entry = self.nodes[0].getmempoolentry(x)
             descendant_fees += entry['fees']['base']
-            assert_equal(entry['fees']['descendant'], descendant_fees + Decimal('0.00001'))
+            assert_equal(entry['fees']['descendant'], descendant_fees + Decimal('0.00200000'))
 
         # Check that prioritising a tx before it's added to the mempool works
         # First clear the mempool by mining a block.
@@ -239,9 +239,8 @@ class MempoolPackagesTest(BitcoinTestFramework):
         self.generate(self.nodes[0], 1)
         self.trigger_reorg(fork_blocks, self.nodes[0])
 
-        # Check if the txs are returned to the mempool (though the transaction ordering may
-        # change as it is non-deterministic).
-        assert_equal(set(self.nodes[0].getrawmempool()), set(mempool0))
+        # Check if the txs are returned to the mempool
+        assert_equal(self.nodes[0].getrawmempool(), mempool0)
 
         # Clean-up the mempool
         self.generate(self.nodes[0], 1)

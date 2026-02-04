@@ -1,8 +1,8 @@
-// Copyright (c) 2024-present The Bitcoin Core developers
+// Copyright (c) 2024-present The OpenSY developers
 // Distributed under the MIT software license, see the accompanying
 // file COPYING or http://www.opensource.org/licenses/mit-license.php.
-#ifndef BITCOIN_NODE_TXDOWNLOADMAN_IMPL_H
-#define BITCOIN_NODE_TXDOWNLOADMAN_IMPL_H
+#ifndef OPENSY_NODE_TXDOWNLOADMAN_IMPL_H
+#define OPENSY_NODE_TXDOWNLOADMAN_IMPL_H
 
 #include <node/txdownloadman.h>
 
@@ -201,4 +201,4 @@ protected:
     bool MaybeAddOrphanResolutionCandidate(const std::vector<Txid>& unique_parents, const Wtxid& wtxid, NodeId nodeid, std::chrono::microseconds now);
 };
 } // namespace node
-#endif // BITCOIN_NODE_TXDOWNLOADMAN_IMPL_H
+#endif // OPENSY_NODE_TXDOWNLOADMAN_IMPL_H

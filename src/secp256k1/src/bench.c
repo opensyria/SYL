@@ -177,6 +177,8 @@ int main(int argc, char** argv) {
     bench_data data;
 
     int d = argc == 1;
+    int default_iters = 20000;
+    int iters = get_iters(default_iters);
 
     /* Check for invalid user arguments */
     char* valid_args[] = {"ecdsa", "verify", "ecdsa_verify", "sign", "ecdsa_sign", "ecdh", "recover",
@@ -185,13 +187,6 @@ int main(int argc, char** argv) {
                          "ellswift_decode", "ellswift_keygen", "ellswift_ecdh"};
     size_t valid_args_size = sizeof(valid_args)/sizeof(valid_args[0]);
     int invalid_args = have_invalid_args(argc, argv, valid_args, valid_args_size);
-
-    int default_iters = 20000;
-    int iters = get_iters(default_iters);
-    if (iters == 0) {
-        help(default_iters);
-        return EXIT_FAILURE;
-    }
 
     if (argc > 1) {
         if (have_flag(argc, argv, "-h")
@@ -210,7 +205,7 @@ int main(int argc, char** argv) {
 #ifndef ENABLE_MODULE_ECDH
     if (have_flag(argc, argv, "ecdh")) {
         fprintf(stderr, "./bench: ECDH module not enabled.\n");
-        fprintf(stderr, "See README.md for configuration instructions.\n\n");
+        fprintf(stderr, "Use ./configure --enable-module-ecdh.\n\n");
         return EXIT_FAILURE;
     }
 #endif
@@ -218,7 +213,7 @@ int main(int argc, char** argv) {
 #ifndef ENABLE_MODULE_RECOVERY
     if (have_flag(argc, argv, "recover") || have_flag(argc, argv, "ecdsa_recover")) {
         fprintf(stderr, "./bench: Public key recovery module not enabled.\n");
-        fprintf(stderr, "See README.md for configuration instructions.\n\n");
+        fprintf(stderr, "Use ./configure --enable-module-recovery.\n\n");
         return EXIT_FAILURE;
     }
 #endif
@@ -226,7 +221,7 @@ int main(int argc, char** argv) {
 #ifndef ENABLE_MODULE_SCHNORRSIG
     if (have_flag(argc, argv, "schnorrsig") || have_flag(argc, argv, "schnorrsig_sign") || have_flag(argc, argv, "schnorrsig_verify")) {
         fprintf(stderr, "./bench: Schnorr signatures module not enabled.\n");
-        fprintf(stderr, "See README.md for configuration instructions.\n\n");
+        fprintf(stderr, "Use ./configure --enable-module-schnorrsig.\n\n");
         return EXIT_FAILURE;
     }
 #endif
@@ -236,7 +231,7 @@ int main(int argc, char** argv) {
         have_flag(argc, argv, "encode") || have_flag(argc, argv, "decode") || have_flag(argc, argv, "ellswift_keygen") ||
         have_flag(argc, argv, "ellswift_ecdh")) {
         fprintf(stderr, "./bench: ElligatorSwift module not enabled.\n");
-        fprintf(stderr, "See README.md for configuration instructions.\n\n");
+        fprintf(stderr, "Use ./configure --enable-module-ellswift.\n\n");
         return EXIT_FAILURE;
     }
 #endif

@@ -19,7 +19,6 @@ add_executable(fuzz
   block.cpp
   block_header.cpp
   block_index.cpp
-  block_index_tree.cpp
   blockfilter.cpp
   bloom_filter.cpp
   buffered_file.cpp
@@ -97,6 +96,9 @@ add_executable(fuzz
   protocol.cpp
   psbt.cpp
   random.cpp
+  randomx.cpp
+  randomx_pool.cpp
+  randomx_structured.cpp
   rbf.cpp
   rolling_bloom_filter.cpp
   rpc.cpp
@@ -117,6 +119,7 @@ add_executable(fuzz
   signet.cpp
   socks5.cpp
   span.cpp
+  src20.cpp
   string.cpp
   strprintf.cpp
   system.cpp
@@ -143,9 +146,9 @@ target_link_libraries(fuzz
   core_interface
   fuzzer_interface
   test_fuzz
-  bitcoin_cli
-  bitcoin_common
-  bitcoin_util
+  opensy_cli
+  opensy_common
+  opensy_util
   minisketch
   leveldb
   univalue

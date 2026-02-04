@@ -1,9 +1,9 @@
-// Copyright (c) 2017-present The Bitcoin Core developers
+// Copyright (c) 2017-present The OpenSY developers
 // Distributed under the MIT software license, see the accompanying
 // file COPYING or http://www.opensource.org/licenses/mit-license.php.
 
-#ifndef BITCOIN_UTIL_FS_H
-#define BITCOIN_UTIL_FS_H
+#ifndef OPENSY_UTIL_FS_H
+#define OPENSY_UTIL_FS_H
 
 #include <tinyformat.h>
 
@@ -231,4 +231,4 @@ template<> inline void formatValue(std::ostream&, const char*, const char*, int,
 template<> inline void formatValue(std::ostream&, const char*, const char*, int, const fs::path&) = delete;
 } // namespace tinyformat
 
-#endif // BITCOIN_UTIL_FS_H
+#endif // OPENSY_UTIL_FS_H

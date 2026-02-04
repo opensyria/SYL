@@ -1,4 +1,4 @@
-// Copyright (c) 2025-present The Bitcoin Core developers
+// Copyright (c) 2025 The OpenSY developers
 // Distributed under the MIT software license, see the accompanying
 // file COPYING or http://www.opensource.org/licenses/mit-license.php.
 
@@ -41,7 +41,7 @@ BOOST_AUTO_TEST_CASE(init_test)
     LogInstance().DisconnectTestLogger();
     m_node.args->SetConfigFilePath({});
 
-    // Prevent the test from trying to listen on ports 8332 and 8333.
+    // Prevent the test from trying to listen on ports 9632 and 9633.
     m_node.args->ForceSetArg("-server", "0");
     m_node.args->ForceSetArg("-listen", "0");
 
