@@ -30,6 +30,7 @@ class SRC20TokenTest(OpenSYTestFramework):
     def set_test_params(self):
         self.num_nodes = 3  # Three nodes for better sync testing
         self.setup_clean_chain = True
+        self.rpc_timeout = 600  # 10 minutes for RandomX mining
         # Use lower fork height for faster testing
         self.extra_args = [
             ["-randomxforkheight=5"],

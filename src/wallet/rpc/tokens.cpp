@@ -29,9 +29,9 @@ static void EnsureTokenDB()
 RPCHelpMan walletissuetoken()
 {
     return RPCHelpMan{"walletissuetoken",
-        "\nCreate and broadcast a token issuance transaction.\n"
-        "Creates a new SRC-20 token with the specified parameters.\n"
-        "The token will be issued to the wallet's new receiving address.\n"
+        "Create and broadcast a token issuance transaction. "
+        "Creates a new SRC-20 token with the specified parameters. "
+        "The token will be issued to the wallet's new receiving address."
         + HELP_REQUIRING_PASSPHRASE,
         {
             {"ticker", RPCArg::Type::STR, RPCArg::Optional::NO, "Token ticker (1-4 uppercase chars)"},
@@ -139,7 +139,7 @@ RPCHelpMan walletissuetoken()
 RPCHelpMan wallettransfertoken()
 {
     return RPCHelpMan{"wallettransfertoken",
-        "\nTransfer SRC-20 tokens to another address.\n"
+        "Transfer SRC-20 tokens to another address."
         + HELP_REQUIRING_PASSPHRASE,
         {
             {"token_id", RPCArg::Type::STR_HEX, RPCArg::Optional::NO, "The token ID"},
@@ -230,7 +230,7 @@ RPCHelpMan wallettransfertoken()
 RPCHelpMan walletburntoken()
 {
     return RPCHelpMan{"walletburntoken",
-        "\nBurn SRC-20 tokens (permanently destroy).\n"
+        "Burn SRC-20 tokens (permanently destroy)."
         + HELP_REQUIRING_PASSPHRASE,
         {
             {"token_id", RPCArg::Type::STR_HEX, RPCArg::Optional::NO, "The token ID"},
@@ -301,7 +301,7 @@ RPCHelpMan walletburntoken()
 RPCHelpMan gettokenbalances()
 {
     return RPCHelpMan{"gettokenbalances",
-        "\nGet all token balances for this wallet.\n",
+        "Get all token balances for this wallet.",
         {},
         RPCResult{
             RPCResult::Type::ARR, "", "",
@@ -355,7 +355,7 @@ RPCHelpMan gettokenbalances()
 RPCHelpMan gettokentxhistory()
 {
     return RPCHelpMan{"gettokentxhistory",
-        "\nGet token transaction history for this wallet.\n",
+        "Get token transaction history for this wallet.",
         {
             {"token_id", RPCArg::Type::STR_HEX, RPCArg::Optional::OMITTED, "Optional token ID filter"},
             {"count", RPCArg::Type::NUM, RPCArg::Default{100}, "Maximum number of transactions to return"},

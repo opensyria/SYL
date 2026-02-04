@@ -3,7 +3,7 @@
 #include <thread>
 #include <vector>
 #include <atomic>
-#include "randomx.h"
+#include <randomx.h>
 
 std::atomic<int> passed{0};
 std::atomic<int> failed{0};

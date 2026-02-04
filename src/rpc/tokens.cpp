@@ -315,7 +315,7 @@ void EnsureTokenDB()
 static RPCHelpMan gettokeninfo()
 {
     return RPCHelpMan{"gettokeninfo",
-        "\nGet information about an SRC-20 token.\n",
+        "Get information about an SRC-20 token.",
         {
             {"token_id", RPCArg::Type::STR_HEX, RPCArg::Optional::NO, "The token ID (hex)"},
         },
@@ -366,7 +366,7 @@ static RPCHelpMan gettokeninfo()
 static RPCHelpMan gettokenbyname()
 {
     return RPCHelpMan{"gettokenbyname",
-        "\nGet token information by ticker symbol.\n",
+        "Get token information by ticker symbol.",
         {
             {"ticker", RPCArg::Type::STR, RPCArg::Optional::NO, "The token ticker (e.g., 'TEST')"},
         },
@@ -396,7 +396,7 @@ static RPCHelpMan gettokenbyname()
 static RPCHelpMan gettokenbalance()
 {
     return RPCHelpMan{"gettokenbalance",
-        "\nGet token balance for an address.\n",
+        "Get token balance for an address.",
         {
             {"address", RPCArg::Type::STR, RPCArg::Optional::NO, "The address to check"},
             {"token_id", RPCArg::Type::STR_HEX, RPCArg::Optional::OMITTED, "Optional token ID filter"},
@@ -464,7 +464,7 @@ static RPCHelpMan gettokenbalance()
 static RPCHelpMan listtokens()
 {
     return RPCHelpMan{"listtokens",
-        "\nList all registered SRC-20 tokens.\n",
+        "List all registered SRC-20 tokens.",
         {
             {"count", RPCArg::Type::NUM, RPCArg::Default{100}, "Maximum number of tokens to return"},
             {"start", RPCArg::Type::STR_HEX, RPCArg::Optional::OMITTED, "Token ID to start from (for pagination)"},
@@ -524,7 +524,7 @@ static RPCHelpMan listtokens()
 static RPCHelpMan gettokenholders()
 {
     return RPCHelpMan{"gettokenholders",
-        "\nGet holders of an SRC-20 token.\n",
+        "Get holders of an SRC-20 token.",
         {
             {"token_id", RPCArg::Type::STR_HEX, RPCArg::Optional::NO, "The token ID"},
             {"min_balance", RPCArg::Type::NUM, RPCArg::Default{0}, "Minimum balance to include"},
@@ -598,7 +598,7 @@ static RPCHelpMan gettokenholders()
 static RPCHelpMan gettokenhistory()
 {
     return RPCHelpMan{"gettokenhistory",
-        "\nGet transfer history for a token.\n",
+        "Get transfer history for a token.",
         {
             {"token_id", RPCArg::Type::STR_HEX, RPCArg::Optional::NO, "The token ID"},
             {"start_height", RPCArg::Type::NUM, RPCArg::Default{0}, "Starting block height"},
@@ -652,10 +652,10 @@ static RPCHelpMan gettokenhistory()
 static RPCHelpMan issuetoken()
 {
     return RPCHelpMan{"issuetoken",
-        "\nPrepare data to issue a new SRC-20 token.\n"
-        "Returns the OP_RETURN script needed for manual transaction creation.\n"
-        "\nNOTE: For automatic transaction creation and broadcasting, use 'walletissuetoken' instead.\n"
-        "Use createrawtransaction with this output for manual transaction construction.\n",
+        "Prepare data to issue a new SRC-20 token. "
+        "Returns the OP_RETURN script needed for manual transaction creation. "
+        "NOTE: For automatic transaction creation and broadcasting, use 'walletissuetoken' instead. "
+        "Use createrawtransaction with this output for manual transaction construction.",
         {
             {"ticker", RPCArg::Type::STR, RPCArg::Optional::NO, "Token ticker (1-4 uppercase chars)"},
             {"name", RPCArg::Type::STR, RPCArg::Optional::NO, "Token name (max 32 chars)"},
@@ -731,9 +731,9 @@ static RPCHelpMan issuetoken()
 static RPCHelpMan transfertoken()
 {
     return RPCHelpMan{"transfertoken",
-        "\nPrepare data to transfer SRC-20 tokens.\n"
-        "Returns the scripts needed for manual transaction creation.\n"
-        "\nNOTE: For automatic transaction creation and broadcasting, use 'wallettransfertoken' instead.\n",
+        "Prepare data to transfer SRC-20 tokens. "
+        "Returns the scripts needed for manual transaction creation. "
+        "NOTE: For automatic transaction creation and broadcasting, use 'wallettransfertoken' instead.",
         {
             {"token_id", RPCArg::Type::STR_HEX, RPCArg::Optional::NO, "The token ID"},
             {"to_address", RPCArg::Type::STR, RPCArg::Optional::NO, "Recipient address"},
@@ -802,9 +802,9 @@ static RPCHelpMan transfertoken()
 static RPCHelpMan burntoken()
 {
     return RPCHelpMan{"burntoken",
-        "\nPrepare data to burn SRC-20 tokens (permanently destroy).\n"
-        "Returns the OP_RETURN script needed for manual transaction creation.\n"
-        "\nNOTE: For automatic transaction creation and broadcasting, use 'walletburntoken' instead.\n",
+        "Prepare data to burn SRC-20 tokens (permanently destroy). "
+        "Returns the OP_RETURN script needed for manual transaction creation. "
+        "NOTE: For automatic transaction creation and broadcasting, use 'walletburntoken' instead.",
         {
             {"token_id", RPCArg::Type::STR_HEX, RPCArg::Optional::NO, "The token ID"},
             {"amount", RPCArg::Type::NUM, RPCArg::Optional::NO, "Amount to burn (in smallest units)"},
@@ -861,7 +861,7 @@ static RPCHelpMan burntoken()
 static RPCHelpMan gettokenstats()
 {
     return RPCHelpMan{"gettokenstats",
-        "\nGet overall SRC-20 token statistics.\n",
+        "Get overall SRC-20 token statistics.",
         {},
         RPCResult{
             RPCResult::Type::OBJ, "", /*optional=*/false, "",
@@ -892,7 +892,7 @@ static RPCHelpMan gettokenstats()
 static RPCHelpMan decodesrc20()
 {
     return RPCHelpMan{"decodesrc20",
-        "\nDecode an SRC-20 OP_RETURN script.\n",
+        "Decode an SRC-20 OP_RETURN script.",
         {
             {"hexstring", RPCArg::Type::STR_HEX, RPCArg::Optional::NO, "The hex-encoded script"},
         },
@@ -967,7 +967,7 @@ static RPCHelpMan decodesrc20()
 static RPCHelpMan getreservedtickers()
 {
     return RPCHelpMan{"getreservedtickers",
-        "\nGet the list of reserved SRC-20 token tickers that cannot be used for new tokens.\n",
+        "Get the list of reserved SRC-20 token tickers.",
         {},
         RPCResult{
             RPCResult::Type::OBJ, "", /*optional=*/false, "",

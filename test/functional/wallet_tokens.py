@@ -29,6 +29,7 @@ class WalletTokenRPCTest(OpenSYTestFramework):
     def set_test_params(self):
         self.num_nodes = 2
         self.setup_clean_chain = True
+        self.rpc_timeout = 600  # 10 minutes for RandomX mining
         self.extra_args = [
             ["-randomxforkheight=5"],
             ["-randomxforkheight=5"],

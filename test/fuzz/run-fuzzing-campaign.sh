@@ -1,4 +1,4 @@
-#!/bin/bash
+#!/usr/bin/env bash
 # OpenSY Continuous Fuzzing Campaign
 # Run for 7+ days to find edge cases in consensus-critical code
 
@@ -87,7 +87,7 @@ build_fuzz_targets() {
         2>&1 | tail -5
     
     # Build
-    cmake --build "$FUZZ_BUILD_DIR" --target fuzz -- -j$JOBS 2>&1 | tail -10
+    cmake --build "$FUZZ_BUILD_DIR" --target fuzz -- -j"$JOBS" 2>&1 | tail -10
     
     echo -e "${GREEN}  ✓ Fuzz targets built${NC}"
     echo
@@ -143,12 +143,12 @@ fuzz_target() {
     export UBSAN_OPTIONS="print_stacktrace=1:halt_on_error=0:report_error_type=1"
     
     # Run fuzzer
-    timeout ${duration}s "$fuzz_binary" \
+    timeout "${duration}s" "$fuzz_binary" \
         "$CORPUS_DIR/$target" \
         -artifact_prefix="$CRASH_DIR/$target/" \
-        -max_len=$MAX_LEN \
-        -jobs=$JOBS \
-        -workers=$JOBS \
+        -max_len="$MAX_LEN" \
+        -jobs="$JOBS" \
+        -workers="$JOBS" \
         -print_final_stats=1 \
         2>&1 | tee "$log_file" &
     
@@ -169,7 +169,7 @@ run_parallel_campaign() {
     
     for target in "${FUZZ_TARGETS[@]}"; do
         fuzz_target "$target" "$duration_per_target"
-        PIDS+=($FUZZ_PID)
+        PIDS+=("$FUZZ_PID")
         sleep 2  # Stagger starts
     done
     
@@ -195,7 +195,7 @@ run_sequential_campaign() {
     
     for target in "${FUZZ_TARGETS[@]}"; do
         fuzz_target "$target" "$duration_per_target"
-        wait $FUZZ_PID 2>/dev/null || true
+        wait "$FUZZ_PID" 2>/dev/null || true
     done
 }
 
@@ -218,7 +218,7 @@ EOF
     
     for target in "${FUZZ_TARGETS[@]}"; do
         crash_count=$(find "$CRASH_DIR/$target" -name "crash-*" 2>/dev/null | wc -l)
-        unique_count=$(find "$CRASH_DIR/$target" -name "crash-*" 2>/dev/null | xargs -I{} md5sum {} 2>/dev/null | awk '{print $1}' | sort -u | wc -l)
+        unique_count=$(find "$CRASH_DIR/$target" -name "crash-*" -print0 2>/dev/null | xargs -0 md5sum 2>/dev/null | awk '{print $1}' | sort -u | wc -l)
         
         if [ "$crash_count" -gt 0 ]; then
             status="⚠️ REVIEW"
@@ -274,8 +274,8 @@ check_status() {
     echo
     
     echo "Active fuzzer processes:"
-    pgrep -f "fuzz_" | while read pid; do
-        ps -p $pid -o pid,etime,command 2>/dev/null | tail -1
+    pgrep -f "fuzz_" | while read -r pid; do
+        ps -p "$pid" -o pid,etime,command 2>/dev/null | tail -1
     done
     echo
     

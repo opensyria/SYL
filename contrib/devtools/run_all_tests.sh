@@ -1,4 +1,4 @@
-#!/bin/bash
+#!/usr/bin/env bash
 # OpenSY Comprehensive Test Suite Runner
 # This script runs all tests and generates coverage reports
 

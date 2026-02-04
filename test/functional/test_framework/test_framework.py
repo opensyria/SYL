@@ -845,8 +845,12 @@ class OpenSYTestFramework(metaclass=OpenSYTestMetaClass):
 
             os.rmdir(cache_path('wallets'))  # Remove empty wallets dir
             for entry in os.listdir(cache_path()):
-                if entry not in ['chainstate', 'blocks', 'indexes']:  # Only indexes, chainstate and blocks folders
-                    os.remove(cache_path(entry))
+                if entry not in ['chainstate', 'blocks', 'indexes', 'tokens']:  # Keep indexes, chainstate, blocks and tokens folders
+                    entry_path = cache_path(entry)
+                    if os.path.isdir(entry_path):
+                        shutil.rmtree(entry_path)
+                    else:
+                        os.remove(entry_path)
 
         for i in range(self.num_nodes):
             self.log.debug("Copy cache directory {} to node {}".format(cache_node_dir, i))

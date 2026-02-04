@@ -1,4 +1,4 @@
-#!/bin/bash
+#!/usr/bin/env bash
 # OpenSY Upstream Sync Helper
 #
 # This script helps synchronize commits from Bitcoin Core upstream.
@@ -114,7 +114,8 @@ should_skip_message() {
 # Check if commit only touches deleted files (safe to skip)
 touches_only_deleted() {
     local hash="$1"
-    local files=$(git show --name-only --format="" "$hash")
+    local files
+    files=$(git show --name-only --format="" "$hash")
     
     for file in $files; do
         local is_deleted=false
@@ -135,7 +136,8 @@ touches_only_deleted() {
 # Check if commit touches OpenSY-modified files (needs review)
 touches_modified_files() {
     local hash="$1"
-    local files=$(git show --name-only --format="" "$hash")
+    local files
+    files=$(git show --name-only --format="" "$hash")
     
     for file in $files; do
         for modified in "${OPENSY_MODIFIED_FILES[@]}"; do
@@ -150,7 +152,8 @@ touches_modified_files() {
 # Analyze a commit and return: SAFE, SKIP, REVIEW, or RISKY
 analyze_commit() {
     local hash="$1"
-    local message=$(git log --format="%s" -1 "$hash")
+    local message
+    message=$(git log --format="%s" -1 "$hash")
     
     # Check message patterns first
     if should_skip_message "$message"; then
@@ -171,7 +174,8 @@ analyze_commit() {
     fi
     
     # Check file types - tests and docs are usually safe
-    local files=$(git show --name-only --format="" "$hash")
+    local files
+    files=$(git show --name-only --format="" "$hash")
     local all_safe=true
     
     for file in $files; do
@@ -284,7 +288,8 @@ cherry_pick_commit() {
 
 # Interactive mode
 interactive_mode() {
-    local last_sync=$(get_last_sync)
+    local last_sync
+    last_sync=$(get_last_sync)
     
     if [[ -z "$last_sync" ]]; then
         log_warn "Could not determine last sync from ${SYNC_DOC}"
@@ -304,7 +309,8 @@ interactive_mode() {
 # Update sync doc with new timestamp
 update_sync_doc() {
     local new_hash="$1"
-    local today=$(date +%Y-%m-%d)
+    local today
+    today=$(date +%Y-%m-%d)
     
     if [[ -f "${SYNC_DOC}" ]]; then
         # Update the last sync line
@@ -317,7 +323,8 @@ update_sync_doc() {
 
 # Autonomous mode - auto-apply safe commits, skip unsafe ones
 autonomous_mode() {
-    local last_sync=$(get_last_sync)
+    local last_sync
+    last_sync=$(get_last_sync)
     local applied=0
     local skipped=0
     local needs_review=0
@@ -400,7 +407,8 @@ main() {
     case "${1:-}" in
         --list)
             check_prerequisites
-            local last_sync=$(get_last_sync)
+            local last_sync
+            last_sync=$(get_last_sync)
             if [[ -z "$last_sync" ]]; then
                 log_error "Could not determine last sync"
                 exit 1
@@ -413,7 +421,8 @@ main() {
             ;;
         --analyze)
             check_prerequisites
-            local last_sync=$(get_last_sync)
+            local last_sync
+            last_sync=$(get_last_sync)
             if [[ -z "$last_sync" ]]; then
                 log_error "Could not determine last sync"
                 exit 1

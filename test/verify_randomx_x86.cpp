@@ -1,6 +1,6 @@
 #include <cstdio>
 #include <cstring>
-#include "randomx.h"
+#include <randomx.h>
 
 int main() {
     const char* expected_hashes[] = {

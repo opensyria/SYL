@@ -1,4 +1,5 @@
-#!/bin/bash
+#!/usr/bin/env bash
+# shellcheck disable=SC2129  # Allow individual redirects for readability
 # OpenSY ThreadSanitizer (TSAN) Build and Test Script
 # BLOCKER 2: Verify no data races in concurrent code paths
 #
@@ -69,7 +70,7 @@ echo ""
 
 # Step 2: Build
 echo "[2/4] Building with TSAN (this takes 10-20 minutes)..."
-cmake --build "$BUILD_DIR" -j$(nproc) 2>&1 | tee "$BUILD_DIR/build.log"
+cmake --build "$BUILD_DIR" -j"$(nproc)" 2>&1 | tee "$BUILD_DIR/build.log"
 
 if [ ! -f "$BUILD_DIR/bin/test_opensy" ]; then
     echo "❌ ERROR: Build failed - test_opensy not found"

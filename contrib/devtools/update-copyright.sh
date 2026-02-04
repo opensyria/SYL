@@ -1,4 +1,4 @@
-#!/bin/bash
+#!/usr/bin/env bash
 # Copyright Header Standardization Script for OpenSY
 # 
 # This script standardizes copyright headers across the codebase:
@@ -9,18 +9,23 @@
 
 set -e
 
+# shellcheck disable=SC2034  # Variables are for future expansion and templates
 DRY_RUN=false
 if [[ "$1" == "--dry-run" ]]; then
+    # shellcheck disable=SC2034
     DRY_RUN=true
     echo "DRY RUN MODE - No files will be modified"
 fi
 
 # Counters
 MODIFIED=0
+# shellcheck disable=SC2034
 SKIPPED=0
 
 # Standard copyright patterns
+# shellcheck disable=SC2034
 OPENSY_ONLY="// Copyright (c) 2025-present The OpenSY developers"
+# shellcheck disable=SC2034
 DUAL_COPYRIGHT_PATTERN="// Copyright (c) YEAR1-YEAR2 The Bitcoin Core developers
 // Copyright (c) 2025-present The OpenSY developers"
 

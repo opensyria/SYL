@@ -386,6 +386,21 @@ static const CRPCConvertParam vRPCConvertParams[] =
     { "signmessagewithprivkey", 1, "message", ParamFormat::STRING },
     { "walletpassphrasechange", 0, "oldpassphrase", ParamFormat::STRING },
     { "walletpassphrasechange", 1, "newpassphrase", ParamFormat::STRING },
+    // SRC20 Token RPCs
+    { "issuetoken", 2, "decimals" },
+    { "issuetoken", 3, "supply" },
+    { "burntoken", 1, "amount" },
+    { "transfertoken", 2, "amount" },
+    { "listtokens", 0, "count" },
+    { "gettokenholders", 1, "min_balance" },
+    { "gettokenholders", 2, "count" },
+    { "gettokenhistory", 1, "start_height" },
+    { "gettokenhistory", 2, "count" },
+    { "gettokentxhistory", 1, "count" },
+    { "walletissuetoken", 2, "decimals" },
+    { "walletissuetoken", 3, "supply" },
+    { "walletburntoken", 1, "amount" },
+    { "wallettransfertoken", 2, "amount" },
 };
 // clang-format on
 
