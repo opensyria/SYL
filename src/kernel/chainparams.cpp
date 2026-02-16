@@ -131,17 +131,16 @@ public:
         // This prevents attackers from creating fake chains with less total work
         // Attackers would need to redo all PoW from genesis to create an alternate chain
         //
-        // AUDIT FIX M-02: Set at block 4400 (Jan 31, 2026)
-        // Update this value periodically as chain grows for better protection
+        // Updated at block 210,020 (Feb 15, 2026) - Phase 1 bootstrap complete
         // Get current value: opensy-cli getblockheader $(opensy-cli getblockhash <height>) | grep chainwork
-        consensus.nMinimumChainWork = uint256{"0000000000000000000000000000000000000000000000000000001131113100"};
+        consensus.nMinimumChainWork = uint256{"00000000000000000000000000000000000000000000000000000832b5fc1a94"};
         
         // AssumeValid - enables faster sync by skipping signature validation for known-good blocks
         // Nodes will skip script validation for blocks up to this point (significant sync speedup)
         //
-        // AUDIT FIX M-02: Set at block 4400 (Jan 31, 2026)
+        // Updated at block 210,020 (Feb 15, 2026) - Phase 1 bootstrap complete
         // This block has been manually verified by maintainers
-        consensus.defaultAssumeValid = uint256{"00000032c979bef82c86a88aa04a0463485998b4f574efbc6ad0dc6ddc50d55d"};
+        consensus.defaultAssumeValid = uint256{"12583482c57315765930eddddac184253ca6fd851f6260034a6779d60ea74eda"};
 
         // ═══════════════════════════════════════════════════════════════════════
         // TWO-PHASE PROOF-OF-WORK STRATEGY
@@ -186,8 +185,8 @@ public:
         pchMessageStart[3] = 0x4d; // 'M' for mainnet
         nDefaultPort = 9633; // OpenSY mainnet port (963 = Syria country code)
         nPruneAfterHeight = 100000;
-        m_assumed_blockchain_size = 1; // New chain - minimal initial size
-        m_assumed_chain_state_size = 1; // New chain - minimal initial size
+        m_assumed_blockchain_size = 1; // ~113 MB blocks on disk (rounds up to 1 GB)
+        m_assumed_chain_state_size = 1; // ~15 MB chainstate on disk (rounds up to 1 GB)
 
         // Genesis Block - December 8, 2024 at 6:18 AM Syria Time (04:18 UTC)
         // This moment marks the liberation of Syria and the fall of the Assad regime,
@@ -296,16 +295,20 @@ public:
         // AssumeUTXO data - enables instant sync by loading a verified UTXO snapshot
         // Generate with: opensy-cli dumptxoutset /path/to/utxo.dat rollback '{"rollback": <height>}'
         //
-        // FIX M-03: AssumeUTXO snapshots will be generated and added post-launch
-        // after the network stabilizes (recommended at heights 100,000, 200,000, etc.)
-        // For now, empty data means assumeutxo is disabled (full sync required)
+        // AssumeUTXO snapshots - enables instant sync by loading a verified UTXO snapshot
+        // Generated at block 210,000 (Phase 2 transition boundary)
         //
-        // INSTRUCTIONS for maintainers when adding snapshots:
-        // 1. Run: opensy-cli -datadir=/path dumptxoutset /tmp/utxo.dat rollback '{"rollback": <HEIGHT>}'
-        // 2. Get blockhash: opensy-cli getblockhash <HEIGHT>
-        // 3. Get data: cat /tmp/utxo.dat | sha256sum (m_chain_tx_count from getchaintxstats)
-        // 4. Add entry: {<HEIGHT>, AssumeutxoHash::FromHex("<hash>").value(), <tx_count>}
-        m_assumeutxo_data = {};
+        // To add future snapshots:
+        // 1. Run: opensy-cli dumptxoutset /tmp/utxo.dat rollback '{"rollback": <HEIGHT>}'
+        // 2. Use txoutset_hash and nchaintx from the output
+        // 3. Add entry below
+        m_assumeutxo_data = {
+            {
+                .height = 210'000,
+                .hash_serialized = AssumeutxoHash{uint256{"9c567f013818ce786087e4297c9665eedc4bf907a620fec423b687c5c5856cbd"}},
+                .m_chain_tx_count = 210002,
+            },
+        };
 
         // Chain transaction data - for sync time estimation
         //
@@ -316,11 +319,11 @@ public:
         // Run: opensy-cli getchaintxstats
         // Update nTime = result.time, tx_count = result.txcount, dTxRate = result.txrate
         //
-        // Last updated: 2026-02-02 at block ~4400
+        // Last updated: 2026-02-15 at block 210,020 (Phase 1 bootstrap complete)
         chainTxData = ChainTxData{
-            .nTime    = 1738540800,  // 2026-02-02 (approx)
-            .tx_count = 5000,        // Estimated transactions at block 4400
-            .dTxRate  = 0.04,        // ~1 tx per 25 seconds (low early activity)
+            .nTime    = 1771219255,  // 2026-02-15
+            .tx_count = 210022,      // Total transactions at block 210,020
+            .dTxRate  = 0.4007,      // ~1 tx per 2.5 seconds (coinbase every block)
         };
 
 
