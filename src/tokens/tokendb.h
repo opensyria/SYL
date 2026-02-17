@@ -330,7 +330,7 @@ public:
         int height,
         int64_t time,
         CDBBatch* external_batch = nullptr,
-        uint8_t op_index = 0) EXCLUSIVE_LOCKS_REQUIRED(!m_cs);
+        uint16_t op_index = 0) EXCLUSIVE_LOCKS_REQUIRED(!m_cs);
 
     /**
      * Burn tokens from an address
@@ -351,7 +351,7 @@ public:
         int height,
         int64_t time,
         CDBBatch* external_batch = nullptr,
-        uint8_t op_index = 0) EXCLUSIVE_LOCKS_REQUIRED(!m_cs);
+        uint16_t op_index = 0) EXCLUSIVE_LOCKS_REQUIRED(!m_cs);
 
     // ----- History -----
 

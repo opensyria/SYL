@@ -1011,6 +1011,11 @@ bool AppInitParameterInteraction(const ArgsManager& args)
         g_local_services = ServiceFlags(g_local_services | NODE_P2P_V2);
     }
 
+    // AUDIT FIX [H-04]: Always advertise NODE_RANDOMX capability.
+    // This node binary supports RandomX validation. Peers can use this flag
+    // to detect upgrade status during the SHA256d→RandomX transition.
+    g_local_services = ServiceFlags(g_local_services | NODE_RANDOMX);
+
     // Signal NODE_COMPACT_FILTERS if peerblockfilters and basic filters index are both enabled.
     if (args.GetBoolArg("-peerblockfilters", DEFAULT_PEERBLOCKFILTERS)) {
         if (g_enabled_filter_types.count(BlockFilterType::BASIC) != 1) {

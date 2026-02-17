@@ -329,6 +329,13 @@ enum ServiceFlags : uint64_t {
     // NODE_P2P_V2 means the node supports BIP324 transport
     NODE_P2P_V2 = (1 << 11),
 
+    // NODE_RANDOMX means the node can validate RandomX proof-of-work blocks.
+    // AUDIT FIX [H-04]: Nodes advertise this flag after the RandomX fork height
+    // so peers can detect upgrade status during the SHA256d→RandomX transition.
+    // Without this flag, un-upgraded nodes silently stall at the fork boundary
+    // with no mechanism for detection or graceful degradation.
+    NODE_RANDOMX = (1 << 24),
+
     // Bits 24-31 are reserved for temporary experiments. Just pick a bit that
     // isn't getting used, or one not being used much, and notify the
     // opensy-development mailing list. Remember that service bits are just

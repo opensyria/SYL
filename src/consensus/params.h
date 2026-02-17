@@ -219,7 +219,12 @@ struct Params {
     {
         switch (GetPowAlgorithm(height)) {
         case PowAlgorithm::ARGON2ID:
-            return powLimitArgon2.IsNull() ? powLimitRandomX : powLimitArgon2;
+            // AUDIT FIX [M-06]: Harden fallback chain to avoid theoretical null-limit.
+            // Previously fell back only to powLimitRandomX, which if also null would
+            // produce a zero powLimit, rejecting all blocks.
+            if (!powLimitArgon2.IsNull()) return powLimitArgon2;
+            if (!powLimitRandomX.IsNull()) return powLimitRandomX;
+            return powLimit;
         case PowAlgorithm::RANDOMX:
             return powLimitRandomX.IsNull() ? powLimit : powLimitRandomX;
         case PowAlgorithm::SHA256D:

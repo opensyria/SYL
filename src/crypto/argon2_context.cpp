@@ -149,6 +149,9 @@ uint256 Argon2Context::CalculateHash(const unsigned char* data, size_t len,
     // Add parameters to make it deterministic based on config
     hasher.Write(reinterpret_cast<const unsigned char*>(&m_memory_cost), sizeof(m_memory_cost));
     hasher.Write(reinterpret_cast<const unsigned char*>(&m_time_cost), sizeof(m_time_cost));
+    // AUDIT FIX [L-03]: Include m_parallelism in the hash input for consistency
+    // with the real Argon2id implementation where parallelism affects the output.
+    hasher.Write(reinterpret_cast<const unsigned char*>(&m_parallelism), sizeof(m_parallelism));
     hasher.Finalize(result.begin());
 #endif
 

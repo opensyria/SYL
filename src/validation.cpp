@@ -3988,9 +3988,13 @@ static bool CheckBlockHeader(const CBlockHeader& block, BlockValidationState& st
     // RandomX (post-fork) validation. This function is intentionally PoW-free.
     // The fCheckPOW parameter is retained for API compatibility but is ignored.
     //
-    // WARNING: Do NOT rely on this function alone for PoW validation.
-    // Any code path that accepts blocks MUST also call ContextualCheckBlockHeader.
+    // AUDIT FIX [L-01]: CRITICAL ARCHITECTURE WARNING:
+    // This function is a NO-OP. ALL PoW enforcement depends on
+    // ContextualCheckBlockHeader being called after this function.
+    // Any code path that calls CheckBlockHeader without also calling
+    // ContextualCheckBlockHeader will accept blocks with NO PoW validation.
     // See AcceptBlockHeader() which correctly calls both in sequence.
+    // DO NOT add new block acceptance paths without ensuring ContextualCheckBlockHeader runs.
     (void)fCheckPOW;
     (void)consensusParams;
 

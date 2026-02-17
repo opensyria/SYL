@@ -7,6 +7,7 @@ add_subdirectory(util)
 add_executable(fuzz
   addition_overflow.cpp
   addrman.cpp
+  argon2.cpp
   asmap.cpp
   asmap_direct.cpp
   autofile.cpp
@@ -124,6 +125,7 @@ add_executable(fuzz
   strprintf.cpp
   system.cpp
   timeoffsets.cpp
+  token_disconnect.cpp
   torcontrol.cpp
   transaction.cpp
   txdownloadman.cpp

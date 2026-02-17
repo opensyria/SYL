@@ -66,9 +66,10 @@ struct TransferKey {
     src20::TokenId token_id;
     int height{0};
     uint256 txid;
-    uint8_t op_index{0}; // SECURITY FIX [L-07]: Disambiguate multi-op transactions
+    // AUDIT FIX [L-04]: Widened from uint8_t to uint16_t to prevent wrap at 256 ops per tx.
+    uint16_t op_index{0};
     TransferKey() = default;
-    TransferKey(const src20::TokenId& id, int h, const uint256& tx, uint8_t idx = 0) : token_id(id), height(h), txid(tx), op_index(idx) {}
+    TransferKey(const src20::TokenId& id, int h, const uint256& tx, uint16_t idx = 0) : token_id(id), height(h), txid(tx), op_index(idx) {}
     SERIALIZE_METHODS(TransferKey, obj) { READWRITE(obj.prefix, obj.token_id, obj.height, obj.txid, obj.op_index); }
 };
 
@@ -83,8 +84,9 @@ struct UndoKey {
     uint8_t prefix{db_prefix::UNDO};
     int height;
     uint256 txid;
-    uint8_t op_index{0}; // SECURITY FIX [C-02]: Disambiguate multi-op transactions
-    UndoKey(int h, const uint256& tx, uint8_t idx = 0) : height(h), txid(tx), op_index(idx) {}
+    // AUDIT FIX [L-04]: Widened from uint8_t to uint16_t to prevent wrap at 256 ops per tx.
+    uint16_t op_index{0};
+    UndoKey(int h, const uint256& tx, uint16_t idx = 0) : height(h), txid(tx), op_index(idx) {}
     SERIALIZE_METHODS(UndoKey, obj) { READWRITE(obj.prefix, obj.height, obj.txid, obj.op_index); }
 };
 
@@ -511,7 +513,7 @@ bool TokenDB::TransferTokens(
     int height,
     int64_t time,
     CDBBatch* external_batch,
-    uint8_t op_index)
+    uint16_t op_index)
 {
     if (!m_db) return false;
     
@@ -619,7 +621,7 @@ bool TokenDB::BurnTokens(
     int height,
     int64_t time,
     CDBBatch* external_batch,
-    uint8_t op_index)
+    uint16_t op_index)
 {
     if (!m_db) return false;
     
@@ -816,9 +818,14 @@ int TokenDB::ProcessBlock(const CBlock& block, int height, const CBlockUndo& blo
     int64_t block_time = block.GetBlockTime();
     std::vector<uint256> block_token_txs;
     CDBBatch batch(*m_db);
+
+    // AUDIT FIX [M-04]: Enforce MAX_TOKENS_PER_BLOCK at the processing level.
+    // Previously this limit was only checked in mempool relay policy, allowing
+    // miners to include unlimited token ops and cause I/O load on all nodes.
+    static constexpr size_t MAX_OPS = src20::MAX_TOKENS_PER_BLOCK;
     
     // blockundo.vtxundo has entries for non-coinbase transactions (index i-1 for block.vtx[i])
-    for (unsigned int i = 0; i < block.vtx.size(); i++) {
+    for (unsigned int i = 0; i < block.vtx.size() && static_cast<size_t>(ops_count) < MAX_OPS; i++) {
         const auto& tx = block.vtx[i];
         auto ops = src20::ParseTransactionSRC20(*tx);
         
@@ -833,17 +840,25 @@ int TokenDB::ProcessBlock(const CBlock& block, int height, const CBlockUndo& blo
             }
         }
         
-        // SECURITY FIX [C-02]: Track per-tx operation index to prevent undo key collision.
+    // SECURITY FIX [C-02]: Track per-tx operation index to prevent undo key collision.
         // Each op within the same tx gets a unique op_index for its UndoKey and TransferKey.
-        uint8_t tx_op_index = 0;
+        // AUDIT FIX [L-04]: Widened from uint8_t to uint16_t to prevent wrap at 256 ops per tx.
+        uint16_t tx_op_index = 0;
 
         for (const auto& op : ops) {
+            // AUDIT FIX [M-04]: Stop processing once block limit reached
+            if (static_cast<size_t>(ops_count) >= MAX_OPS) {
+                LogDebug(BCLog::TOKEN, "MAX_TOKENS_PER_BLOCK (%zu) reached at height %d, skipping remaining ops\n", MAX_OPS, height);
+                break;
+            }
             switch (op.action) {
                 case src20::TokenAction::ISSUE: {
                     const auto* issuance = op.GetIssuance();
                     if (issuance && issuance->IsValid()) {
                         // AUDIT FIX [H-04]: Enforce minimum issuance fee to prevent token spam
-                        if (!tx->IsCoinBase() && i > 0) {
+                        // AUDIT FIX [M-03]: Coinbase transactions must also pay the fee.
+                        // Previously coinbase was exempt, allowing miners to issue tokens for free.
+                        if (i > 0 && !tx->IsCoinBase()) {
                             const CTxUndo& fee_undo = blockundo.vtxundo[i - 1];
                             CAmount total_in = 0;
                             for (const auto& prev : fee_undo.vprevout) {
@@ -859,6 +874,12 @@ int TokenDB::ProcessBlock(const CBlock& block, int height, const CBlockUndo& blo
                                          tx_fee, MIN_TOKEN_ISSUANCE_FEE);
                                 break;
                             }
+                        } else if (tx->IsCoinBase()) {
+                            // AUDIT FIX [M-03]: Coinbase token issuance is not allowed.
+                            // Miners could previously issue tokens for free by placing
+                            // SRC-20 ISSUE ops in the coinbase, bypassing the anti-spam fee.
+                            LogDebug(BCLog::TOKEN, "Token issuance rejected: coinbase transactions cannot issue tokens\n");
+                            break;
                         }
                         
                         // Get issuer address from first non-OP_RETURN output
@@ -879,6 +900,10 @@ int TokenDB::ProcessBlock(const CBlock& block, int height, const CBlockUndo& blo
                             undo.txid = txhash;
                             undo.token_id = *token_id_opt;
                             undo.ticker = issuance->ticker;
+                            // AUDIT FIX [H-01]: Store issuer address for reorg cleanup.
+                            // Previously from_address was left empty, causing phantom
+                            // balances to persist after ISSUE undo during reorgs.
+                            undo.from_address = issuer;
                             
                             auto undo_key = UndoKey(height, txhash, tx_op_index++);
                             batch.Write(undo_key, undo);
@@ -1016,8 +1041,12 @@ int TokenDB::ProcessBlock(const CBlock& block, int height, const CCoinsViewCache
     int64_t block_time = block.GetBlockTime();
     std::vector<uint256> block_token_txs;
     CDBBatch batch(*m_db);
+
+    // AUDIT FIX [M-04]: Enforce MAX_TOKENS_PER_BLOCK at the processing level.
+    static constexpr size_t MAX_OPS = src20::MAX_TOKENS_PER_BLOCK;
     
     for (const auto& tx : block.vtx) {
+        if (static_cast<size_t>(ops_count) >= MAX_OPS) break;
         auto ops = src20::ParseTransactionSRC20(*tx);
         
         // Derive sender from first input's spent UTXO
@@ -1031,7 +1060,8 @@ int TokenDB::ProcessBlock(const CBlock& block, int height, const CCoinsViewCache
         }
         
         // SECURITY FIX [C-02]: Track per-tx operation index (same as blockundo version)
-        uint8_t tx_op_index = 0;
+        // AUDIT FIX [L-04]: Widened from uint8_t to uint16_t to prevent wrap at 256 ops per tx.
+        uint16_t tx_op_index = 0;
 
         for (const auto& op : ops) {
             switch (op.action) {
@@ -1039,7 +1069,12 @@ int TokenDB::ProcessBlock(const CBlock& block, int height, const CCoinsViewCache
                     const auto* issuance = op.GetIssuance();
                     if (issuance && issuance->IsValid()) {
                         // AUDIT FIX [H-04]: Enforce minimum issuance fee to prevent token spam
-                        if (view && !tx->IsCoinBase() && !tx->vin.empty()) {
+                        // AUDIT FIX [M-03]: Coinbase transactions cannot issue tokens.
+                        if (tx->IsCoinBase()) {
+                            LogDebug(BCLog::TOKEN, "Token issuance rejected: coinbase transactions cannot issue tokens\n");
+                            break;
+                        }
+                        if (view && !tx->vin.empty()) {
                             CAmount total_in = 0;
                             for (const auto& vin : tx->vin) {
                                 const Coin& coin = view->AccessCoin(vin.prevout);
@@ -1077,6 +1112,8 @@ int TokenDB::ProcessBlock(const CBlock& block, int height, const CCoinsViewCache
                             undo.txid = txhash;
                             undo.token_id = *token_id_opt;
                             undo.ticker = issuance->ticker;
+                            // AUDIT FIX [H-01]: Store issuer address for reorg cleanup.
+                            undo.from_address = issuer;
                             
                             auto undo_key = UndoKey(height, txhash, tx_op_index++);
                             batch.Write(undo_key, undo);
@@ -1179,15 +1216,17 @@ int TokenDB::ProcessBlock(const CBlock& block, int height, const CCoinsViewCache
     }
     
     // AUDIT FIX [H-03]: ALL token ops + undo records committed in single atomic WriteBatch.
+    // AUDIT FIX [H-02]: Include best-block in the same atomic WriteBatch.
+    // Previously SetBestBlock was a separate DB write. A crash between
+    // WriteBatch and SetBestBlock would leave token state updated but
+    // best-block stale, causing double-processing on restart (token inflation).
+    batch.Write(BestBlockKey(), block.GetHash());
     try {
         m_db->WriteBatch(batch);
     } catch (const dbwrapper_error& e) {
         LogPrintf("CRITICAL: Failed to write token operations for block %d: %s\n", height, e.what());
         throw;  // Re-throw to signal block processing failure
     }
-    
-    // Update best block only on successful write
-    SetBestBlock(block.GetHash());
     
     if (ops_count > 0) {
         LogDebug(BCLog::TOKEN, "Processed %d token operations in block %d\n", ops_count, height);
@@ -1218,7 +1257,8 @@ bool TokenDB::DisconnectBlock(const CBlock& block, int height)
         // SECURITY FIX [C-02]: Iterate all op_indices for this txid.
         // A single transaction may have multiple token operations, each with
         // a unique undo record keyed by (height, txid, op_index).
-        for (uint8_t op_idx = 0; op_idx < 255; op_idx++) {
+        // AUDIT FIX [L-04]: Widened to uint16_t to match ProcessBlock key width.
+        for (uint16_t op_idx = 0; op_idx < 65535; op_idx++) {
             auto undo_key = UndoKey(height, txid, op_idx);
             TokenUndoRecord undo;
             if (!m_db->Read(undo_key, undo)) {
@@ -1317,8 +1357,10 @@ bool TokenDB::DisconnectBlock(const CBlock& block, int height)
                         WriteTokenInfoToBatch(batch, *token_info);
                     }
                 
-                    // Delete transfer record
-                    auto transfer_key = TransferKey(undo.token_id, height, txid);
+                    // AUDIT FIX [M-01]: Include op_index in TransferKey for correct deletion.
+                    // Previously op_index defaulted to 0, leaving orphaned transfer records
+                    // for multi-op transactions after reorgs.
+                    auto transfer_key = TransferKey(undo.token_id, height, txid, op_idx);
                     batch.Erase(transfer_key);
                 
                     // FIX L-04: Update cached transfer count
@@ -1346,6 +1388,15 @@ bool TokenDB::DisconnectBlock(const CBlock& block, int height)
                         WriteTokenInfoToBatch(batch, *token_info);
                     }
                 
+                    // AUDIT FIX [M-02]: Delete the burn's transfer record.
+                    // BurnTokens() writes a TokenTransferRecord to record the burn in history,
+                    // but the BURN undo path previously didn't erase it, leaving stale burn
+                    // records visible in history after reorg.
+                    {
+                        auto burn_transfer_key = TransferKey(undo.token_id, height, txid, op_idx);
+                        batch.Erase(burn_transfer_key);
+                    }
+
                     // FIX L-04: Update cached transfer count (burns are recorded as transfers)
                     if (m_transfer_count_initialized.load() && m_transfer_count_cache.load() > 0) {
                         m_transfer_count_cache.fetch_sub(1);
