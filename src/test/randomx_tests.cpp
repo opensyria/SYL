@@ -48,7 +48,7 @@ BOOST_AUTO_TEST_CASE(fork_not_active_before_height)
         "RandomX should not be active at height " << heightBeforeFork
     );
     
-    // Genesis should use SHA256 (RandomX starts at block 1)
+    // Genesis should use SHA256 (RandomX starts at nRandomXForkHeight)
     BOOST_CHECK(!params.IsRandomXActive(0));
 }
 

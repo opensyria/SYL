@@ -17,6 +17,13 @@
 
 namespace wallet {
 
+// ADVISORY constant prepended to all SRC-20 wallet RPC help descriptions.
+static const std::string SRC20_ADVISORY =
+    "ADVISORY: SRC-20 tokens are a non-consensus overlay. Token state is indexed locally "
+    "and may diverge between node versions. Token balances are NOT enforced by miners or "
+    "validated during block acceptance. Do not rely on token state for high-value settlement "
+    "until a future consensus-commitment upgrade (see doc/src20-spec.md). ";
+
 /** Check that token database is available */
 static void EnsureTokenDB()
 {
@@ -29,6 +36,7 @@ static void EnsureTokenDB()
 RPCHelpMan walletissuetoken()
 {
     return RPCHelpMan{"walletissuetoken",
+        SRC20_ADVISORY +
         "Create and broadcast a token issuance transaction. "
         "Creates a new SRC-20 token with the specified parameters. "
         "The token will be issued to the wallet's new receiving address."
@@ -121,6 +129,7 @@ RPCHelpMan walletissuetoken()
             src20::TokenId token_id(tx->GetHash());
 
             UniValue ret(UniValue::VOBJ);
+            ret.pushKV("warning", "ADVISORY: SRC-20 token state is a non-consensus overlay. Balances are NOT enforced by miners. Do not rely on token state for high-value settlement until a consensus-commitment upgrade.");
             ret.pushKV("txid", tx->GetHash().GetHex());
             ret.pushKV("token_id", token_id.GetHex());
             ret.pushKV("ticker", issuance.ticker);
@@ -139,6 +148,7 @@ RPCHelpMan walletissuetoken()
 RPCHelpMan wallettransfertoken()
 {
     return RPCHelpMan{"wallettransfertoken",
+        SRC20_ADVISORY +
         "Transfer SRC-20 tokens to another address."
         + HELP_REQUIRING_PASSPHRASE,
         {
@@ -215,6 +225,7 @@ RPCHelpMan wallettransfertoken()
             pwallet->CommitTransaction(tx, {}, /*orderForm=*/{});
 
             UniValue ret(UniValue::VOBJ);
+            ret.pushKV("warning", "ADVISORY: SRC-20 token state is a non-consensus overlay. Balances are NOT enforced by miners. Do not rely on token state for high-value settlement until a consensus-commitment upgrade.");
             ret.pushKV("txid", tx->GetHash().GetHex());
             ret.pushKV("token_id", token_id_hex);
             ret.pushKV("amount", amount);
@@ -230,6 +241,7 @@ RPCHelpMan wallettransfertoken()
 RPCHelpMan walletburntoken()
 {
     return RPCHelpMan{"walletburntoken",
+        SRC20_ADVISORY +
         "Burn SRC-20 tokens (permanently destroy)."
         + HELP_REQUIRING_PASSPHRASE,
         {
@@ -287,6 +299,7 @@ RPCHelpMan walletburntoken()
             pwallet->CommitTransaction(tx, {}, /*orderForm=*/{});
 
             UniValue ret(UniValue::VOBJ);
+            ret.pushKV("warning", "ADVISORY: SRC-20 token state is a non-consensus overlay. Balances are NOT enforced by miners. Do not rely on token state for high-value settlement until a consensus-commitment upgrade.");
             ret.pushKV("txid", tx->GetHash().GetHex());
             ret.pushKV("token_id", token_id_hex);
             ret.pushKV("amount", amount);
@@ -301,7 +314,7 @@ RPCHelpMan walletburntoken()
 RPCHelpMan gettokenbalances()
 {
     return RPCHelpMan{"gettokenbalances",
-        "Get all token balances for this wallet.",
+        SRC20_ADVISORY + "Get all token balances for this wallet.",
         {},
         RPCResult{
             RPCResult::Type::ARR, "", "",
@@ -355,7 +368,7 @@ RPCHelpMan gettokenbalances()
 RPCHelpMan gettokentxhistory()
 {
     return RPCHelpMan{"gettokentxhistory",
-        "Get token transaction history for this wallet.",
+        SRC20_ADVISORY + "Get token transaction history for this wallet.",
         {
             {"token_id", RPCArg::Type::STR_HEX, RPCArg::Optional::OMITTED, "Optional token ID filter"},
             {"count", RPCArg::Type::NUM, RPCArg::Default{100}, "Maximum number of transactions to return"},

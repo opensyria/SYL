@@ -57,30 +57,16 @@ void TokenValidationInterface::BlockDisconnected(
     const std::shared_ptr<const CBlock>& block,
     const CBlockIndex* pindex)
 {
-    if (!g_tokendb || !g_tokendb->IsValid()) {
-        return;
-    }
-
-    if (!block || !pindex) {
-        return;
-    }
-
-    const int height = pindex->nHeight;
-
-    // Disconnect token operations (uses stored undo data)
-    bool success = g_tokendb->DisconnectBlock(*block, height);
-
-    if (!success) {
-        LogPrintf("ERROR: Failed to disconnect token operations at height %d\n", height);
-    } else {
-        LogDebug(BCLog::TOKEN, "BlockDisconnected: reverted token operations at height %d\n", height);
-    }
-
-    // Clear mempool token state on reorg since pending state may be invalid
-    if (g_mempool_tokens) {
-        g_mempool_tokens->Clear();
-        LogDebug(BCLog::TOKEN, "Cleared mempool token state due to reorg\n");
-    }
+    // AUDIT FIX [M-2]: Token disconnect is now performed atomically in
+    // Chainstate::DisconnectTip() BEFORE the UTXO view is flushed.
+    // This signal handler previously handled disconnect, but that was
+    // non-atomic with the UTXO rollback — a crash between the two would
+    // leave token state stranded on the old chain.
+    //
+    // This callback is retained only for future use or additional cleanup
+    // that doesn't need atomicity guarantees.
+    (void)block;
+    (void)pindex;
 }
 
 void TokenValidationInterface::ChainStateFlushed(

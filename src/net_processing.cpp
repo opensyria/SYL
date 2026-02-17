@@ -442,6 +442,35 @@ struct Peer {
      * timestamp the peer sent in the version message. */
     std::atomic<std::chrono::seconds> m_time_offset{0s};
 
+    /**
+     * AUDIT FIX [M-1]: Per-peer rate limiting for RandomX serve-time validation.
+     * Prevents CPU DoS via excessive requests for distinct historical RandomX blocks.
+     * Each full RandomX hash computation takes ~800-1000ms; without rate limiting,
+     * an attacker requesting 65+ distinct old blocks can exhaust CPU for ~65 seconds.
+     * Limit: MAX_RANDOMX_VALIDATIONS_PER_MINUTE per peer.
+     */
+    Mutex m_randomx_serve_mutex;
+    static constexpr int MAX_RANDOMX_VALIDATIONS_PER_MINUTE = 10;
+    int m_randomx_serve_count GUARDED_BY(m_randomx_serve_mutex){0};
+    std::chrono::steady_clock::time_point m_randomx_serve_window_start GUARDED_BY(m_randomx_serve_mutex){std::chrono::steady_clock::now()};
+
+    /** Check and consume one RandomX serve-time validation slot. Returns false if rate-limited. */
+    bool TryConsumeRandomXServeSlot() EXCLUSIVE_LOCKS_REQUIRED(!m_randomx_serve_mutex)
+    {
+        LOCK(m_randomx_serve_mutex);
+        auto now = std::chrono::steady_clock::now();
+        if (now - m_randomx_serve_window_start > std::chrono::minutes{1}) {
+            // Reset window
+            m_randomx_serve_count = 0;
+            m_randomx_serve_window_start = now;
+        }
+        if (m_randomx_serve_count >= MAX_RANDOMX_VALIDATIONS_PER_MINUTE) {
+            return false;
+        }
+        ++m_randomx_serve_count;
+        return true;
+    }
+
     explicit Peer(NodeId id, ServiceFlags our_services, bool is_inbound)
         : m_id{id}
         , m_our_services{our_services}
@@ -2367,6 +2396,13 @@ void PeerManagerImpl::ProcessGetBlockData(CNode& pfrom, Peer& peer, const CInv& 
                 }
 
                 if (!already_verified) {
+                    // AUDIT FIX [M-1]: Per-peer rate limiting for RandomX serve-time
+                    // validation. Prevents CPU DoS via excessive distinct block requests.
+                    if (!peer.TryConsumeRandomXServeSlot()) {
+                        LogDebug(BCLog::NET, "Rate-limiting RandomX serve-time validation for peer=%d\n", pfrom.GetId());
+                        // Serve the block without re-validation — it was validated at accept time.
+                        // This is safe: on-disk corruption is rare and the global cache catches repeats.
+                    } else {
                     CBlock validation_block;
                     if (m_chainman.m_blockman.ReadBlock(validation_block, *pindex)) {
                         CBlockHeader header = validation_block.GetBlockHeader();
@@ -2388,6 +2424,7 @@ void PeerManagerImpl::ProcessGetBlockData(CNode& pfrom, Peer& peer, const CInv& 
                             }
                         }
                     }
+                    } // end rate-limit else
                 }
             }
         }

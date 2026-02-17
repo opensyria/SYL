@@ -37,6 +37,12 @@ static constexpr CAmount MAX_MONEY = 21000000000 * COIN; // 21 billion SYL
 // for intermediate arithmetic in fee calculations, signature hash amount
 // serialization, and CTxOut value summation. A 4x margin ensures that
 // summing up to 4 MAX_MONEY-valued outputs cannot overflow.
+//
+// AUDIT NOTE [L-2]: OpenSY's MAX_MONEY has only ~4.4x margin to int64_t::max
+// (vs Bitcoin's 4385x). This is tight but acceptable given the /4 guard below.
+// Future contributors: avoid intermediate calculations that sum more than 4
+// CAmount values that could each be near MAX_MONEY. If needed, use
+// arith_uint256 or checked arithmetic for such patterns.
 static_assert(MAX_MONEY > 0, "MAX_MONEY must be positive");
 static_assert(MAX_MONEY <= std::numeric_limits<int64_t>::max() / 4,
               "MAX_MONEY too large: risk of int64_t overflow in intermediate calculations");

@@ -4,8 +4,10 @@
 // file COPYING or http://www.opensource.org/licenses/mit-license.php.
 
 // NOTE [RANDOMX CPU MINING]:
-// OpenSY uses RandomX proof-of-work from block 1, enabling fair CPU mining.
-// No ASIC or GPU advantage - anyone with a modern CPU can participate.
+// OpenSY uses a two-phase PoW strategy: SHA256d for blocks 0-209,999,
+// then RandomX from block 210,000 onward (mainnet). Testnet/signet use
+// RandomX from block 1 for testing convenience. RandomX enables fair
+// CPU mining — no ASIC or GPU advantage.
 //
 // MINING RECOMMENDATIONS:
 // 1. Use high-core-count CPUs for best performance (AMD EPYC, Intel Xeon)

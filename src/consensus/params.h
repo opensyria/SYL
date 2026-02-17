@@ -197,8 +197,8 @@ struct Params {
      * Used for explicit algorithm selection in validation and mining code.
      */
     enum class PowAlgorithm {
-        SHA256D,    //!< Genesis block only (or pre-fork if applicable)
-        RANDOMX,    //!< Primary algorithm from block 1
+        SHA256D,    //!< Pre-fork blocks (mainnet: 0 to nRandomXForkHeight-1)
+        RANDOMX,    //!< Primary algorithm (mainnet: from block 210,000; testnet: from block 1)
         ARGON2ID    //!< Emergency fallback if RandomX compromised
     };
 

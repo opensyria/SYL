@@ -224,8 +224,9 @@ bool RandomXMiningContext::Initialize(const uint256& keyBlockHash, unsigned int 
     //      initialized state to CreateVM() callers.
     //   2. Mining threads that call CreateVM() while Initialize() runs will block,
     //      which is correct — they must not use a half-filled dataset.
-    //   3. Initialize() is called rarely (only on key block rotation, every ~2048 blocks)
-    //      so the long hold time has negligible impact on throughput.
+    //   3. Initialize() is called rarely (only on key block rotation, every ~32 blocks
+    //      per nRandomXKeyBlockInterval) so the long hold time has negligible impact
+    //      on throughput.
     //   4. The dataset fill threads spawned below do NOT acquire m_mutex; they only
     //      write to disjoint regions of the already-allocated dataset memory.
 

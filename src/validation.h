@@ -952,7 +952,7 @@ private:
         const node::SnapshotMetadata& metadata);
 
     /**
-     * If a block header hasn't already been seen, call CheckBlockHeader on it, ensure
+     * If a block header hasn't already been seen, call CheckBlockHeaderStructure on it, ensure
      * that it doesn't descend from an invalid block, and then add it to m_block_index.
      * Caller must set min_pow_checked=true in order to add a new header to the
      * block index (permanent memory storage), indicating that the header is

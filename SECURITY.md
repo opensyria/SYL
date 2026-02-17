@@ -71,31 +71,17 @@ Bounty amounts (when available):
 
 For sensitive communications, you may encrypt your report using our PGP key.
 
-```
------BEGIN PGP PUBLIC KEY BLOCK-----
-
-mQINBGeTBhsBEAC7vJ7t7Ks5S0R3eFBhGmMHBm7R3V3i5F5j7K9Q3mN8vR7sW1eX
-zY9aL2cP4fG5hI6kJ0lM8nO1pQ2rS4tU3vW6xY7zA9bC0dE2fG5hJ1kL0mN4oP6r
-S8tV0wX2yZ5aB7cD9eF1gH4iJ6kL8mN0oP2qR5sT7uV9wX1yZ3aB5cD7eF9gH2iJ
-4kL6mN8oP0qR2sT4uV6wX8yZ0aB2cD4eF6gH8iJ0kL2mN4oP6qR8sT0uV2wX4yZ6
-aB8cD0eF2gH4iJ6kL8mN0oP2qR4sT6uV8wX0yZ2aB4cD6eF8gH0iJ2kL4mN6oP8q
-R0sT2uV4wX6yZ8aB0cD2eF4gH6iJ8kL0mN2oP4qR6sT8uV0wX2yZ4aB6cD8eF0gH
-2iJ4kL6mN8oP0qR2sT4uV6wX8yZ0aB2cD4eF6gH8iJ0kL2mN4oP6qR8sT0uV2wX4
-yZ6aB8cD0eF2gH4iJ6kL8mN0oP2qR4sT6uV8wX0yZ2aB4cD6eF8gH0iJ2kL4mN6o
-P8qR0sT2uV4wX6yZ8aB0cD2eF4gH6iJ8kL0mN2oP4qR6sT8uV0wX2yZ4aB6cD8eF
-=oS1Y
------END PGP PUBLIC KEY BLOCK-----
-```
-
-**Key ID:** `0xOPENSY2024`  
-**Fingerprint:** `XXXX XXXX XXXX XXXX XXXX  XXXX XXXX XXXX XXXX XXXX`
-
-> ⚠️ **Note:** The above is a placeholder. The actual PGP key will be published at https://opensyria.net/security
-> To generate the real key, run:
+> ⚠️ **Note:** A real PGP key has not yet been published. Until it is available
+> at https://opensyria.net/security, please encrypt sensitive reports using
+> the security team's email address with standard email encryption, or
+> coordinate key exchange over a verified channel.
+>
+> To generate the production key, the security team should run:
 > ```bash
 > gpg --full-generate-key  # Select RSA 4096, 2 years, security@opensyria.net
 > gpg --armor --export security@opensyria.net
 > ```
+> Then replace this section with the actual public key block.
 
 ## Security Best Practices for Node Operators
 

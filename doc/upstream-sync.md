@@ -6,6 +6,30 @@ This document tracks which Bitcoin Core commits have been evaluated for incorpor
 - **Last Full Sync:** `3532e24213` (upstream/master as of 2026-02-03)
 - **Last Review Date:** 2026-02-03
 
+## Security Audit (2026-02-17)
+
+A full security audit was performed against this upstream base. Key findings and
+fixes applied:
+
+| ID | Severity | Fix | Description |
+|----|----------|-----|-------------|
+| H-3 | High | Applied | `CheckBlockHeader` renamed to `CheckBlockHeaderStructure` to make the PoW-free no-op semantics explicit and prevent future contributors from creating zero-work acceptance paths |
+| M-1 | Medium | Applied | Per-peer rate limiting (10/min) for RandomX serve-time PoW validation to prevent CPU DoS via excessive historical block requests |
+| M-2 | Medium | Applied | Token disconnect moved from async `BlockDisconnected` signal handler into `DisconnectTip()` for atomic rollback with UTXO state |
+| M-3 | Medium | Documented | Testnet `nMinimumChainWork` is empty — testnet at block 0 as of 2026-02-17, revisit once 1000+ blocks mined |
+| L-1 | Low | Applied | Guard against `nRandomXKeyBlockInterval=0` (division by zero) in regtest configuration |
+| L-2 | Low | Documented | `MAX_MONEY` has ~4.4x margin to `int64_t::max` (vs Bitcoin's 4385x) — documented for future contributors |
+| L-5 | Low | Applied | Removed fake placeholder PGP key from SECURITY.md, replaced with clear instructions |
+| — | — | Applied | All 17 token RPCs (12 node + 5 wallet) now include ADVISORY: non-consensus warning in help text |
+| — | — | Applied | State-changing token RPCs (issue/transfer/burn × node+wallet = 6 RPCs) return runtime `warning` field in JSON response |
+| — | — | Applied | Token roadmap and non-consensus advisory added to `doc/src20-spec.md` (Phases 1-4 + SIP design decisions) |
+
+### Outstanding items requiring external action:
+- **H-1 (DNS Seeds):** All 3 seeds controlled by single entity. Needs community-operated seeds on independent domains.
+- **H-2 (Token State):** SRC-20 is non-consensus; state can diverge between node versions. Roadmap documented in `doc/src20-spec.md`. Phase 2 (deterministic validation) is the next step.
+- **M-4 (xpub/xprv):** Extended key prefixes match Bitcoin — documented as intentional trade-off for hardware wallet compatibility.
+- **PGP Key:** Generate and publish a real PGP key at `opensyria.net/security` before public launch.
+
 ## Commit Status Legend
 - ✅ **APPLIED** - Cherry-picked into OpenSY
 - ⏭️ **SKIPPED** - Reviewed and intentionally not applied

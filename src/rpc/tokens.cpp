@@ -311,11 +311,20 @@ void EnsureTokenDB()
 
 } // namespace
 
+// ADVISORY constant prepended to all SRC-20 RPC help descriptions.
+// The SRC-20 token layer is an overlay index and is NOT part of consensus.
+// See doc/src20-spec.md for the full specification.
+static const std::string SRC20_ADVISORY =
+    "ADVISORY: SRC-20 tokens are a non-consensus overlay. Token state is indexed locally "
+    "and may diverge between node versions. Token balances are NOT enforced by miners or "
+    "validated during block acceptance. Do not rely on token state for high-value settlement "
+    "until a future consensus-commitment upgrade (see doc/src20-spec.md). ";
+
 // RPC: gettokeninfo
 static RPCHelpMan gettokeninfo()
 {
     return RPCHelpMan{"gettokeninfo",
-        "Get information about an SRC-20 token.",
+        SRC20_ADVISORY + "Get information about an SRC-20 token.",
         {
             {"token_id", RPCArg::Type::STR_HEX, RPCArg::Optional::NO, "The token ID (hex)"},
         },
@@ -366,7 +375,7 @@ static RPCHelpMan gettokeninfo()
 static RPCHelpMan gettokenbyname()
 {
     return RPCHelpMan{"gettokenbyname",
-        "Get token information by ticker symbol.",
+        SRC20_ADVISORY + "Get token information by ticker symbol.",
         {
             {"ticker", RPCArg::Type::STR, RPCArg::Optional::NO, "The token ticker (e.g., 'TEST')"},
         },
@@ -396,7 +405,7 @@ static RPCHelpMan gettokenbyname()
 static RPCHelpMan gettokenbalance()
 {
     return RPCHelpMan{"gettokenbalance",
-        "Get token balance for an address.",
+        SRC20_ADVISORY + "Get token balance for an address.",
         {
             {"address", RPCArg::Type::STR, RPCArg::Optional::NO, "The address to check"},
             {"token_id", RPCArg::Type::STR_HEX, RPCArg::Optional::OMITTED, "Optional token ID filter"},
@@ -467,7 +476,7 @@ static RPCHelpMan gettokenbalance()
 static RPCHelpMan listtokens()
 {
     return RPCHelpMan{"listtokens",
-        "List all registered SRC-20 tokens.",
+        SRC20_ADVISORY + "List all registered SRC-20 tokens.",
         {
             {"count", RPCArg::Type::NUM, RPCArg::Default{100}, "Maximum number of tokens to return"},
             {"start", RPCArg::Type::STR_HEX, RPCArg::Optional::OMITTED, "Token ID to start from (for pagination)"},
@@ -527,7 +536,7 @@ static RPCHelpMan listtokens()
 static RPCHelpMan gettokenholders()
 {
     return RPCHelpMan{"gettokenholders",
-        "Get holders of an SRC-20 token.",
+        SRC20_ADVISORY + "Get holders of an SRC-20 token.",
         {
             {"token_id", RPCArg::Type::STR_HEX, RPCArg::Optional::NO, "The token ID"},
             {"min_balance", RPCArg::Type::NUM, RPCArg::Default{0}, "Minimum balance to include"},
@@ -601,7 +610,7 @@ static RPCHelpMan gettokenholders()
 static RPCHelpMan gettokenhistory()
 {
     return RPCHelpMan{"gettokenhistory",
-        "Get transfer history for a token.",
+        SRC20_ADVISORY + "Get transfer history for a token.",
         {
             {"token_id", RPCArg::Type::STR_HEX, RPCArg::Optional::NO, "The token ID"},
             {"start_height", RPCArg::Type::NUM, RPCArg::Default{0}, "Starting block height"},
@@ -655,6 +664,7 @@ static RPCHelpMan gettokenhistory()
 static RPCHelpMan issuetoken()
 {
     return RPCHelpMan{"issuetoken",
+        SRC20_ADVISORY +
         "Prepare data to issue a new SRC-20 token. "
         "Returns the OP_RETURN script needed for manual transaction creation. "
         "NOTE: For automatic transaction creation and broadcasting, use 'walletissuetoken' instead. "
@@ -718,6 +728,7 @@ static RPCHelpMan issuetoken()
             // For automatic transaction creation, use walletissuetoken RPC
             // This command returns raw script data for manual transaction construction
             UniValue result(UniValue::VOBJ);
+            result.pushKV("warning", "ADVISORY: SRC-20 token state is a non-consensus overlay. Balances are NOT enforced by miners. Do not rely on token state for high-value settlement until a consensus-commitment upgrade.");
             result.pushKV("note", "For automatic transaction creation, use 'walletissuetoken'. This output is for manual transaction construction with createrawtransaction.");
             result.pushKV("op_return_hex", HexStr(op_return_script));
             result.pushKV("ticker", issuance.ticker);
@@ -734,6 +745,7 @@ static RPCHelpMan issuetoken()
 static RPCHelpMan transfertoken()
 {
     return RPCHelpMan{"transfertoken",
+        SRC20_ADVISORY +
         "Prepare data to transfer SRC-20 tokens. "
         "Returns the scripts needed for manual transaction creation. "
         "NOTE: For automatic transaction creation and broadcasting, use 'wallettransfertoken' instead.",
@@ -789,6 +801,7 @@ static RPCHelpMan transfertoken()
 
             // For automatic transaction creation, use wallettransfertoken RPC
             UniValue result(UniValue::VOBJ);
+            result.pushKV("warning", "ADVISORY: SRC-20 token state is a non-consensus overlay. Balances are NOT enforced by miners. Do not rely on token state for high-value settlement until a consensus-commitment upgrade.");
             result.pushKV("note", "For automatic transaction creation, use 'wallettransfertoken'. Manual construction: Output 0 = OP_RETURN, Output 1 = recipient, Output 2 = change.");
             result.pushKV("op_return_hex", HexStr(op_return_script));
             result.pushKV("recipient_script_hex", HexStr(recipient_script));
@@ -805,6 +818,7 @@ static RPCHelpMan transfertoken()
 static RPCHelpMan burntoken()
 {
     return RPCHelpMan{"burntoken",
+        SRC20_ADVISORY +
         "Prepare data to burn SRC-20 tokens (permanently destroy). "
         "Returns the OP_RETURN script needed for manual transaction creation. "
         "NOTE: For automatic transaction creation and broadcasting, use 'walletburntoken' instead.",
@@ -850,6 +864,7 @@ static RPCHelpMan burntoken()
 
             // For automatic transaction creation, use walletburntoken RPC
             UniValue result(UniValue::VOBJ);
+            result.pushKV("warning", "ADVISORY: SRC-20 token state is a non-consensus overlay. Balances are NOT enforced by miners. Do not rely on token state for high-value settlement until a consensus-commitment upgrade.");
             result.pushKV("note", "For automatic transaction creation, use 'walletburntoken'. Manual construction: Output 0 = OP_RETURN.");
             result.pushKV("op_return_hex", HexStr(op_return_script));
             result.pushKV("token_id", token_id_hex);
@@ -864,7 +879,7 @@ static RPCHelpMan burntoken()
 static RPCHelpMan gettokenstats()
 {
     return RPCHelpMan{"gettokenstats",
-        "Get overall SRC-20 token statistics.",
+        SRC20_ADVISORY + "Get overall SRC-20 token statistics.",
         {},
         RPCResult{
             RPCResult::Type::OBJ, "", /*optional=*/false, "",
@@ -895,7 +910,7 @@ static RPCHelpMan gettokenstats()
 static RPCHelpMan decodesrc20()
 {
     return RPCHelpMan{"decodesrc20",
-        "Decode an SRC-20 OP_RETURN script.",
+        SRC20_ADVISORY + "Decode an SRC-20 OP_RETURN script.",
         {
             {"hexstring", RPCArg::Type::STR_HEX, RPCArg::Optional::NO, "The hex-encoded script"},
         },
@@ -970,7 +985,7 @@ static RPCHelpMan decodesrc20()
 static RPCHelpMan getreservedtickers()
 {
     return RPCHelpMan{"getreservedtickers",
-        "Get the list of reserved SRC-20 token tickers.",
+        SRC20_ADVISORY + "Get the list of reserved SRC-20 token tickers.",
         {},
         RPCResult{
             RPCResult::Type::OBJ, "", /*optional=*/false, "",

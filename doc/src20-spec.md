@@ -418,11 +418,73 @@ await wallet.transferToken({
 
 ---
 
+## ⚠️ Non-Consensus Advisory
+
+> **IMPORTANT:** SRC-20 tokens are currently a **non-consensus overlay**. Token state
+> is indexed locally by each node and is NOT enforced by miners or validated during
+> block acceptance. This means:
+>
+> - Two nodes running different software versions may show different token balances
+> - A token "transfer" is only recognized by nodes that index SRC-20 operations
+> - Token failures do not cause block rejection — the base-layer SYL chain is unaffected
+> - Token balances should be treated as **advisory** for high-value settlement
+>
+> A future hard-fork upgrade (SIP-TBD) will commit a Merkle root of token state
+> into the coinbase transaction, making token balances consensus-enforced. Until
+> then, SRC-20 tokens are suitable for community tokens, loyalty points, and
+> low-value use cases — but should not be relied upon for critical financial settlement.
+
+---
+
+## Roadmap: Token Consensus Commitment
+
+The following roadmap outlines the path from the current overlay model to full
+consensus-enforced tokens.
+
+### Phase 1: Overlay (Current — v1.0)
+- Token state stored in per-node LevelDB (`<datadir>/tokens/`)
+- OP_RETURN-based protocol — no consensus changes
+- Atomic connect/disconnect in `ConnectBlock`/`DisconnectTip`
+- 12 RPCs (node) + 5 RPCs (wallet) with advisory warnings
+- **Status:** Shipped, dormant (0 tokens issued on mainnet as of Feb 2026)
+
+### Phase 2: Deterministic Validation (Target: v1.1)
+- Pin exact token validation rules so all nodes produce identical state
+- Add `gettokenstateroot` RPC that computes Merkle root of current token state
+- Add functional tests that verify state root consistency across reorgs
+- Publish SIP (SYL Improvement Proposal) for consensus commitment format
+- **Effort:** ~2-4 weeks of development
+
+### Phase 3: Soft-Fork Commitment (Target: v2.0)
+- Miners commit token state Merkle root in coinbase `OP_RETURN`
+- Old nodes ignore the commitment (backwards compatible)
+- New nodes validate the commitment — reject blocks with wrong token root
+- BIP9-style activation with miner signalling (75% threshold)
+- **Effort:** ~2-3 months of development + testnet soak period
+
+### Phase 4: Full Consensus Enforcement (Target: v3.0)
+- Token state divergence becomes a consensus failure (chain split)
+- SPV proofs for token balances (light clients can verify)
+- Token-aware fee estimation and mempool policy
+- **Effort:** ~3-6 months, requires ecosystem readiness
+
+### Design Decisions (for SIP authors)
+
+1. **Commitment location:** Coinbase `OP_RETURN` output (index 1), 32-byte Merkle root
+2. **Merkle tree structure:** Sorted by `(token_id, address)` key, SHA256d internal nodes
+3. **Activation mechanism:** BIP9 with `bit=3`, 75% threshold over 10,080-block period
+4. **Migration:** All existing tokens grandfathered — no re-issuance needed
+5. **Rollback safety:** Token undo records already stored per-block; consensus commitment
+   adds a checksum but doesn't change the disconnect logic
+
+---
+
 ## Changelog
 
 | Version | Date | Changes |
 |---------|------|---------|
 | 1.0 | Dec 2024 | Initial specification |
+| 1.0.1 | Feb 2026 | Added non-consensus advisory, roadmap, and design decisions |
 
 ---
 

@@ -405,13 +405,21 @@ public:
         consensus.vDeployments[Consensus::DEPLOYMENT_TAPROOT].threshold = 7560; // 75% of 10080
         consensus.vDeployments[Consensus::DEPLOYMENT_TAPROOT].period = 10080; // Matches DifficultyAdjustmentInterval()
 
-        // PA-05: Testnet chain work - Update after testnet stabilizes (~1000 blocks)
-        // Use: opensy-cli -testnet getblockchaininfo | grep chainwork
-        // Then set: consensus.nMinimumChainWork = uint256{"<chainwork_hex>"};
+        // AUDIT FIX [M-3]: Testnet chain work values are currently empty, making
+        // the testnet trivially attackable. Once testnet has stabilized with
+        // sufficient chain work, update these values:
+        //   opensy-cli -testnet getblockchaininfo | jq '.chainwork, .bestblockhash'
+        // Then set:
+        //   consensus.nMinimumChainWork = uint256{"<chainwork_hex>"};
+        //   consensus.defaultAssumeValid = uint256{"<bestblockhash>"};
+        //
+        // STATUS (2026-02-17): Testnet at block 0 (genesis only). Chainwork
+        // 0x01000100 is trivially meetable — no value in setting it yet.
+        // Revisit once testnet has 1000+ blocks of RandomX work.
         consensus.nMinimumChainWork = uint256{};
         consensus.defaultAssumeValid = uint256{}; // New chain - no assumed valid block yet
 
-        // RandomX from block 1 - matches mainnet for consistent testing
+        // RandomX from block 1 for testing (mainnet forks at 210,000)
         consensus.nRandomXForkHeight = 1;
         consensus.powLimitRandomX = uint256{"00ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff"};
 
@@ -519,7 +527,7 @@ public:
         consensus.nMinimumChainWork = uint256{};
         consensus.defaultAssumeValid = uint256{}; // New chain - no assumed valid block yet
 
-        // RandomX from block 1 - matches mainnet for consistent testing
+        // RandomX from block 1 for testing (mainnet forks at 210,000)
         consensus.nRandomXForkHeight = 1;
         consensus.powLimitRandomX = uint256{"00ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff"};
 
@@ -679,7 +687,7 @@ public:
         consensus.vDeployments[Consensus::DEPLOYMENT_TAPROOT].threshold = 9072; // 90% of 10080
         consensus.vDeployments[Consensus::DEPLOYMENT_TAPROOT].period = 10080; // Matches DifficultyAdjustmentInterval()
 
-        // RandomX from block 1 by default - matches mainnet for consistent testing
+        // RandomX from block 1 by default for testing (mainnet forks at 210,000)
         // Can be overridden via -randomxforkheight for SHA256d-only testing
         consensus.nRandomXForkHeight = options.randomx_fork_height.value_or(1);
         consensus.powLimitRandomX = uint256{"00ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff"};
@@ -766,6 +774,12 @@ public:
         }
         // Allow override of RandomX key block interval via -randomxkeyinterval for testing
         if (opts.randomx_key_interval) {
+            // AUDIT FIX [L-1]: Prevent division-by-zero in GetRandomXKeyBlockHeight()
+            // which computes (height / nRandomXKeyBlockInterval). A value of 0 would
+            // crash any node that reaches the RandomX fork height.
+            if (*opts.randomx_key_interval < 1) {
+                throw std::runtime_error("-randomxkeyinterval must be >= 1");
+            }
             consensus.nRandomXKeyBlockInterval = *opts.randomx_key_interval;
         }
         consensus.powLimitRandomX = uint256{"7fffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff"};

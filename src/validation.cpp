@@ -3077,6 +3077,33 @@ bool Chainstate::DisconnectTip(BlockValidationState& state, DisconnectedBlockTra
             LogError("DisconnectTip(): DisconnectBlock %s failed\n", pindexDelete->GetBlockHash().ToString());
             return false;
         }
+
+        // AUDIT FIX [M-2]: Token disconnect is performed HERE, atomically with
+        // the UTXO state rollback, before the view is flushed. This prevents
+        // the scenario where a crash between UTXO flush and the async
+        // BlockDisconnected signal handler leaves token state stranded on
+        // the old chain while the UTXO set has already moved to the new tip.
+        //
+        // Token disconnect uses stored undo records to revert issuances,
+        // transfers, and burns. If it fails, we log prominently but do not
+        // abort block disconnection (tokens are non-consensus).
+        if (tokens::g_tokendb && tokens::g_tokendb->IsValid()) {
+            bool token_success = tokens::g_tokendb->DisconnectBlock(block, pindexDelete->nHeight);
+            if (!token_success) {
+                LogPrintf("ERROR: Token DisconnectBlock FAILED at height %d. "
+                          "Token state may have DIVERGED. Consider -reindex.\n",
+                          pindexDelete->nHeight);
+            } else {
+                LogDebug(BCLog::TOKEN, "DisconnectTip: reverted token operations at height %d\n",
+                         pindexDelete->nHeight);
+            }
+            // Clear mempool token state on reorg since pending state may be invalid
+            if (tokens::g_mempool_tokens) {
+                tokens::g_mempool_tokens->Clear();
+                LogDebug(BCLog::TOKEN, "Cleared mempool token state due to reorg\n");
+            }
+        }
+
         bool flushed = view.Flush();
         assert(flushed);
     }
@@ -3987,20 +4014,28 @@ void ChainstateManager::ReceivedBlockTransactions(const CBlock& block, CBlockInd
     }
 }
 
-static bool CheckBlockHeader(const CBlockHeader& block, BlockValidationState& state, const Consensus::Params& consensusParams, bool fCheckPOW = true)
+/**
+ * SECURITY AUDIT FIX [H-3]: Renamed from CheckBlockHeader to make the semantic
+ * gap explicit. This function validates ONLY structural properties of the block
+ * header (currently none — all structural checks are in CheckBlock itself).
+ *
+ * PoW validation is performed EXCLUSIVELY in ContextualCheckBlockHeader(),
+ * which has the chain context needed for both SHA256d and RandomX algorithms.
+ *
+ * INVARIANT: Every code path that calls this function MUST also call
+ * ContextualCheckBlockHeader() before accepting the block. Failure to do so
+ * creates a zero-work block injection vulnerability.
+ *
+ * Verified call sites (2026-02-17 audit):
+ *   1. CheckBlock()        → callers always follow with ContextualCheckBlockHeader() ✓
+ *   2. AcceptBlockHeader()  → calls both in sequence (lines ~4448, ~4465) ✓
+ *   3. AcceptBlock()        → calls ContextualCheckBlockHeader() directly (line ~4746) ✓
+ */
+static bool CheckBlockHeaderStructure(const CBlockHeader& block, BlockValidationState& state, const Consensus::Params& consensusParams, bool fCheckPOW = true)
 {
-    // SECURITY NOTE [C-04]: Proof of work is now fully validated in ContextualCheckBlockHeader,
-    // which has access to chain context needed for both SHA256d (pre-fork) and
-    // RandomX (post-fork) validation. This function is intentionally PoW-free.
-    // The fCheckPOW parameter is retained for API compatibility but is ignored.
-    //
-    // AUDIT FIX [L-01]: CRITICAL ARCHITECTURE WARNING:
-    // This function is a NO-OP. ALL PoW enforcement depends on
-    // ContextualCheckBlockHeader being called after this function.
-    // Any code path that calls CheckBlockHeader without also calling
-    // ContextualCheckBlockHeader will accept blocks with NO PoW validation.
-    // See AcceptBlockHeader() which correctly calls both in sequence.
-    // DO NOT add new block acceptance paths without ensuring ContextualCheckBlockHeader runs.
+    // SECURITY NOTE [C-04]: PoW is validated in ContextualCheckBlockHeader.
+    // This function is intentionally PoW-free. The fCheckPOW parameter is
+    // retained for API compatibility but is ignored.
     (void)fCheckPOW;
     (void)consensusParams;
 
@@ -4095,9 +4130,10 @@ bool CheckBlock(const CBlock& block, BlockValidationState& state, const Consensu
     if (block.fChecked)
         return true;
 
-    // Check that the header is valid (particularly PoW).  This is mostly
-    // redundant with the call in AcceptBlockHeader.
-    if (!CheckBlockHeader(block, state, consensusParams, fCheckPOW))
+    // Check block header structure (NOT PoW — see CheckBlockHeaderStructure docs).
+    // PoW is validated in ContextualCheckBlockHeader, which all callers of
+    // CheckBlock must also invoke. See AUDIT FIX [H-3].
+    if (!CheckBlockHeaderStructure(block, state, consensusParams, fCheckPOW))
         return false;
 
     // Signet only: check block solution
@@ -4445,8 +4481,10 @@ bool ChainstateManager::AcceptBlockHeader(const CBlockHeader& block, BlockValida
             return true;
         }
 
-        if (!CheckBlockHeader(block, state, GetConsensus())) {
-            LogDebug(BCLog::VALIDATION, "%s: Consensus::CheckBlockHeader: %s, %s\n", __func__, hash.ToString(), state.ToString());
+        // AUDIT FIX [H-3]: Structure-only check. PoW is validated below in
+        // ContextualCheckBlockHeader — these two calls MUST stay paired.
+        if (!CheckBlockHeaderStructure(block, state, GetConsensus())) {
+            LogDebug(BCLog::VALIDATION, "%s: Consensus::CheckBlockHeaderStructure: %s, %s\n", __func__, hash.ToString(), state.ToString());
             return false;
         }
 
@@ -4735,7 +4773,7 @@ BlockValidationState TestBlockValidity(
      * - skip AcceptBlockHeader() because:
      *   - we don't want to update the block index
      *   - we do not care about duplicates
-     *   - we already ran CheckBlockHeader() via CheckBlock()
+     *   - we already ran CheckBlockHeaderStructure() via CheckBlock()
      *   - we already checked for prev-blk-not-found
      *   - we know the tip is valid, so no need to check bad-prevblk
      * - we already ran CheckBlock()
