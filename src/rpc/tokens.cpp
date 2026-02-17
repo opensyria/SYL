@@ -423,6 +423,9 @@ static RPCHelpMan gettokenbalance()
         [&](const RPCHelpMan& self, const JSONRPCRequest& request) -> UniValue
         {
             EnsureTokenDB();
+            // SECURITY FIX [L-10]: Add rate limiting to gettokenbalance.
+            // Previously this endpoint had no rate limit unlike other token RPCs.
+            CheckRPCRateLimit(request, "gettokenbalance");
 
             std::string address_str = request.params[0].get_str();
             CTxDestination dest = DecodeDestination(address_str);

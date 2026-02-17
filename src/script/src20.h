@@ -323,19 +323,18 @@ std::optional<CScript> GetTransferChange(const CTransaction& tx);
  */
 namespace reserved {
     // Core reserved tickers - these will never be available for user tokens
-    static constexpr std::array<const char*, 12> RESERVED_TICKERS = {
+    // FIX [L-09]: Removed entries with lowercase characters (eSYP, sUSD, sUST)
+    // since ticker validation only allows uppercase A-Z and 0-9, making lowercase
+    // reservations dead code. Also removed OPENSY (6 chars > MAX_TICKER_LENGTH=4).
+    static constexpr std::array<const char*, 8> RESERVED_TICKERS = {
         // Native coin and variations
         "SYL",   // Native coin (not a token, but reserved)
         "OSYL",  // OpenSYL variation
-        "OPENSY", // Network name
         
-        // Official stablecoins  
-        "eSYP",  // Electronic Syrian Pound
-        "ESYP",  // Uppercase variation
-        "sUSD",  // Synthetic USD (internal)
-        "SUSD",  // Uppercase variation
-        "sUST",  // Synthetic USDT (internal)
-        "SUST",  // Uppercase variation
+        // Official stablecoins (uppercase only — matches ticker validation)
+        "ESYP",  // Electronic Syrian Pound
+        "SUSD",  // Synthetic USD
+        "SUST",  // Synthetic USDT
         
         // Prevent impersonation
         "BTC",   // Bitcoin

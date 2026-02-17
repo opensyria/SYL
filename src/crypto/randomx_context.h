@@ -10,6 +10,7 @@
 
 #include <cstddef>
 #include <memory>
+#include <utility>
 #include <vector>
 
 // Forward declarations for RandomX types to avoid including randomx.h in header
@@ -139,7 +140,12 @@ class RandomXMiningContext
 {
 private:
     randomx_cache* m_cache{nullptr};
-    randomx_dataset* m_dataset{nullptr};
+    // SECURITY FIX [H-06]: Reference-counted dataset prevents use-after-free.
+    // Mining threads hold a copy of this shared_ptr via CreateVM(), keeping
+    // the dataset alive even after the context is reinitialized with a new key.
+    // The custom deleter calls randomx_release_dataset when the last reference
+    // is dropped.
+    std::shared_ptr<randomx_dataset> m_dataset;
     uint256 m_keyBlockHash;
     randomx_flags_int m_flags{0};
     mutable Mutex m_mutex;
@@ -147,6 +153,14 @@ private:
     
     //! Dataset epoch counter - incremented each time dataset is reallocated.
     //! Mining threads must check this to detect stale VMs and avoid use-after-free.
+    //!
+    //! SECURITY DOCUMENTATION [L-02]: This atomic is intentionally NOT redundant
+    //! with m_mutex. It implements a lock-free publication pattern:
+    //!   - Writer (Initialize): increments under m_mutex with memory_order_release
+    //!   - Reader (mining hot path): reads lock-free with memory_order_acquire
+    //! This avoids mutex contention on the mining hot path while ensuring
+    //! visibility of epoch changes. The mutex protects the dataset pointer;
+    //! the atomic provides a fast "has anything changed?" check.
     std::atomic<uint64_t> m_dataset_epoch{0};
 
     void Cleanup() EXCLUSIVE_LOCKS_REQUIRED(m_mutex);
@@ -168,10 +182,17 @@ public:
 
     /**
      * Create a new VM instance for a mining thread.
-     * Caller owns the returned VM and must destroy it with randomx_destroy_vm().
+     * Returns a pair of (vm_pointer, dataset_reference).
+     *
+     * SECURITY FIX [H-06]: The dataset_reference (shared_ptr<void>) MUST be
+     * held by the caller for the entire lifetime of the VM. This reference-counts
+     * the underlying dataset, preventing use-after-free when the context is
+     * reinitialized during key rotation. The caller must destroy the VM with
+     * randomx_destroy_vm() before releasing the dataset reference.
+     *
      * Thread-safe: multiple threads can call this concurrently.
      */
-    randomx_vm* CreateVM() EXCLUSIVE_LOCKS_REQUIRED(!m_mutex);
+    std::pair<randomx_vm*, std::shared_ptr<void>> CreateVM() EXCLUSIVE_LOCKS_REQUIRED(!m_mutex);
 
     bool IsInitialized() const EXCLUSIVE_LOCKS_REQUIRED(!m_mutex);
     uint256 GetKeyBlockHash() const EXCLUSIVE_LOCKS_REQUIRED(!m_mutex);

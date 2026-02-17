@@ -273,9 +273,14 @@ BOOST_AUTO_TEST_CASE(issuance_supply_large_with_zero_decimals_valid)
 BOOST_AUTO_TEST_CASE(reserved_tickers)
 {
     BOOST_CHECK(src20::reserved::IsReservedTicker("SYL"));
-    BOOST_CHECK(src20::reserved::IsReservedTicker("eSYP"));
-    BOOST_CHECK(src20::reserved::IsReservedTicker("sUSD"));
-    BOOST_CHECK(src20::reserved::IsReservedTicker("sUST"));
+    BOOST_CHECK(src20::reserved::IsReservedTicker("ESYP"));
+    BOOST_CHECK(src20::reserved::IsReservedTicker("SUSD"));
+    BOOST_CHECK(src20::reserved::IsReservedTicker("SUST"));
+    // FIX [L-09]: Lowercase tickers (eSYP, sUSD, sUST) removed from reserved list
+    // since ticker validation only allows uppercase A-Z / 0-9.
+    BOOST_CHECK(!src20::reserved::IsReservedTicker("eSYP"));
+    BOOST_CHECK(!src20::reserved::IsReservedTicker("sUSD"));
+    BOOST_CHECK(!src20::reserved::IsReservedTicker("sUST"));
 }
 
 BOOST_AUTO_TEST_CASE(non_reserved_tickers)
@@ -580,9 +585,9 @@ BOOST_AUTO_TEST_CASE(protocol_id)
 BOOST_AUTO_TEST_CASE(wellknown_esyp_valid)
 {
     auto esyp = src20::wellknown::CreateESYP();
-    // eSYP is a reserved ticker but should be valid when created by the system
+    // ESYP is a reserved ticker but should be valid when created by the system
     // For unit testing, we just verify the structure is correct
-    BOOST_CHECK_EQUAL(esyp.ticker, "eSYP");
+    BOOST_CHECK_EQUAL(esyp.ticker, "ESYP");
     BOOST_CHECK(!esyp.name.empty());
     BOOST_CHECK_LE(esyp.decimals, src20::MAX_DECIMALS);
     BOOST_CHECK_GT(esyp.total_supply, 0ULL);
@@ -591,7 +596,7 @@ BOOST_AUTO_TEST_CASE(wellknown_esyp_valid)
 BOOST_AUTO_TEST_CASE(wellknown_susdt_valid)
 {
     auto susdt = src20::wellknown::CreateSUSDT();
-    BOOST_CHECK_EQUAL(susdt.ticker, "sUST");
+    BOOST_CHECK_EQUAL(susdt.ticker, "SUST");
     BOOST_CHECK(!susdt.name.empty());
     BOOST_CHECK_LE(susdt.decimals, src20::MAX_DECIMALS);
     BOOST_CHECK_GT(susdt.total_supply, 0ULL);
@@ -1292,14 +1297,16 @@ BOOST_AUTO_TEST_CASE(reserved_ticker_all_reserved)
     // Native coin and variations
     BOOST_CHECK(src20::reserved::IsReservedTicker("SYL"));
     BOOST_CHECK(src20::reserved::IsReservedTicker("OSYL"));
-    BOOST_CHECK(src20::reserved::IsReservedTicker("OPENSY"));
+    // OPENSY removed — 6 chars exceeds MAX_TICKER_LENGTH=4, was dead reservation
+    BOOST_CHECK(!src20::reserved::IsReservedTicker("OPENSY"));
     
-    // Official stablecoins  
-    BOOST_CHECK(src20::reserved::IsReservedTicker("eSYP"));
+    // Official stablecoins (uppercase only — matches ticker validation)
+    // Lowercase variants removed as they can never pass ticker validation
+    BOOST_CHECK(!src20::reserved::IsReservedTicker("eSYP"));
     BOOST_CHECK(src20::reserved::IsReservedTicker("ESYP"));
-    BOOST_CHECK(src20::reserved::IsReservedTicker("sUSD"));
+    BOOST_CHECK(!src20::reserved::IsReservedTicker("sUSD"));
     BOOST_CHECK(src20::reserved::IsReservedTicker("SUSD"));
-    BOOST_CHECK(src20::reserved::IsReservedTicker("sUST"));
+    BOOST_CHECK(!src20::reserved::IsReservedTicker("sUST"));
     BOOST_CHECK(src20::reserved::IsReservedTicker("SUST"));
     
     // Prevent impersonation

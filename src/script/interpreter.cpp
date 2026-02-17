@@ -1467,7 +1467,12 @@ template void PrecomputedTransactionData::Init(const CMutableTransaction& txTo, 
 template PrecomputedTransactionData::PrecomputedTransactionData(const CTransaction& txTo);
 template PrecomputedTransactionData::PrecomputedTransactionData(const CMutableTransaction& txTo);
 
-const HashWriter HASHER_TAPSIGHASH{TaggedHash("TapSighash")};
+// SECURITY FIX [C-01]: OpenSY-specific tagged hash for Taproot sighash.
+// Using "TapSighash/opensy" instead of Bitcoin's "TapSighash" creates a
+// domain-separated sighash that prevents cross-chain replay attacks.
+// A Taproot signature valid on OpenSY will fail verification on Bitcoin
+// (and vice versa) because the tagged hash prefix differs.
+const HashWriter HASHER_TAPSIGHASH{TaggedHash("TapSighash/opensy")};
 const HashWriter HASHER_TAPLEAF{TaggedHash("TapLeaf")};
 const HashWriter HASHER_TAPBRANCH{TaggedHash("TapBranch")};
 
@@ -1616,6 +1621,18 @@ uint256 SignatureHash(const CScript& scriptCode, const T& txTo, unsigned int nIn
     }
 
     HashWriter ss{};
+
+    // SECURITY FIX [C-01]: Cross-chain replay protection for SegWit v0 and legacy.
+    // Commit the OpenSY genesis block hash as a domain separator at the start of
+    // every sighash computation. This makes signatures chain-specific: a signature
+    // produced on OpenSY will hash different data than the same transaction on
+    // Bitcoin, preventing cross-chain replay attacks.
+    //
+    // This is equivalent to BCH's SIGHASH_FORKID but cleaner — no new sighash
+    // type byte needed. The genesis hash is a natural chain identifier that
+    // cannot collide between independent chains.
+    static const uint256 OPENSY_GENESIS_HASH{"000000c4c94f54e5ae60a67df5c113dfbfd9ef872639e2359d15796f27920fd1"};
+    ss << OPENSY_GENESIS_HASH;
 
     // Try to compute using cached SHA256 midstate.
     if (sighash_cache && sighash_cache->Load(nHashType, scriptCode, ss)) {

@@ -108,6 +108,11 @@ public:
             other.m_index = SIZE_MAX;
         }
 
+        // SECURITY FIX [L-01]: Move assignment is explicitly deleted because
+        // ContextGuard holds a reference to a specific pool slot (m_index).
+        // Assignment would require returning the old slot and claiming the new one,
+        // which is error-prone with pool state. Move construction is sufficient
+        // for std::optional<ContextGuard> usage in Acquire().
         ContextGuard& operator=(ContextGuard&&) = delete;
 
         //! Access the underlying context
@@ -185,7 +190,6 @@ private:
 
     mutable Mutex m_mutex;
     std::condition_variable_any m_cv;  //!< Uses condition_variable_any to work with Bitcoin Core's Mutex wrapper
-    std::condition_variable_any m_priority_cv;  //!< Separate CV for priority wakeups
     std::vector<PoolEntry> m_pool GUARDED_BY(m_mutex);
     size_t m_max_contexts GUARDED_BY(m_mutex){MAX_CONTEXTS};
 

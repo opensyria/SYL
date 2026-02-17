@@ -120,6 +120,11 @@ uint256 RandomXContext::CalculateHash(const unsigned char* data, size_t len)
         throw std::runtime_error("RandomX context not initialized");
     }
 
+    // SECURITY FIX [L-05]: Null pointer check on raw input data
+    if (!data && len > 0) {
+        throw std::runtime_error("RandomX input data is null with non-zero length");
+    }
+
     // Limit input size to prevent DoS attacks
     static constexpr size_t MAX_RANDOMX_INPUT = 4 * 1024 * 1024; // 4MB
     if (len > MAX_RANDOMX_INPUT) {
@@ -167,33 +172,30 @@ void RandomXMiningContext::Cleanup()
 
     if (m_dataset) {
         // ======================================================================
-        // MEMORY BARRIER DOCUMENTATION (M-02 Audit Finding)
+        // SECURITY FIX [H-06]: Reference-counted dataset deallocation
         // ======================================================================
-        // 
-        // CRITICAL: The epoch increment MUST happen BEFORE freeing the dataset.
-        // This creates a happens-before relationship that prevents use-after-free:
+        //
+        // The dataset is wrapped in a shared_ptr. Mining threads that called
+        // CreateVM() hold their own copy of this shared_ptr, preventing the
+        // dataset from being freed while any VM still references it.
+        //
+        // Incrementing the epoch BEFORE resetting our shared_ptr ensures mining
+        // threads see the epoch change and stop creating new VMs from the old
+        // dataset. Existing VMs remain safe because their shared_ptr copy keeps
+        // the dataset memory alive until they call randomx_destroy_vm().
         //
         //   Thread A (Cleanup):               Thread B (Mining):
         //   -----------------                 ------------------
         //   epoch.fetch_add(release)  ─────► epoch.load(acquire)
-        //   [memory barrier]                  [memory barrier]
-        //   release_dataset()                 if (epoch_changed) abort;
-        //                                     else: hash = VM.calculate() ← SAFE
-        //
-        // The release-acquire pair ensures Thread B sees the incremented epoch
-        // before Thread A's subsequent free becomes visible to Thread B.
-        //
-        // RACE WINDOW ANALYSIS:
-        // A theoretical race exists if Thread B passes the epoch check but is
-        // preempted for longer than it takes to: increment epoch + free dataset
-        // + allocate new dataset. This is extremely unlikely (~seconds) and only
-        // affects mining (temporary hash failure), not consensus validation.
+        //   m_dataset.reset()                 if (epoch_changed) destroy VM;
+        //                                     dataset stays alive via shared_ptr
+        //                                     ... eventually VM destroyed ...
+        //                                     last shared_ptr ref dropped → free
         // ======================================================================
         m_dataset_epoch.fetch_add(1, std::memory_order_release);
-        LogPrintf("RandomX Mining: Dataset epoch incremented to %lu, freeing old dataset\n", 
+        LogPrintf("RandomX Mining: Dataset epoch incremented to %lu, releasing dataset reference\n",
                   m_dataset_epoch.load(std::memory_order_relaxed));
-        randomx_release_dataset(m_dataset);
-        m_dataset = nullptr;
+        m_dataset.reset(); // Release our reference; mining threads hold their own
     }
     if (m_cache) {
         randomx_release_cache(m_cache);
@@ -212,6 +214,19 @@ RandomXMiningContext::~RandomXMiningContext()
 bool RandomXMiningContext::Initialize(const uint256& keyBlockHash, unsigned int numThreads)
 {
     LOCK(m_mutex);
+
+    // SECURITY DOCUMENTATION [L-03]: The mutex is held for the entire initialization,
+    // including the ~2GB dataset allocation and multi-thread fill (~30-60 seconds).
+    // This is intentional:
+    //   1. During initialization, m_cache, m_dataset, m_keyBlockHash, and m_initialized
+    //      are all being modified. Releasing the mutex mid-way would expose partially
+    //      initialized state to CreateVM() callers.
+    //   2. Mining threads that call CreateVM() while Initialize() runs will block,
+    //      which is correct — they must not use a half-filled dataset.
+    //   3. Initialize() is called rarely (only on key block rotation, every ~2048 blocks)
+    //      so the long hold time has negligible impact on throughput.
+    //   4. The dataset fill threads spawned below do NOT acquire m_mutex; they only
+    //      write to disjoint regions of the already-allocated dataset memory.
 
     // Skip if already initialized with same key
     if (m_initialized && m_keyBlockHash == keyBlockHash) {
@@ -247,13 +262,17 @@ bool RandomXMiningContext::Initialize(const uint256& keyBlockHash, unsigned int 
 
     // Allocate dataset (~2GB)
     LogPrintf("RandomX Mining: Allocating dataset (~2GB)...\n");
-    m_dataset = randomx_alloc_dataset(static_cast<randomx_flags>(m_flags));
-    if (!m_dataset) {
+    randomx_dataset* raw_dataset = randomx_alloc_dataset(static_cast<randomx_flags>(m_flags));
+    if (!raw_dataset) {
         LogPrintf("RandomX Mining: FATAL - Failed to allocate dataset (need ~2GB RAM)\n");
         randomx_release_cache(m_cache);
         m_cache = nullptr;
         return false;
     }
+    // SECURITY FIX [H-06]: Wrap dataset in shared_ptr with custom deleter.
+    // Mining threads receive a copy of this shared_ptr via CreateVM(), so the
+    // dataset is only freed when ALL references (including mining threads) are gone.
+    m_dataset = std::shared_ptr<randomx_dataset>(raw_dataset, randomx_release_dataset);
 
     // Initialize dataset using multiple threads
     // Limit dataset init threads to reduce peak memory from thread stacks
@@ -275,7 +294,7 @@ bool RandomXMiningContext::Initialize(const uint256& keyBlockHash, unsigned int 
                       i, startItem, startItem + itemCount);
             initThreads.emplace_back([this, startItem, itemCount, i]() {
                 LogPrintf("RandomX Mining: Thread %u initializing dataset...\n", i);
-                randomx_init_dataset(m_dataset, m_cache, startItem, itemCount);
+                randomx_init_dataset(m_dataset.get(), m_cache, startItem, itemCount);
                 LogPrintf("RandomX Mining: Thread %u completed\n", i);
             });
         }
@@ -287,7 +306,7 @@ bool RandomXMiningContext::Initialize(const uint256& keyBlockHash, unsigned int 
         LogPrintf("RandomX Mining: All init threads completed\n");
     } else {
         LogPrintf("RandomX Mining: Using single-threaded dataset init\n");
-        randomx_init_dataset(m_dataset, m_cache, 0, datasetItemCount);
+        randomx_init_dataset(m_dataset.get(), m_cache, 0, datasetItemCount);
     }
 
     m_keyBlockHash = keyBlockHash;
@@ -300,17 +319,22 @@ bool RandomXMiningContext::Initialize(const uint256& keyBlockHash, unsigned int 
     return true;
 }
 
-randomx_vm* RandomXMiningContext::CreateVM()
+std::pair<randomx_vm*, std::shared_ptr<void>> RandomXMiningContext::CreateVM()
 {
     LOCK(m_mutex);
     
     if (!m_initialized || !m_dataset) {
-        return nullptr;
+        return {nullptr, nullptr};
     }
 
     // Create VM with full dataset (fast mode)
     // Each thread gets its own VM but shares the dataset (read-only)
-    return randomx_create_vm(static_cast<randomx_flags>(m_flags), nullptr, m_dataset);
+    auto* vm = randomx_create_vm(static_cast<randomx_flags>(m_flags), nullptr, m_dataset.get());
+    // SECURITY FIX [H-06]: Return a copy of the dataset shared_ptr alongside the VM.
+    // The caller MUST hold this reference for the lifetime of the VM. This prevents
+    // the dataset from being freed during key rotation while a mining thread is still
+    // hashing. The shared_ptr ensures the dataset lives until all VMs are destroyed.
+    return {vm, m_dataset};
 }
 
 bool RandomXMiningContext::IsInitialized() const
@@ -327,14 +351,17 @@ uint256 RandomXMiningContext::GetKeyBlockHash() const
 
 void InitRandomXContext()
 {
-    if (!g_randomx_context) {
+    // SECURITY FIX [L-06]: Thread-safe initialization using std::call_once.
+    // Previously used a bare if-check which is a data race if called concurrently.
+    static std::once_flag g_randomx_init_flag;
+    std::call_once(g_randomx_init_flag, []() {
         g_randomx_context = std::make_unique<RandomXContext>();
-    }
+    });
 }
 
 void ShutdownRandomXContext()
 {
-    if (g_randomx_context) {
-        g_randomx_context.reset();
-    }
+    // Shutdown is called once on the main thread during node teardown.
+    // No race: all validation threads have been joined before this point.
+    g_randomx_context.reset();
 }

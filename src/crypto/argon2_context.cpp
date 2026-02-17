@@ -8,6 +8,8 @@
 #include <streams.h>
 #include <util/check.h>
 
+#include <mutex>
+
 // Argon2 reference implementation
 // Argon2id implementation via libsodium
 // libsodium is REQUIRED for mainnet builds to ensure proper memory-hard PoW
@@ -26,6 +28,7 @@
 // Mainnet and testnet release builds MUST have libsodium for Argon2id emergency PoW
 #define USE_LIBSODIUM 0
 #include <crypto/sha256.h>
+#include <common/args.h>
 #include <util/chaintype.h>
 
 // Compile-time check: Release builds REQUIRE libsodium - no exceptions
@@ -120,6 +123,14 @@ uint256 Argon2Context::CalculateHash(const unsigned char* data, size_t len,
     // The Argon2 emergency mode is DORMANT (nArgon2EmergencyHeight = -1).
     // If ever activated, ALL nodes MUST have libsodium or network will fork.
     //
+    // SECURITY FIX [M-15]: In debug builds, abort if this fallback is used on
+    // mainnet or testnet. This prevents developers from accidentally validating
+    // Argon2 activation scenarios with the wrong hash function and thinking
+    // everything works when it would actually cause a consensus fork.
+    // Only regtest is allowed to use the SHA256 fallback silently.
+    assert(gArgs.GetChainType() == ChainType::REGTEST &&
+           "Argon2 SHA256 fallback must not be used on mainnet/testnet! Install libsodium.");
+
     // FIX 2.3: Log warning on EVERY call (not just first) since this is critical
     // A single warning at startup could be missed in log rotation
     static std::atomic<uint64_t> weak_hash_count{0};
@@ -167,27 +178,33 @@ bool Argon2Context::IsInitialized() const
 
 void InitArgon2Context(uint32_t memory_cost, uint32_t time_cost, uint32_t parallelism)
 {
-    if (!g_argon2_context) {
+    // SECURITY FIX [M-01]: Use std::call_once to prevent data race on g_argon2_context.
+    // Previously, two threads could both read g_argon2_context as null and both call
+    // make_unique, causing undefined behavior on the non-atomic unique_ptr assignment.
+    //
+    // SECURITY FIX [M-11]: Capture parameters by VALUE, not by reference.
+    // With [&], if the first call wins the race with different parameters
+    // (e.g., from test code), all subsequent calls silently use wrong values,
+    // causing consensus divergence. Capturing by value freezes the parameters
+    // at the point of the winning call.
+    static std::once_flag g_argon2_init_flag;
+    std::call_once(g_argon2_init_flag, [memory_cost, time_cost, parallelism]() {
 #if !USE_LIBSODIUM
-        // Runtime check: only allow weak SHA256 fallback on regtest
-        // This provides defense-in-depth beyond the compile-time check
         LogPrintf("WARNING: Argon2 context using weak SHA256 fallback (libsodium not available)\n");
 #endif
         g_argon2_context = std::make_unique<Argon2Context>(
             memory_cost, time_cost, parallelism);
-    }
+    });
 }
 
 uint256 CalculateArgon2Hash(const CBlockHeader& header, const Consensus::Params& params)
 {
-    // Lazily initialize global context
-    if (!g_argon2_context) {
-        InitArgon2Context(
-            params.nArgon2MemoryCost,
-            params.nArgon2TimeCost,
-            params.nArgon2Parallelism
-        );
-    }
+    // InitArgon2Context is thread-safe via std::call_once
+    InitArgon2Context(
+        params.nArgon2MemoryCost,
+        params.nArgon2TimeCost,
+        params.nArgon2Parallelism
+    );
 
     return g_argon2_context->CalculateBlockHash(header);
 }

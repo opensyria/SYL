@@ -11,6 +11,7 @@
 #define OPENSY_CONSENSUS_AMOUNT_H
 
 #include <cstdint>
+#include <limits>
 
 /** Amount in qirsh (قرش) - smallest unit of SYL (Can be negative)
  *  Named after the historical Syrian/Arabic currency subdivision.
@@ -30,6 +31,16 @@ static constexpr CAmount COIN = 100000000;
  * for the creation of coins out of thin air modification could lead to a fork.
  * */
 static constexpr CAmount MAX_MONEY = 21000000000 * COIN; // 21 billion SYL
+
+// SECURITY FIX [M-20]: Compile-time overflow guard.
+// MAX_MONEY (2.1e18) must fit in int64_t (max 9.2e18) with sufficient margin
+// for intermediate arithmetic in fee calculations, signature hash amount
+// serialization, and CTxOut value summation. A 4x margin ensures that
+// summing up to 4 MAX_MONEY-valued outputs cannot overflow.
+static_assert(MAX_MONEY > 0, "MAX_MONEY must be positive");
+static_assert(MAX_MONEY <= std::numeric_limits<int64_t>::max() / 4,
+              "MAX_MONEY too large: risk of int64_t overflow in intermediate calculations");
+
 inline bool MoneyRange(const CAmount& nValue) { return (nValue >= 0 && nValue <= MAX_MONEY); }
 
 #endif // OPENSY_CONSENSUS_AMOUNT_H

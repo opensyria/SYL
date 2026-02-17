@@ -115,15 +115,17 @@ BOOST_AUTO_TEST_CASE(subsidy_limit_test)
     CAmount nSum = 0;
     // OpenSY: 10,000 SYL initial reward, 1,050,000 block halving interval
     // Total supply converges to 21 billion SYL
-    for (int nHeight = 0; nHeight < 14000000; nHeight += 1000) {
+    // AUDIT FIX [L-03]: Extended range and stronger assertions
+    for (int nHeight = 0; nHeight < 70000000; nHeight += 1000) {
         CAmount nSubsidy = GetBlockSubsidy(nHeight, chainParams->GetConsensus());
         BOOST_CHECK(nSubsidy <= 10000 * COIN); // OpenSY: 10,000 SYL max
         nSum += nSubsidy * 1000;
         BOOST_CHECK(MoneyRange(nSum));
     }
-    // OpenSY: Different total supply calculation
-    // With 10,000 SYL reward and 1,050,000 halving, total is ~21B SYL
-    BOOST_CHECK(nSum > 0); // Just check we accumulated some coins
+    // After 70M blocks (far past all halvings), total must be within MAX_MONEY
+    // and very close to the theoretical 21B SYL limit
+    BOOST_CHECK(nSum <= MAX_MONEY);
+    BOOST_CHECK(nSum > MAX_MONEY - 1 * COIN); // within 1 SYL of limit
 }
 
 BOOST_AUTO_TEST_CASE(signet_parse_tests)

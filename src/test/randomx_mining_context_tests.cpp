@@ -71,8 +71,9 @@ BOOST_AUTO_TEST_CASE(create_vm_without_init)
     RandomXMiningContext ctx;
     
     BOOST_CHECK(!ctx.IsInitialized());
-    randomx_vm* vm = ctx.CreateVM();
+    auto [vm, dsref] = ctx.CreateVM();
     BOOST_CHECK(vm == nullptr);
+    BOOST_CHECK(dsref == nullptr);
 }
 
 BOOST_AUTO_TEST_CASE(create_vm_after_init)
@@ -82,8 +83,9 @@ BOOST_AUTO_TEST_CASE(create_vm_after_init)
     
     BOOST_REQUIRE(ctx.Initialize(TEST_KEY1, 1));
     
-    randomx_vm* vm = ctx.CreateVM();
+    auto [vm, dsref] = ctx.CreateVM();
     BOOST_CHECK(vm != nullptr);
+    BOOST_CHECK(dsref != nullptr); // H-06: dataset reference must be valid
     
     if (vm) {
         randomx_destroy_vm(vm);
@@ -97,7 +99,7 @@ BOOST_AUTO_TEST_CASE(vm_hash_calculation)
     
     BOOST_REQUIRE(ctx.Initialize(TEST_KEY1, 1));
     
-    randomx_vm* vm = ctx.CreateVM();
+    auto [vm, dsref] = ctx.CreateVM();
     BOOST_REQUIRE(vm != nullptr);
     
     // Calculate a hash
@@ -125,8 +127,8 @@ BOOST_AUTO_TEST_CASE(hash_determinism)
     
     BOOST_REQUIRE(ctx.Initialize(TEST_KEY1, 1));
     
-    randomx_vm* vm1 = ctx.CreateVM();
-    randomx_vm* vm2 = ctx.CreateVM();
+    auto [vm1, dsref1] = ctx.CreateVM();
+    auto [vm2, dsref2] = ctx.CreateVM();
     BOOST_REQUIRE(vm1 != nullptr && vm2 != nullptr);
     
     const char* input = "determinism test input";
@@ -168,13 +170,15 @@ BOOST_AUTO_TEST_CASE(concurrent_vm_creation)
     const int numThreads = 4;
     std::vector<std::thread> threads;
     std::vector<randomx_vm*> vms(numThreads, nullptr);
+    std::vector<std::shared_ptr<void>> dsrefs(numThreads);
     std::atomic<int> successCount{0};
     
     for (int i = 0; i < numThreads; ++i) {
-        threads.emplace_back([&ctx, &vms, &successCount, i]() {
-            randomx_vm* vm = ctx.CreateVM();
+        threads.emplace_back([&ctx, &vms, &dsrefs, &successCount, i]() {
+            auto [vm, dsref] = ctx.CreateVM();
             if (vm) {
                 vms[i] = vm;
+                dsrefs[i] = std::move(dsref);
                 ++successCount;
             }
         });
@@ -206,7 +210,7 @@ BOOST_AUTO_TEST_CASE(concurrent_hash_calculation)
     
     for (int t = 0; t < numThreads; ++t) {
         threads.emplace_back([&ctx, &successCount, t]() {
-            randomx_vm* vm = ctx.CreateVM();
+            auto [vm, dsref] = ctx.CreateVM();
             if (!vm) return;
             
             for (int i = 0; i < hashesPerThread; ++i) {
@@ -240,20 +244,21 @@ BOOST_AUTO_TEST_CASE(reinitialization_with_different_key)
     BOOST_CHECK(ctx.GetKeyBlockHash() == TEST_KEY1);
     
     // Create a VM and calculate hash with first key
-    randomx_vm* vm1 = ctx.CreateVM();
+    auto [vm1, dsref1] = ctx.CreateVM();
     BOOST_REQUIRE(vm1 != nullptr);
     
     const char* input = "reinit test";
     std::array<unsigned char, 32> hash1;
     randomx_calculate_hash(vm1, input, strlen(input), hash1.data());
     randomx_destroy_vm(vm1);
+    dsref1.reset();
     
     // Reinitialize with different key
     BOOST_REQUIRE(ctx.Initialize(TEST_KEY2, 1));
     BOOST_CHECK(ctx.GetKeyBlockHash() == TEST_KEY2);
     
     // Calculate hash with second key - should be different
-    randomx_vm* vm2 = ctx.CreateVM();
+    auto [vm2, dsref2] = ctx.CreateVM();
     BOOST_REQUIRE(vm2 != nullptr);
     
     std::array<unsigned char, 32> hash2;
@@ -272,15 +277,16 @@ BOOST_AUTO_TEST_CASE(reinitialization_with_same_key)
     
     // First initialization
     BOOST_REQUIRE(ctx.Initialize(TEST_KEY1, 1));
-    randomx_vm* vm1 = ctx.CreateVM();
+    auto [vm1, dsref1] = ctx.CreateVM();
     BOOST_REQUIRE(vm1 != nullptr);
     std::array<unsigned char, 32> hash1;
     randomx_calculate_hash(vm1, input, strlen(input), hash1.data());
     randomx_destroy_vm(vm1);
+    dsref1.reset();
     
     // Reinitialize with same key
     BOOST_REQUIRE(ctx.Initialize(TEST_KEY1, 1));
-    randomx_vm* vm2 = ctx.CreateVM();
+    auto [vm2, dsref2] = ctx.CreateVM();
     BOOST_REQUIRE(vm2 != nullptr);
     std::array<unsigned char, 32> hash2;
     randomx_calculate_hash(vm2, input, strlen(input), hash2.data());
@@ -313,7 +319,7 @@ BOOST_AUTO_TEST_CASE(empty_input_hash)
     
     BOOST_REQUIRE(ctx.Initialize(TEST_KEY1, 1));
     
-    randomx_vm* vm = ctx.CreateVM();
+    auto [vm, dsref] = ctx.CreateVM();
     BOOST_REQUIRE(vm != nullptr);
     
     std::array<unsigned char, 32> hash;
@@ -339,7 +345,7 @@ BOOST_AUTO_TEST_CASE(large_input_hash)
     
     BOOST_REQUIRE(ctx.Initialize(TEST_KEY1, 1));
     
-    randomx_vm* vm = ctx.CreateVM();
+    auto [vm, dsref2] = ctx.CreateVM();
     BOOST_REQUIRE(vm != nullptr);
     
     // Create 1MB input
@@ -375,8 +381,8 @@ BOOST_AUTO_TEST_CASE(destructor_cleanup)
         ctx.Initialize(TEST_KEY1, 1);
         
         // Create some VMs
-        randomx_vm* vm1 = ctx.CreateVM();
-        randomx_vm* vm2 = ctx.CreateVM();
+        auto [vm1, dsref1] = ctx.CreateVM();
+        auto [vm2, dsref2] = ctx.CreateVM();
         
         // Destroy VMs before context goes out of scope
         if (vm1) randomx_destroy_vm(vm1);
@@ -390,12 +396,12 @@ BOOST_AUTO_TEST_CASE(destructor_cleanup)
 BOOST_AUTO_TEST_CASE(vm_outlives_partial_context_use)
 {
     // Test: VMs created from context can be used independently
-    // (though in practice they depend on the dataset)
+    // H-06: The dataset_ref keeps the dataset alive even if context is reinitialized
     RandomXMiningContext ctx;
     
     BOOST_REQUIRE(ctx.Initialize(TEST_KEY1, 1));
     
-    randomx_vm* vm = ctx.CreateVM();
+    auto [vm, dsref] = ctx.CreateVM();
     BOOST_REQUIRE(vm != nullptr);
     
     // Calculate hash while context is alive
@@ -403,7 +409,7 @@ BOOST_AUTO_TEST_CASE(vm_outlives_partial_context_use)
     std::array<unsigned char, 32> hash;
     randomx_calculate_hash(vm, input, strlen(input), hash.data());
     
-    // VM must be destroyed before context
+    // VM must be destroyed before releasing dataset reference
     randomx_destroy_vm(vm);
     
     BOOST_CHECK(true);
@@ -474,7 +480,7 @@ BOOST_AUTO_TEST_CASE(epoch_detects_stale_vm)
     uint64_t mining_epoch = ctx.GetDatasetEpoch();
     
     // Create VM (simulating mining thread startup)
-    randomx_vm* vm = ctx.CreateVM();
+    auto [vm, dsref] = ctx.CreateVM();
     BOOST_REQUIRE(vm != nullptr);
     
     // Simulate key rotation occurring during mining
@@ -483,7 +489,15 @@ BOOST_AUTO_TEST_CASE(epoch_detects_stale_vm)
     // Mining thread should detect epoch mismatch
     BOOST_CHECK_NE(ctx.GetDatasetEpoch(), mining_epoch);
     
-    // Cleanup - in real code, thread would abort before this if epoch changed
+    // H-06: VM is still safe to use because dsref keeps old dataset alive!
+    // In real code, thread would detect epoch change and stop mining, but
+    // the memory is safe regardless.
+    const char* input = "stale vm test";
+    std::array<unsigned char, 32> hash;
+    randomx_calculate_hash(vm, input, strlen(input), hash.data());
+    // Hash is from the OLD key — wrong for the new key, but no crash!
+    
+    // Cleanup
     randomx_destroy_vm(vm);
 }
 

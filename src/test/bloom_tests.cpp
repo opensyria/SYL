@@ -26,6 +26,16 @@ using namespace util::hex_literals;
 
 namespace bloom_tests {
 struct BloomTest : public BasicTestingSetup {
+    BloomTest()
+        : BasicTestingSetup(ChainType::REGTEST, [] {
+            TestOpts opts;
+            // Avoid RandomX VM init during test setup (known hang on some hosts).
+            opts.extra_args = {"-randomxforkheight=999999999"};
+            return opts;
+        }())
+    {
+    }
+
     std::vector<unsigned char> RandomData();
 };
 } // namespace bloom_tests
@@ -84,7 +94,7 @@ BOOST_AUTO_TEST_CASE(bloom_create_insert_key)
 {
     // Use mainnet params for this test since the WIF key is mainnet format
     SelectParams(ChainType::MAIN);
-    std::string strSecret = std::string("5Kg1gnAjaLfKiwhhPpGS3QfRg2m6awQvaj98JCZBZQ5SuS2F15C");
+    std::string strSecret = std::string("6vyk9uiGUm8CCKbYue4PpoSbdWKZnjrxMQYJ1PaDGrQ4bLHTxQJ");
     CKey key = DecodeSecret(strSecret);
     CPubKey pubkey = key.GetPubKey();
     std::vector<unsigned char> vchPubKey(pubkey.begin(), pubkey.end());

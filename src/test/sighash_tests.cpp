@@ -78,6 +78,11 @@ uint256 static SignatureHashOld(CScript scriptCode, const CTransaction& txTo, un
 
     // Serialize and hash
     HashWriter ss{};
+    // SECURITY FIX [C-01]: Match cross-chain replay protection domain separator.
+    // OpenSY prepends the genesis block hash to all sighash computations to
+    // prevent cross-chain replay attacks against Bitcoin.
+    static const uint256 OPENSY_GENESIS_HASH{"000000c4c94f54e5ae60a67df5c113dfbfd9ef872639e2359d15796f27920fd1"};
+    ss << OPENSY_GENESIS_HASH;
     ss << TX_NO_WITNESS(txTmp) << nHashType;
     return ss.GetHash();
 }
@@ -204,7 +209,12 @@ BOOST_AUTO_TEST_CASE(sighash_from_data)
         }
 
         sh = SignatureHash(scriptCode, *tx, nIn, nHashType, 0, SigVersion::BASE);
-        BOOST_CHECK_MESSAGE(sh.GetHex() == sigHashHex, strTest);
+        // NOTE [C-01]: The expected hashes in sighash.json are from upstream Bitcoin
+        // and do not include OpenSY's genesis-hash domain separator. We verify
+        // consistency with SignatureHashOld() (which includes the same separator)
+        // instead of the upstream test vectors.
+        uint256 sho = SignatureHashOld(scriptCode, *tx, nIn, nHashType);
+        BOOST_CHECK_MESSAGE(sh == sho, strTest);
     }
 }
 

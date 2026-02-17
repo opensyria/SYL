@@ -4,6 +4,7 @@
 
 #include <tokens/tokendb.h>
 
+#include <consensus/amount.h>
 #include <hash.h>
 #include <logging.h>
 #include <primitives/transaction.h>
@@ -13,6 +14,10 @@
 #include <util/overflow.h>
 
 namespace tokens {
+
+/** AUDIT FIX [H-04]: Minimum transaction fee required for token issuance.
+ *  Prevents token-spam attacks by requiring an economic cost to create tokens. */
+static constexpr CAmount MIN_TOKEN_ISSUANCE_FEE = 100 * COIN; // 100 SYL
 
 std::unique_ptr<TokenDB> g_tokendb;
 
@@ -61,9 +66,10 @@ struct TransferKey {
     src20::TokenId token_id;
     int height{0};
     uint256 txid;
+    uint8_t op_index{0}; // SECURITY FIX [L-07]: Disambiguate multi-op transactions
     TransferKey() = default;
-    TransferKey(const src20::TokenId& id, int h, const uint256& tx) : token_id(id), height(h), txid(tx) {}
-    SERIALIZE_METHODS(TransferKey, obj) { READWRITE(obj.prefix, obj.token_id, obj.height, obj.txid); }
+    TransferKey(const src20::TokenId& id, int h, const uint256& tx, uint8_t idx = 0) : token_id(id), height(h), txid(tx), op_index(idx) {}
+    SERIALIZE_METHODS(TransferKey, obj) { READWRITE(obj.prefix, obj.token_id, obj.height, obj.txid, obj.op_index); }
 };
 
 struct BlockTokensKey {
@@ -77,8 +83,9 @@ struct UndoKey {
     uint8_t prefix{db_prefix::UNDO};
     int height;
     uint256 txid;
-    UndoKey(int h, const uint256& tx) : height(h), txid(tx) {}
-    SERIALIZE_METHODS(UndoKey, obj) { READWRITE(obj.prefix, obj.height, obj.txid); }
+    uint8_t op_index{0}; // SECURITY FIX [C-02]: Disambiguate multi-op transactions
+    UndoKey(int h, const uint256& tx, uint8_t idx = 0) : height(h), txid(tx), op_index(idx) {}
+    SERIALIZE_METHODS(UndoKey, obj) { READWRITE(obj.prefix, obj.height, obj.txid, obj.op_index); }
 };
 
 struct BestBlockKey {
@@ -259,7 +266,8 @@ std::optional<src20::TokenId> TokenDB::RegisterToken(
     const uint256& txid,
     const CScript& issuer_address,
     int height,
-    int64_t time)
+    int64_t time,
+    CDBBatch* external_batch)
 {
     if (!m_db) return std::nullopt;
     
@@ -287,10 +295,11 @@ std::optional<src20::TokenId> TokenDB::RegisterToken(
     info.holder_count = 1;
     info.transfer_count = 0;
     
-    // AUDIT FIX: Use single atomic batch for ALL token registration data
-    // Previously token info and balance were written separately, risking
-    // orphaned tokens if the second write failed.
-    CDBBatch batch(*m_db);
+    // AUDIT FIX [H-03]: Use external batch when provided for atomic block processing.
+    // When called from ProcessBlock, all ops + undo go into one atomic batch.
+    // When called standalone (external_batch == nullptr), use local batch.
+    CDBBatch local_batch(*m_db);
+    CDBBatch& batch = external_batch ? *external_batch : local_batch;
     
     // Write token info
     batch.Write(TokenInfoKey(info.token_id), info);
@@ -318,15 +327,17 @@ std::optional<src20::TokenId> TokenDB::RegisterToken(
     
     batch.Write(TransferKey(token_id, height, txid), record);
     
-    // Commit all atomically - WriteBatch throws dbwrapper_error on failure
-    try {
-        m_db->WriteBatch(batch);
-    } catch (const dbwrapper_error& e) {
-        LogPrintf("Failed to write token registration for %s: %s\n", issuance.ticker, e.what());
-        return std::nullopt;
+    // Commit only if using local batch (standalone mode)
+    if (!external_batch) {
+        try {
+            m_db->WriteBatch(local_batch);
+        } catch (const dbwrapper_error& e) {
+            LogPrintf("Failed to write token registration for %s: %s\n", issuance.ticker, e.what());
+            return std::nullopt;
+        }
     }
     
-    // Update cache AFTER successful write
+    // Update cache AFTER successful write (or after adding to external batch)
     UpdateCache(info);
     
     // AUDIT FIX M-04: Update cached token count
@@ -498,7 +509,9 @@ bool TokenDB::TransferTokens(
     uint64_t amount,
     const uint256& txid,
     int height,
-    int64_t time)
+    int64_t time,
+    CDBBatch* external_batch,
+    uint8_t op_index)
 {
     if (!m_db) return false;
     
@@ -521,10 +534,9 @@ bool TokenDB::TransferTokens(
         return false;
     }
     
-    // FIX 3.2: Use atomic batch write for ALL balance updates
-    // Previously, sender and recipient balances were written separately,
-    // which could leave partial state on failure. Now all writes are atomic.
-    CDBBatch batch(*m_db);
+    // AUDIT FIX [H-03]: Use external batch when provided for atomic block processing.
+    CDBBatch local_batch(*m_db);
+    CDBBatch& batch = external_batch ? *external_batch : local_batch;
     
     // Write sender's new balance
     batch.Write(BalanceKey(from, token_id), from_balance - amount);
@@ -562,12 +574,14 @@ bool TokenDB::TransferTokens(
     record.height = height;
     record.time = time;
     
-    auto transfer_key = TransferKey(token_id, height, txid);
+    // SECURITY FIX [M-19]: Pass op_index to TransferKey to prevent history
+    // overwrites when multiple transfers of the same token occur in one tx.
+    // Previously the default op_index=0 caused all same-tx transfers to
+    // collide on the same key, losing all but the last transfer record.
+    auto transfer_key = TransferKey(token_id, height, txid, op_index);
     batch.Write(transfer_key, record);
     
-    // FIX 3.2: Include token stats update in the same atomic batch
-    // Previously, stats were updated in a separate write which could
-    // leave inconsistent state if the process crashed between writes.
+    // Include token stats update in the same batch
     TokenInfo info;
     if (ReadTokenInfo(token_id, info)) {
         info.transfer_count++;
@@ -582,7 +596,10 @@ bool TokenDB::TransferTokens(
         UpdateCache(info);
     }
     
-    m_db->WriteBatch(batch);
+    // Commit only if using local batch (standalone mode)
+    if (!external_batch) {
+        m_db->WriteBatch(local_batch);
+    }
     
     // FIX L-04: Update cached transfer count
     if (m_transfer_count_initialized.load()) {
@@ -600,7 +617,9 @@ bool TokenDB::BurnTokens(
     uint64_t amount,
     const uint256& txid,
     int height,
-    int64_t time)
+    int64_t time,
+    CDBBatch* external_batch,
+    uint8_t op_index)
 {
     if (!m_db) return false;
     
@@ -621,17 +640,15 @@ bool TokenDB::BurnTokens(
     }
     
     // SECURITY FIX [M-01]: Check for circulating_supply underflow before modifying
-    // This prevents wrap-around to astronomical values on database corruption
     if (info.circulating_supply < amount) {
         LogPrintf("ERROR: Token burn would cause circulating supply underflow for %s: supply=%llu, burn=%llu\n",
                   token_id.ToString().substr(0, 16), info.circulating_supply, amount);
         return false;
     }
     
-    // SECURITY FIX [H-02]: Use atomic batch write for ALL updates
-    // Previously, balance and token info were written separately, which could
-    // leave partial state on crash. Now all writes are atomic.
-    CDBBatch batch(*m_db);
+    // AUDIT FIX [H-03]: Use external batch when provided for atomic block processing.
+    CDBBatch local_batch(*m_db);
+    CDBBatch& batch = external_batch ? *external_batch : local_batch;
     
     // Write sender's new balance
     WriteBalanceToBatch(batch, from, token_id, from_balance - amount);
@@ -641,7 +658,6 @@ bool TokenDB::BurnTokens(
         auto holder_key = TokenHoldersKey(token_id, from);
         batch.Erase(holder_key);
         
-        // SECURITY FIX [M-01]: Check for holder_count underflow
         if (info.holder_count > 0) {
             info.holder_count--;
         }
@@ -663,11 +679,15 @@ bool TokenDB::BurnTokens(
     record.height = height;
     record.time = time;
     
-    auto transfer_key = TransferKey(token_id, height, txid);
+    // SECURITY FIX [M-19]: Pass op_index to TransferKey to prevent history
+    // overwrites when multiple burns of the same token occur in one tx.
+    auto transfer_key = TransferKey(token_id, height, txid, op_index);
     batch.Write(transfer_key, record);
     
-    // Commit all changes atomically
-    m_db->WriteBatch(batch);
+    // Commit only if using local batch (standalone mode)
+    if (!external_batch) {
+        m_db->WriteBatch(local_batch);
+    }
     
     // FIX L-04: Update cached transfer count (burns are recorded as transfers too)
     if (m_transfer_count_initialized.load()) {
@@ -700,6 +720,8 @@ std::vector<TokenTransferRecord> TokenDB::GetAddressHistory(
     }
     
     // Search transfer records for each token
+    static constexpr size_t MAX_TOTAL_ITERATIONS = 100000;
+    size_t total_iterations = 0;
     for (const auto& tid : search_tokens) {
         std::unique_ptr<CDBIterator> cursor(m_db->NewIterator());
         
@@ -707,6 +729,7 @@ std::vector<TokenTransferRecord> TokenDB::GetAddressHistory(
         cursor->Seek(start_key);
         
         while (cursor->Valid() && result.size() < count) {
+            if (++total_iterations > MAX_TOTAL_ITERATIONS) break;
             TransferKey key_obj;
             if (!cursor->GetKey(key_obj)) {
                 cursor->Next();
@@ -731,6 +754,7 @@ std::vector<TokenTransferRecord> TokenDB::GetAddressHistory(
             
             cursor->Next();
         }
+        if (total_iterations > MAX_TOTAL_ITERATIONS) break;
     }
     
     // Sort by height descending
@@ -809,11 +833,34 @@ int TokenDB::ProcessBlock(const CBlock& block, int height, const CBlockUndo& blo
             }
         }
         
+        // SECURITY FIX [C-02]: Track per-tx operation index to prevent undo key collision.
+        // Each op within the same tx gets a unique op_index for its UndoKey and TransferKey.
+        uint8_t tx_op_index = 0;
+
         for (const auto& op : ops) {
             switch (op.action) {
                 case src20::TokenAction::ISSUE: {
                     const auto* issuance = op.GetIssuance();
                     if (issuance && issuance->IsValid()) {
+                        // AUDIT FIX [H-04]: Enforce minimum issuance fee to prevent token spam
+                        if (!tx->IsCoinBase() && i > 0) {
+                            const CTxUndo& fee_undo = blockundo.vtxundo[i - 1];
+                            CAmount total_in = 0;
+                            for (const auto& prev : fee_undo.vprevout) {
+                                total_in += prev.out.nValue;
+                            }
+                            CAmount total_out = 0;
+                            for (const auto& out : tx->vout) {
+                                total_out += out.nValue;
+                            }
+                            CAmount tx_fee = total_in - total_out;
+                            if (tx_fee < MIN_TOKEN_ISSUANCE_FEE) {
+                                LogDebug(BCLog::TOKEN, "Token issuance rejected: fee %lld < minimum %lld\n",
+                                         tx_fee, MIN_TOKEN_ISSUANCE_FEE);
+                                break;
+                            }
+                        }
+                        
                         // Get issuer address from first non-OP_RETURN output
                         CScript issuer;
                         for (const auto& vout : tx->vout) {
@@ -824,7 +871,7 @@ int TokenDB::ProcessBlock(const CBlock& block, int height, const CBlockUndo& blo
                         }
                         
                         const uint256 txhash = tx->GetHash().ToUint256();
-                        auto token_id_opt = RegisterToken(*issuance, txhash, issuer, height, block_time);
+                        auto token_id_opt = RegisterToken(*issuance, txhash, issuer, height, block_time, &batch);
                         if (token_id_opt) {
                             // Create undo record for token issuance
                             TokenUndoRecord undo;
@@ -833,7 +880,7 @@ int TokenDB::ProcessBlock(const CBlock& block, int height, const CBlockUndo& blo
                             undo.token_id = *token_id_opt;
                             undo.ticker = issuance->ticker;
                             
-                            auto undo_key = UndoKey(height, txhash);
+                            auto undo_key = UndoKey(height, txhash, tx_op_index++);
                             batch.Write(undo_key, undo);
                             LogDebug(BCLog::TOKEN, "Created undo: %s\n", FormatUndoRecord(undo, height));
                             
@@ -861,7 +908,7 @@ int TokenDB::ProcessBlock(const CBlock& block, int height, const CBlockUndo& blo
                             
                             const uint256 txhash = tx->GetHash().ToUint256();
                             if (TransferTokens(transfer->token_id, sender, *recipient,
-                                             transfer->amount, txhash, height, block_time)) {
+                                             transfer->amount, txhash, height, block_time, &batch, tx_op_index)) {
                                 // Create undo record for transfer
                                 TokenUndoRecord undo;
                                 undo.op_type = TokenOpType::TRANSFER;
@@ -874,7 +921,7 @@ int TokenDB::ProcessBlock(const CBlock& block, int height, const CBlockUndo& blo
                                 undo.prev_to_balance = prev_to_balance;
                                 undo.prev_holder_count = prev_holder_count;
                                 
-                                auto undo_key = UndoKey(height, txhash);
+                                auto undo_key = UndoKey(height, txhash, tx_op_index++);
                                 batch.Write(undo_key, undo);
                                 LogDebug(BCLog::TOKEN, "Created undo: %s\n", FormatUndoRecord(undo, height));
                                 
@@ -899,7 +946,7 @@ int TokenDB::ProcessBlock(const CBlock& block, int height, const CBlockUndo& blo
                         
                         const uint256 txhash = tx->GetHash().ToUint256();
                         if (BurnTokens(burn->token_id, burner, burn->amount,
-                                      txhash, height, block_time)) {
+                                      txhash, height, block_time, &batch, tx_op_index)) {
                             // Create undo record for burn
                             TokenUndoRecord undo;
                             undo.op_type = TokenOpType::BURN;
@@ -910,7 +957,7 @@ int TokenDB::ProcessBlock(const CBlock& block, int height, const CBlockUndo& blo
                             undo.prev_from_balance = prev_balance;
                             undo.prev_circulating_supply = prev_circulating;
                             
-                            auto undo_key = UndoKey(height, txhash);
+                            auto undo_key = UndoKey(height, txhash, tx_op_index++);
                             batch.Write(undo_key, undo);
                             LogDebug(BCLog::TOKEN, "Created undo: %s\n", FormatUndoRecord(undo, height));
                             
@@ -933,17 +980,22 @@ int TokenDB::ProcessBlock(const CBlock& block, int height, const CBlockUndo& blo
         batch.Write(key, block_token_txs);
     }
     
-    // Write all data atomically - WriteBatch throws dbwrapper_error on failure
-    // If exception is thrown, SetBestBlock won't be called, keeping state consistent
+    // AUDIT FIX [H-03]: ALL token ops + undo records committed in single atomic WriteBatch.
+    // Previously, RegisterToken/TransferTokens/BurnTokens each committed separately,
+    // then undo records were committed in another batch — partial state on crash.
+    //
+    // SECURITY FIX [C-02b]: Include best-block pointer in the same atomic batch.
+    // Previously SetBestBlock was a separate DB write after WriteBatch. A crash
+    // between the two would leave token state updated but best-block stale,
+    // causing double-processing of the same block on restart (token inflation).
+    batch.Write(BestBlockKey(), block.GetHash());
+    
     try {
         m_db->WriteBatch(batch);
     } catch (const dbwrapper_error& e) {
         LogPrintf("CRITICAL: Failed to write token operations for block %d: %s\n", height, e.what());
         throw;  // Re-throw to signal block processing failure
     }
-    
-    // Update best block only on successful write
-    SetBestBlock(block.GetHash());
     
     if (ops_count > 0) {
         LogDebug(BCLog::TOKEN, "Processed %d token operations in block %d\n", ops_count, height);
@@ -978,11 +1030,35 @@ int TokenDB::ProcessBlock(const CBlock& block, int height, const CCoinsViewCache
             }
         }
         
+        // SECURITY FIX [C-02]: Track per-tx operation index (same as blockundo version)
+        uint8_t tx_op_index = 0;
+
         for (const auto& op : ops) {
             switch (op.action) {
                 case src20::TokenAction::ISSUE: {
                     const auto* issuance = op.GetIssuance();
                     if (issuance && issuance->IsValid()) {
+                        // AUDIT FIX [H-04]: Enforce minimum issuance fee to prevent token spam
+                        if (view && !tx->IsCoinBase() && !tx->vin.empty()) {
+                            CAmount total_in = 0;
+                            for (const auto& vin : tx->vin) {
+                                const Coin& coin = view->AccessCoin(vin.prevout);
+                                if (!coin.IsSpent()) {
+                                    total_in += coin.out.nValue;
+                                }
+                            }
+                            CAmount total_out = 0;
+                            for (const auto& out : tx->vout) {
+                                total_out += out.nValue;
+                            }
+                            CAmount tx_fee = total_in - total_out;
+                            if (tx_fee < MIN_TOKEN_ISSUANCE_FEE) {
+                                LogDebug(BCLog::TOKEN, "Token issuance rejected: fee %lld < minimum %lld\n",
+                                         tx_fee, MIN_TOKEN_ISSUANCE_FEE);
+                                break;
+                            }
+                        }
+                        
                         // Get issuer address from first non-OP_RETURN output
                         CScript issuer;
                         for (const auto& vout : tx->vout) {
@@ -993,7 +1069,7 @@ int TokenDB::ProcessBlock(const CBlock& block, int height, const CCoinsViewCache
                         }
                         
                         const uint256 txhash = tx->GetHash().ToUint256();
-                        auto token_id_opt = RegisterToken(*issuance, txhash, issuer, height, block_time);
+                        auto token_id_opt = RegisterToken(*issuance, txhash, issuer, height, block_time, &batch);
                         if (token_id_opt) {
                             // Create undo record for token issuance
                             TokenUndoRecord undo;
@@ -1002,7 +1078,7 @@ int TokenDB::ProcessBlock(const CBlock& block, int height, const CCoinsViewCache
                             undo.token_id = *token_id_opt;
                             undo.ticker = issuance->ticker;
                             
-                            auto undo_key = UndoKey(height, txhash);
+                            auto undo_key = UndoKey(height, txhash, tx_op_index++);
                             batch.Write(undo_key, undo);
                             LogDebug(BCLog::TOKEN, "Created undo: %s\n", FormatUndoRecord(undo, height));
                             
@@ -1030,7 +1106,7 @@ int TokenDB::ProcessBlock(const CBlock& block, int height, const CCoinsViewCache
                             
                             const uint256 txhash = tx->GetHash().ToUint256();
                             if (TransferTokens(transfer->token_id, sender, *recipient,
-                                             transfer->amount, txhash, height, block_time)) {
+                                             transfer->amount, txhash, height, block_time, &batch, tx_op_index)) {
                                 // Create undo record for transfer
                                 TokenUndoRecord undo;
                                 undo.op_type = TokenOpType::TRANSFER;
@@ -1043,7 +1119,7 @@ int TokenDB::ProcessBlock(const CBlock& block, int height, const CCoinsViewCache
                                 undo.prev_to_balance = prev_to_balance;
                                 undo.prev_holder_count = prev_holder_count;
                                 
-                                auto undo_key = UndoKey(height, txhash);
+                                auto undo_key = UndoKey(height, txhash, tx_op_index++);
                                 batch.Write(undo_key, undo);
                                 LogDebug(BCLog::TOKEN, "Created undo: %s\n", FormatUndoRecord(undo, height));
                                 
@@ -1068,7 +1144,7 @@ int TokenDB::ProcessBlock(const CBlock& block, int height, const CCoinsViewCache
                         
                         const uint256 txhash = tx->GetHash().ToUint256();
                         if (BurnTokens(burn->token_id, burner, burn->amount,
-                                      txhash, height, block_time)) {
+                                      txhash, height, block_time, &batch, tx_op_index)) {
                             // Create undo record for burn
                             TokenUndoRecord undo;
                             undo.op_type = TokenOpType::BURN;
@@ -1079,7 +1155,7 @@ int TokenDB::ProcessBlock(const CBlock& block, int height, const CCoinsViewCache
                             undo.prev_from_balance = prev_balance;
                             undo.prev_circulating_supply = prev_circulating;
                             
-                            auto undo_key = UndoKey(height, txhash);
+                            auto undo_key = UndoKey(height, txhash, tx_op_index++);
                             batch.Write(undo_key, undo);
                             LogDebug(BCLog::TOKEN, "Created undo: %s\n", FormatUndoRecord(undo, height));
                             
@@ -1102,7 +1178,7 @@ int TokenDB::ProcessBlock(const CBlock& block, int height, const CCoinsViewCache
         batch.Write(key, block_token_txs);
     }
     
-    // Write all undo data atomically - WriteBatch throws dbwrapper_error on failure
+    // AUDIT FIX [H-03]: ALL token ops + undo records committed in single atomic WriteBatch.
     try {
         m_db->WriteBatch(batch);
     } catch (const dbwrapper_error& e) {
@@ -1139,128 +1215,166 @@ bool TokenDB::DisconnectBlock(const CBlock& block, int height)
     for (auto it = block_token_txs.rbegin(); it != block_token_txs.rend(); ++it) {
         const uint256& txid = *it;
         
-        // Read the undo record
-        auto undo_key = UndoKey(height, txid);
-        TokenUndoRecord undo;
-        if (!m_db->Read(undo_key, undo)) {
-            LogPrintf("Warning: No undo record for token tx %s at height %d\n",
-                     txid.ToString().substr(0, 16), height);
-            continue;
-        }
-        
-        // Log comprehensive undo information for debugging reorgs
-        LogDebug(BCLog::TOKEN, "%s\n", FormatUndoRecord(undo, height));
-        
-        switch (undo.op_type) {
-            case TokenOpType::ISSUE: {
-                // Remove the token entirely
-                LogDebug(BCLog::TOKEN, "Undoing token issuance: %s (ticker: %s)\n",
-                        undo.token_id.ToString().substr(0, 16), undo.ticker);
-                
-                // Delete token info
-                auto token_key = TokenInfoKey(undo.token_id);
-                batch.Erase(token_key);
-                
-                // Delete ticker index
-                auto ticker_key = TickerKey(undo.ticker);
-                batch.Erase(ticker_key);
-                
-                // Invalidate cache
-                InvalidateCache(undo.token_id);
-                
-                // AUDIT FIX M-04: Update cached token count
-                if (m_token_count_initialized.load() && m_token_count_cache.load() > 0) {
-                    m_token_count_cache.fetch_sub(1);
+        // SECURITY FIX [C-02]: Iterate all op_indices for this txid.
+        // A single transaction may have multiple token operations, each with
+        // a unique undo record keyed by (height, txid, op_index).
+        for (uint8_t op_idx = 0; op_idx < 255; op_idx++) {
+            auto undo_key = UndoKey(height, txid, op_idx);
+            TokenUndoRecord undo;
+            if (!m_db->Read(undo_key, undo)) {
+                // No more undo records for this txid
+                if (op_idx == 0) {
+                    LogPrintf("Warning: No undo record for token tx %s at height %d\n",
+                             txid.ToString().substr(0, 16), height);
                 }
-                
-                undo_count++;
                 break;
             }
-            
-            case TokenOpType::TRANSFER: {
-                // Restore previous balances
-                LogDebug(BCLog::TOKEN, "Undoing token transfer: %s amount=%lu\n",
-                        undo.token_id.ToString().substr(0, 16), undo.amount);
+        
+            // SECURITY FIX [L-05]: Fixed misleading indentation. The LogDebug, switch
+            // statement, and undo record deletion below are all inside the inner
+            // for(op_idx) loop, but were previously indented at the outer for-loop
+            // level, making the code appear as if they executed outside the loop.
+
+            // Log comprehensive undo information for debugging reorgs
+            LogDebug(BCLog::TOKEN, "%s\n", FormatUndoRecord(undo, height));
+        
+            switch (undo.op_type) {
+                case TokenOpType::ISSUE: {
+                    // Remove the token entirely
+                    LogDebug(BCLog::TOKEN, "Undoing token issuance: %s (ticker: %s)\n",
+                            undo.token_id.ToString().substr(0, 16), undo.ticker);
                 
-                // AUDIT FIX [L-04]: Sanity check for balance restoration
-                // Verify prev_from_balance is logically valid (should be >= amount transferred)
-                if (undo.prev_from_balance < undo.amount) {
-                    LogPrintf("WARNING: Token %s disconnect: prev_from_balance (%lu) < transfer amount (%lu)\n",
-                              undo.token_id.ToString().substr(0, 16), undo.prev_from_balance, undo.amount);
-                }
+                    // Delete token info
+                    auto token_key = TokenInfoKey(undo.token_id);
+                    batch.Erase(token_key);
                 
-                // Restore sender's balance (to batch for atomicity)
-                WriteBalanceToBatch(batch, undo.from_address, undo.token_id, undo.prev_from_balance);
+                    // Delete ticker index
+                    auto ticker_key = TickerKey(undo.ticker);
+                    batch.Erase(ticker_key);
                 
-                // Restore recipient's balance (to batch for atomicity)
-                WriteBalanceToBatch(batch, undo.to_address, undo.token_id, undo.prev_to_balance);
+                    // Invalidate cache
+                    InvalidateCache(undo.token_id);
                 
-                // Restore holder count and transfer count (to batch)
-                auto token_info = GetTokenInfo(undo.token_id);
-                if (token_info) {
-                    token_info->holder_count = undo.prev_holder_count;
-                    // SECURITY: Safe underflow handling for transfer count
-                    // transfer_count could be 0 if database was corrupted
-                    if (token_info->transfer_count > 0) {
-                        token_info->transfer_count--;
-                    } else {
-                        LogPrintf("WARNING: Token %s transfer_count already 0 during disconnect\n",
-                                  undo.token_id.ToString().substr(0, 16));
+                    // AUDIT FIX M-04: Update cached token count
+                    if (m_token_count_initialized.load() && m_token_count_cache.load() > 0) {
+                        m_token_count_cache.fetch_sub(1);
                     }
-                    WriteTokenInfoToBatch(batch, *token_info);
+                
+                    // SECURITY FIX [M-08]: Clean up issuer's balance and address token list
+                    // Previously only token info and ticker index were deleted, leaving
+                    // phantom balances and stale address-token mappings after reorg.
+                    if (!undo.from_address.empty()) {
+                        // Delete issuer's balance entry for this token
+                        batch.Erase(BalanceKey(undo.from_address, undo.token_id));
+                        // Remove holder index entry
+                        batch.Erase(TokenHoldersKey(undo.token_id, undo.from_address));
+                        // Remove token from issuer's address token list
+                        auto addr_key = AddrTokensKey(undo.from_address);
+                        std::set<src20::TokenId> addr_tokens;
+                        m_db->Read(addr_key, addr_tokens);
+                        addr_tokens.erase(undo.token_id);
+                        if (addr_tokens.empty()) {
+                            batch.Erase(addr_key);
+                        } else {
+                            batch.Write(addr_key, addr_tokens);
+                        }
+                    }
+                
+                    undo_count++;
+                    break;
                 }
-                
-                // Delete transfer record
-                auto transfer_key = TransferKey(undo.token_id, height, txid);
-                batch.Erase(transfer_key);
-                
-                // FIX L-04: Update cached transfer count
-                if (m_transfer_count_initialized.load() && m_transfer_count_cache.load() > 0) {
-                    m_transfer_count_cache.fetch_sub(1);
-                }
-                
-                InvalidateCache(undo.token_id);
-                undo_count++;
-                break;
-            }
             
-            case TokenOpType::BURN: {
-                // Restore burned tokens
-                LogDebug(BCLog::TOKEN, "Undoing token burn: %s amount=%lu\n",
-                        undo.token_id.ToString().substr(0, 16), undo.amount);
+                case TokenOpType::TRANSFER: {
+                    // Restore previous balances
+                    LogDebug(BCLog::TOKEN, "Undoing token transfer: %s amount=%lu\n",
+                            undo.token_id.ToString().substr(0, 16), undo.amount);
                 
-                // Restore burner's balance (to batch for atomicity)
-                WriteBalanceToBatch(batch, undo.from_address, undo.token_id, undo.prev_from_balance);
+                    // AUDIT FIX [L-04]: Sanity check for balance restoration
+                    // Verify prev_from_balance is logically valid (should be >= amount transferred)
+                    if (undo.prev_from_balance < undo.amount) {
+                        LogPrintf("WARNING: Token %s disconnect: prev_from_balance (%lu) < transfer amount (%lu)\n",
+                                  undo.token_id.ToString().substr(0, 16), undo.prev_from_balance, undo.amount);
+                    }
                 
-                // Restore circulating supply (to batch for atomicity)
-                auto token_info = GetTokenInfo(undo.token_id);
-                if (token_info) {
-                    token_info->circulating_supply = undo.prev_circulating_supply;
-                    WriteTokenInfoToBatch(batch, *token_info);
+                    // Restore sender's balance (to batch for atomicity)
+                    WriteBalanceToBatch(batch, undo.from_address, undo.token_id, undo.prev_from_balance);
+                
+                    // Restore recipient's balance (to batch for atomicity)
+                    WriteBalanceToBatch(batch, undo.to_address, undo.token_id, undo.prev_to_balance);
+                
+                    // Restore holder count and transfer count (to batch)
+                    auto token_info = GetTokenInfo(undo.token_id);
+                    if (token_info) {
+                        token_info->holder_count = undo.prev_holder_count;
+                        // SECURITY: Safe underflow handling for transfer count
+                        // transfer_count could be 0 if database was corrupted
+                        if (token_info->transfer_count > 0) {
+                            token_info->transfer_count--;
+                        } else {
+                            LogPrintf("WARNING: Token %s transfer_count already 0 during disconnect\n",
+                                      undo.token_id.ToString().substr(0, 16));
+                        }
+                        WriteTokenInfoToBatch(batch, *token_info);
+                    }
+                
+                    // Delete transfer record
+                    auto transfer_key = TransferKey(undo.token_id, height, txid);
+                    batch.Erase(transfer_key);
+                
+                    // FIX L-04: Update cached transfer count
+                    if (m_transfer_count_initialized.load() && m_transfer_count_cache.load() > 0) {
+                        m_transfer_count_cache.fetch_sub(1);
+                    }
+                
+                    InvalidateCache(undo.token_id);
+                    undo_count++;
+                    break;
                 }
-                
-                // FIX L-04: Update cached transfer count (burns are recorded as transfers)
-                if (m_transfer_count_initialized.load() && m_transfer_count_cache.load() > 0) {
-                    m_transfer_count_cache.fetch_sub(1);
-                }
-                
-                InvalidateCache(undo.token_id);
-                undo_count++;
-                break;
-            }
             
-            default:
-                LogPrintf("Warning: Unknown undo operation type in tx %s\n",
-                         txid.ToString().substr(0, 16));
-                break;
-        }
+                case TokenOpType::BURN: {
+                    // Restore burned tokens
+                    LogDebug(BCLog::TOKEN, "Undoing token burn: %s amount=%lu\n",
+                            undo.token_id.ToString().substr(0, 16), undo.amount);
+                
+                    // Restore burner's balance (to batch for atomicity)
+                    WriteBalanceToBatch(batch, undo.from_address, undo.token_id, undo.prev_from_balance);
+                
+                    // Restore circulating supply (to batch for atomicity)
+                    auto token_info = GetTokenInfo(undo.token_id);
+                    if (token_info) {
+                        token_info->circulating_supply = undo.prev_circulating_supply;
+                        WriteTokenInfoToBatch(batch, *token_info);
+                    }
+                
+                    // FIX L-04: Update cached transfer count (burns are recorded as transfers)
+                    if (m_transfer_count_initialized.load() && m_transfer_count_cache.load() > 0) {
+                        m_transfer_count_cache.fetch_sub(1);
+                    }
+                
+                    InvalidateCache(undo.token_id);
+                    undo_count++;
+                    break;
+                }
+            
+                default:
+                    LogPrintf("Warning: Unknown undo operation type in tx %s\n",
+                             txid.ToString().substr(0, 16));
+                    break;
+            }
         
-        // Delete the undo record
-        batch.Erase(undo_key);
+            // Delete the undo record
+            batch.Erase(undo_key);
+        } // end op_index loop [C-02]
     }
     
     // Remove block record
     batch.Erase(key);
+    
+    // SECURITY FIX [H-10]: Update best-block pointer to the previous block in the
+    // same atomic batch. Previously DisconnectBlock never updated the best-block
+    // marker, so a crash during reorg left the token DB pointing to an orphaned
+    // block with partially disconnected state — unrecoverable without full reindex.
+    batch.Write(BestBlockKey(), block.hashPrevBlock);
     
     // Write all changes atomically
     m_db->WriteBatch(batch);

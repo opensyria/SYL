@@ -90,9 +90,20 @@ unsigned int GetNextWorkRequired(const CBlockIndex* pindexLast, const CBlockHead
             else
             {
                 // Return the last non-special-min-difficulty-rules-block
+                // SECURITY FIX [M-13]: Stop the difficulty walk at the PoW algorithm
+                // boundary. Without this guard, the walk can cross from RandomX blocks
+                // back into SHA256d blocks, returning an nBits value for the wrong
+                // algorithm. This would produce a target that is either impossibly hard
+                // or trivially easy for the active algorithm, causing a chain stall or
+                // allowing zero-work blocks on testnet.
                 const CBlockIndex* pindex = pindexLast;
-                while (pindex->pprev && pindex->nHeight % params.DifficultyAdjustmentInterval() != 0 && pindex->nBits == nProofOfWorkLimit)
+                while (pindex->pprev && pindex->nHeight % params.DifficultyAdjustmentInterval() != 0 && pindex->nBits == nProofOfWorkLimit) {
+                    // Don't walk past the fork boundary into a different PoW algorithm
+                    if (params.GetPowAlgorithm(pindex->pprev->nHeight) != params.GetPowAlgorithm(nextHeight)) {
+                        break;
+                    }
                     pindex = pindex->pprev;
+                }
                 return pindex->nBits;
             }
         }
@@ -134,7 +145,20 @@ unsigned int CalculateNextWorkRequired(const CBlockIndex* pindexLast, int64_t nF
         // it is not allowed to use the min-difficulty exception.
         int nHeightFirst = pindexLast->nHeight - (params.DifficultyAdjustmentInterval()-1);
         const CBlockIndex* pindexFirst = pindexLast->GetAncestor(nHeightFirst);
-        bnNew.SetCompact(pindexFirst->nBits);
+
+        // SECURITY FIX [C-01]: Guard against cross-algorithm difficulty base.
+        // If the first block of the difficulty period was mined under a different
+        // PoW algorithm (e.g., SHA256d block used as base for RandomX retarget),
+        // the nBits would be incompatible — potentially 256x too hard — causing
+        // a chain stall. Fall back to pindexLast->nBits (correct algorithm) in
+        // this case. This fires at the first retarget after any PoW fork.
+        if (params.GetPowAlgorithm(nHeightFirst) == params.GetPowAlgorithm(nextHeight)) {
+            bnNew.SetCompact(pindexFirst->nBits);
+        } else {
+            LogPrintf("PoW: Cross-algorithm retarget at height %d — using last block nBits instead of first block (algo mismatch: %s vs %s)\n",
+                      nextHeight, GetPowAlgorithmName(nHeightFirst, params), GetPowAlgorithmName(nextHeight, params));
+            bnNew.SetCompact(pindexLast->nBits);
+        }
     } else {
         bnNew.SetCompact(pindexLast->nBits);
     }
@@ -168,7 +192,10 @@ bool PermittedDifficultyTransition(const Consensus::Params& params, int64_t heig
         int64_t smallest_timespan = params.nPowTargetTimespan/4;
         int64_t largest_timespan = params.nPowTargetTimespan*4;
 
-        const arith_uint256 pow_limit = UintToArith256(params.powLimit);
+        // SECURITY FIX [H-05]: Use height-aware powLimit for the correct algorithm.
+        // Previously used params.powLimit (SHA256d) unconditionally, which rejected
+        // legitimate RandomX difficulty transitions (RandomX powLimit is 256x higher).
+        const arith_uint256 pow_limit = UintToArith256(params.GetActivePowLimit(height));
         arith_uint256 observed_new_target;
         observed_new_target.SetCompact(new_nbits);
 
@@ -279,7 +306,11 @@ uint256 GetRandomXKeyBlockHash(int height, const CBlockIndex* pindex, const Cons
 
     // If we couldn't find the key block, log and return empty hash
     if (!keyBlock || keyBlock->nHeight != keyHeight) {
-        LogDebug(BCLog::VALIDATION, "GetRandomXKeyBlockHash: Failed to find key block at height %d for block height %d (pindex=%s, keyBlock=%s)\n",
+        // SECURITY FIX [M-16]: Upgraded from LogDebug to LogPrintf. A null key block
+        // hash means RandomX blocks at this height CANNOT be validated, which is a
+        // critical consensus issue — not a debug-level event.
+        LogPrintf("GetRandomXKeyBlockHash: CRITICAL - Failed to find key block at height %d for block height %d (pindex=%s, keyBlock=%s). "
+                  "RandomX blocks at this height will be rejected.\n",
                  keyHeight, height,
                  pindex ? std::to_string(pindex->nHeight) : "null",
                  keyBlock ? std::to_string(keyBlock->nHeight) : "null");
@@ -396,27 +427,38 @@ bool CheckProofOfWorkAtHeight(const CBlockHeader& header, int height, const CBlo
 bool CheckProofOfWorkForBlockIndex(const CBlockHeader& header, int height, const Consensus::Params& params)
 {
     // ==========================================================================
-    // SECURITY: CheckProofOfWorkForBlockIndex is INTENTIONALLY WEAK
+    // SECURITY DOCUMENTATION [H-07]: CheckProofOfWorkForBlockIndex
     // ==========================================================================
     //
-    // This function only validates nBits range, NOT the actual RandomX/Argon2 hash.
-    // Full validation occurs in ContextualCheckBlockHeader/ConnectBlock.
+    // This function INTENTIONALLY performs WEAK validation for RandomX/Argon2id
+    // blocks. Only the nBits range is checked — NOT the actual PoW hash.
+    //
+    // Full PoW hash validation occurs in:
+    //   - CheckProofOfWorkAtHeight() during initial block acceptance
+    //   - ContextualCheckBlockHeader() during chain activation
+    //   - AcceptBlock() / ConnectBlock() before any chain state changes
     //
     // WHY THIS IS ACCEPTABLE:
-    //   1. Blocks on disk were already validated when first accepted
-    //   2. Full PoW validation occurs during ConnectBlock/ActivateBestChain
-    //   3. Attackers with disk write access have already compromised the node
+    //   1. This function is called during index loading from disk, where blocks
+    //      were ALREADY fully validated when first accepted.
+    //   2. During index loading, blocks arrive in arbitrary order and pprev
+    //      pointers may not be set, so we CANNOT traverse the chain to find
+    //      the RandomX key block hash needed for full PoW computation.
+    //   3. An attacker with disk write access has already compromised the node
+    //      (disk = trusted storage model).
     //
-    // IMPLEMENTATION DETAIL:
-    // During index loading, blocks are loaded in arbitrary order and pprev pointers
-    // may not be fully set, so we cannot traverse the chain to compute PoW hashes.
+    // RISK ASSESSMENT:
+    //   - An attacker who can modify blk*.dat files on disk could insert blocks
+    //     with valid nBits but invalid RandomX hashes. These would pass the
+    //     index load but would be caught during chain activation when full
+    //     PoW is verified via CheckProofOfWorkAtHeight().
+    //   - The window of vulnerability is between index load and chain activation,
+    //     during which the invalid block may appear in the block index but cannot
+    //     become part of the active chain.
     //
-    // For RandomX/Argon2id blocks: we ONLY verify that nBits is within the valid range.
-    // For SHA256d blocks: full validation is performed (no chain traversal needed).
-    //
-    // IMPORTANT: Do not rely on this function alone for consensus security.
-    // Full PoW hash verification MUST happen in ContextualCheckBlockHeader
-    // or CheckProofOfWorkAtHeight before a block affects chain state.
+    // IMPORTANT: Do NOT rely on this function alone for consensus security.
+    // Any code path that leads to chain state changes MUST use
+    // CheckProofOfWorkAtHeight() instead.
     // ==========================================================================
 
     const auto algorithm = params.GetPowAlgorithm(height);

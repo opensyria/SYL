@@ -56,6 +56,7 @@
 #include <txmempool.h>
 #include <uint256.h>
 #include <util/check.h>
+#include <util/hasher.h>
 #include <util/strencodings.h>
 #include <util/time.h>
 #include <util/trace.h>
@@ -84,6 +85,7 @@
 #include <set>
 #include <span>
 #include <typeinfo>
+#include <unordered_set>
 #include <utility>
 
 using namespace util::hex_literals;
@@ -103,11 +105,15 @@ static constexpr auto HEADERS_RESPONSE_TIME{2min};
 static constexpr int32_t MAX_OUTBOUND_PEERS_TO_PROTECT_FROM_DISCONNECT = 4;
 /** Timeout for (unprotected) outbound peers to sync to our chainwork */
 // OpenSY: Scaled for 2-minute blocks (vs Bitcoin's 10-minute blocks)
-static constexpr auto CHAIN_SYNC_TIMEOUT{4min};  // Bitcoin: 20min (2 blocks)
+// SECURITY FIX [M-06]: Relaxed from 4min to 8min (4 blocks) to reduce false
+// disconnections on a young network with few peers and CPU-intensive RandomX.
+static constexpr auto CHAIN_SYNC_TIMEOUT{8min};  // Bitcoin: 20min (~4 blocks at 2min)
 /** How frequently to check for stale tips */
-static constexpr auto STALE_CHECK_INTERVAL{2min};  // Bitcoin: 10min (1 block)
+// SECURITY FIX [M-06]: Relaxed from 2min to 5min to reduce false stale-tip alerts
+// during normal block time variance on a 2-minute target chain.
+static constexpr auto STALE_CHECK_INTERVAL{5min};  // Bitcoin: 10min (~2.5 blocks)
 /** How frequently to check for extra outbound peers and disconnect */
-static constexpr auto EXTRA_PEER_CHECK_INTERVAL{9s};  // Bitcoin: 45s (scaled by 1/5)
+static constexpr auto EXTRA_PEER_CHECK_INTERVAL{18s};  // Bitcoin: 45s (scaled by ~2.5x)
 // TODO [SECURITY - SHA256d MITIGATION]: Monitor for hashrate anomalies
 // Implement alerting when:
 // - Block times deviate significantly from 2-minute average
@@ -2335,15 +2341,53 @@ void PeerManagerImpl::ProcessGetBlockData(CNode& pfrom, Peer& peer, const CInv& 
         // Validate RandomX PoW before serving blocks to prevent propagating
         // corrupted blocks from damaged block storage. This catches disk corruption
         // that may have occurred after initial block acceptance.
+        //
+        // SECURITY FIX [M-05]: Rate-limit serve-time validation to prevent CPU DoS.
+        // Skip validation for recent blocks (already validated) and use a small
+        // cache of recently-verified block hashes to avoid redundant RandomX work.
         if (m_chainparams.GetConsensus().IsRandomXActive(pindex->nHeight)) {
-            // Only validate if this is a RandomX block
-            CBlock validation_block;
-            if (m_chainman.m_blockman.ReadBlock(validation_block, *pindex)) {
-                CBlockHeader header = validation_block.GetBlockHeader();
-                if (!CheckProofOfWorkAtHeight(header, pindex->nHeight, pindex->pprev, m_chainparams.GetConsensus())) {
-                    LogError("Block %s failed serve-time PoW validation at height %d, possible corruption\n",
-                             inv.hash.ToString(), pindex->nHeight);
-                    return; // Don't serve corrupted block
+            // Skip validation for recent blocks (within last 10) — they were just validated
+            static constexpr int RECENT_BLOCK_SKIP = 10;
+            int tip_height = m_chainman.ActiveHeight();
+            if (pindex->nHeight < tip_height - RECENT_BLOCK_SKIP) {
+                // Check a small LRU cache of recently-verified block hashes
+                // SECURITY FIX [H-08]: Use unordered_set for O(1) lookups instead of
+                // O(n) linear search on deque. Reduces lock hold time from ~64 hash
+                // comparisons to a single hash lookup, dramatically reducing mutex
+                // contention when multiple peers request blocks concurrently.
+                static Mutex s_verified_mutex;
+                static std::deque<uint256> s_verified_order GUARDED_BY(s_verified_mutex);
+                static std::unordered_set<uint256, SaltedUint256Hasher> s_verified_set GUARDED_BY(s_verified_mutex);
+                static constexpr size_t VERIFIED_CACHE_SIZE = 64;
+
+                bool already_verified = false;
+                {
+                    LOCK(s_verified_mutex);
+                    already_verified = s_verified_set.count(inv.hash) > 0;
+                }
+
+                if (!already_verified) {
+                    CBlock validation_block;
+                    if (m_chainman.m_blockman.ReadBlock(validation_block, *pindex)) {
+                        CBlockHeader header = validation_block.GetBlockHeader();
+                        // SECURITY FIX [M-17]: Guard against null pprev to prevent
+                        // dereferencing nullptr if nRandomXForkHeight is ever set to 0
+                        // (e.g., in regtest). The genesis block has pprev == nullptr.
+                        if (pindex->pprev && !CheckProofOfWorkAtHeight(header, pindex->nHeight, pindex->pprev, m_chainparams.GetConsensus())) {
+                            LogError("Block %s failed serve-time PoW validation at height %d, possible corruption\n",
+                                     inv.hash.ToString(), pindex->nHeight);
+                            return; // Don't serve corrupted block
+                        }
+                        // Cache the verified hash
+                        LOCK(s_verified_mutex);
+                        if (s_verified_set.insert(inv.hash).second) {
+                            s_verified_order.push_back(inv.hash);
+                            if (s_verified_order.size() > VERIFIED_CACHE_SIZE) {
+                                s_verified_set.erase(s_verified_order.front());
+                                s_verified_order.pop_front();
+                            }
+                        }
+                    }
                 }
             }
         }

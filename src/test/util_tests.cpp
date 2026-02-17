@@ -1474,10 +1474,10 @@ BOOST_AUTO_TEST_CASE(message_verify)
         MessageVerificationResult::ERR_INVALID_ADDRESS);
 
     // P2SH address - cannot verify signatures (no direct key)
-    // OpenSY P2SH address (version 36, 'F' for Freedom)
+    // OpenSY P2SH address (version 50, 'M' prefix)
     BOOST_CHECK_EQUAL(
         MessageVerify(
-            "FVAiSujNZVgYSc27t6zUTWoKfAGxpLQPQd",
+            "MLT6ctiyQMuLvW99zHHDphnEyeoPivQPBX",
             "signature should be irrelevant",
             "message too"),
         MessageVerificationResult::ERR_ADDRESS_NO_KEY);

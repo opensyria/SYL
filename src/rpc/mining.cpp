@@ -243,6 +243,9 @@ static bool GenerateBlock(ChainstateManager& chainman, CBlock&& block, uint64_t&
             threads.emplace_back([&, start_nonce, end_nonce, t, mining_epoch]() NO_THREAD_SAFETY_ANALYSIS {
                 // Create thread-local VM from shared dataset (lock-free after creation)
                 randomx_vm* vm = nullptr;
+                // SECURITY FIX [H-06]: Hold a dataset reference via shared_ptr to prevent
+                // use-after-free. The dataset stays alive as long as this ref exists.
+                std::shared_ptr<void> dataset_ref;
                 {
                     LOCK(g_mining_context_mutex);
                     // Verify epoch hasn't changed since we started
@@ -250,7 +253,9 @@ static bool GenerateBlock(ChainstateManager& chainman, CBlock&& block, uint64_t&
                         LogPrintf("RANDOMX: Thread %u - dataset epoch changed before VM creation, aborting\n", t);
                         return;
                     }
-                    vm = g_mining_context->CreateVM();
+                    auto [created_vm, ds_ref] = g_mining_context->CreateVM();
+                    vm = created_vm;
+                    dataset_ref = std::move(ds_ref);
                 }
                 if (!vm) {
                     LogPrintf("RANDOMX: Thread %u failed to create VM\n", t);

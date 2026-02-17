@@ -2743,11 +2743,30 @@ bool Chainstate::ConnectBlock(const CBlock& block, BlockValidationState& state, 
     // This must happen during block connection (not in BlockConnected callback)
     // because we need access to the spent UTXO data to identify senders
     if (tokens::g_tokendb && tokens::g_tokendb->IsValid()) {
-        int token_ops = tokens::g_tokendb->ProcessBlock(block, pindex->nHeight, blockundo);
-        if (token_ops > 0) {
-            LogDebug(BCLog::TOKEN, "ConnectBlock: processed %d token operations at height %d\n",
-                     token_ops, pindex->nHeight);
+        try {
+            int token_ops = tokens::g_tokendb->ProcessBlock(block, pindex->nHeight, blockundo);
+            if (token_ops > 0) {
+                LogDebug(BCLog::TOKEN, "ConnectBlock: processed %d token operations at height %d\n",
+                         token_ops, pindex->nHeight);
+            }
+        } catch (const std::exception& e) {
+            // SECURITY FIX [M-04]: Token ProcessBlock failures are now logged prominently.
+            // Token processing is non-consensus, so we log the error and continue
+            // rather than failing block connection. However, token state may diverge.
+            //
+            // SECURITY FIX [M-12]: Enhanced error logging with actionable guidance.
+            // Token processing failures mean token state has diverged from the canonical
+            // chain at this height. Repeated failures indicate a systemic issue (corrupt
+            // token DB, unexpected OP_RETURN format, etc.) that requires operator attention.
+            // Monitor logs for this message and consider -reindex if it persists.
+            LogPrintf("ERROR: Token ProcessBlock FAILED at height %d: %s. "
+                      "Token state may have DIVERGED — RPC token queries may return stale/incorrect data. "
+                      "If this persists, consider running with -reindex to rebuild token state.\n",
+                      pindex->nHeight, e.what());
         }
+    } else if (tokens::g_tokendb && !tokens::g_tokendb->IsValid()) {
+        // SECURITY FIX [M-04]: Warn if token DB is present but invalid
+        LogPrintf("WARNING: Token database is present but invalid at height %d. Token operations will be skipped.\n", pindex->nHeight);
     }
 
     const auto time_6{SteadyClock::now()};
@@ -3964,10 +3983,14 @@ void ChainstateManager::ReceivedBlockTransactions(const CBlock& block, CBlockInd
 
 static bool CheckBlockHeader(const CBlockHeader& block, BlockValidationState& state, const Consensus::Params& consensusParams, bool fCheckPOW = true)
 {
-    // Note: Proof of work is now fully validated in ContextualCheckBlockHeader,
+    // SECURITY NOTE [C-04]: Proof of work is now fully validated in ContextualCheckBlockHeader,
     // which has access to chain context needed for both SHA256d (pre-fork) and
     // RandomX (post-fork) validation. This function is intentionally PoW-free.
     // The fCheckPOW parameter is retained for API compatibility but is ignored.
+    //
+    // WARNING: Do NOT rely on this function alone for PoW validation.
+    // Any code path that accepts blocks MUST also call ContextualCheckBlockHeader.
+    // See AcceptBlockHeader() which correctly calls both in sequence.
     (void)fCheckPOW;
     (void)consensusParams;
 
@@ -4201,16 +4224,19 @@ bool HasValidProofOfWork(const std::vector<CBlockHeader>& headers, const Consens
                 if (!bnTarget.has_value()) {
                     return false;
                 }
-                // SECURITY: Header Spam Rate Limiting
-                // For RandomX blocks, we only verify that the claimed target is valid
-                // (i.e., within powLimit). Full RandomX hash validation happens later
-                // in ContextualCheckBlockHeader when we have height context.
+                // SECURITY FIX [H-05]: Header Spam Rate Limiting (strengthened)
+                // For RandomX blocks, verify the claimed target requires meaningful work.
+                // Full RandomX hash validation happens later in ContextualCheckBlockHeader.
                 //
-                // NOTE: The original H-02 fix used >> 12 which was too aggressive and
-                // rejected valid blocks at minimum difficulty. We now just verify the
-                // claimed target is <= powLimit, which is sufficient to reject obviously
-                // invalid headers while allowing legitimate low-difficulty blocks.
+                // On mainnet (no min-difficulty blocks): require target <= powLimit/4,
+                // making header spam 4x more expensive to construct.
+                // On testnet (min-difficulty allowed): allow up to powLimit to avoid
+                // rejecting valid minimum-difficulty blocks.
                 arith_uint256 maxAllowedTarget = UintToArith256(consensusParams.powLimitRandomX);
+                if (!consensusParams.fPowAllowMinDifficultyBlocks) {
+                    // Mainnet: require at least 4x minimum work
+                    maxAllowedTarget >>= 2;
+                }
                 return *bnTarget <= maxAllowedTarget;
             });
 }

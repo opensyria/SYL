@@ -157,6 +157,46 @@ std::set<script_verify_flags> ExcludeIndividualFlags(script_verify_flags flags)
 
 BOOST_FIXTURE_TEST_SUITE(transaction_tests, BasicTestingSetup)
 
+// SECURITY FIX [C-01]: OpenSY's cross-chain replay protection prepends the genesis
+// hash to all sighash computations. This means pre-signed transactions from upstream
+// Bitcoin test vectors (tx_valid.json / tx_invalid.json) will fail signature verification
+// because they were signed under Bitcoin's sighash rules.
+//
+// We detect tests that involve signature verification (CHECKSIG, CHECKMULTISIG, witness
+// v0 programs, P2SH) and skip VerifyScript for them. Structural validation via
+// CheckTransaction is still performed for all entries. Signature verification coverage
+// is provided by script_tests (which generates OpenSY-specific signed transactions).
+static bool ScriptInvolvesSigVerification(const CScript& script)
+{
+    CScript::const_iterator it = script.begin();
+    opcodetype opcode;
+    while (it < script.end()) {
+        if (!script.GetOp(it, opcode)) break;
+        if (opcode == OP_CHECKSIG || opcode == OP_CHECKSIGVERIFY ||
+            opcode == OP_CHECKMULTISIG || opcode == OP_CHECKMULTISIGVERIFY) {
+            return true;
+        }
+    }
+    // Check for witness v0 programs (0x00 + 20/32-byte push) and P2SH patterns
+    // which implicitly involve signature verification in their redeemScript/witness
+    std::vector<std::vector<unsigned char>> solutions;
+    TxoutType type = Solver(script, solutions);
+    if (type == TxoutType::WITNESS_V0_KEYHASH || type == TxoutType::WITNESS_V0_SCRIPTHASH ||
+        type == TxoutType::SCRIPTHASH || type == TxoutType::PUBKEYHASH ||
+        type == TxoutType::PUBKEY || type == TxoutType::WITNESS_V1_TAPROOT) {
+        return true;
+    }
+    return false;
+}
+
+static bool TestInvolvesSigVerification(const std::map<COutPoint, CScript>& prevouts)
+{
+    for (const auto& [outpoint, script] : prevouts) {
+        if (ScriptInvolvesSigVerification(script)) return true;
+    }
+    return false;
+}
+
 BOOST_AUTO_TEST_CASE(tx_valid)
 {
     BOOST_CHECK_MESSAGE(CheckMapFlagNames(), "mapFlagNames is missing a script verification flag");
@@ -217,6 +257,13 @@ BOOST_AUTO_TEST_CASE(tx_valid)
             // Check that the test gives a valid combination of flags (otherwise VerifyScript will throw). Don't edit the flags.
             if (~verify_flags != FillFlags(~verify_flags)) {
                 BOOST_ERROR("Bad test flags: " << strTest);
+            }
+
+            // [C-01] Skip VerifyScript for upstream Bitcoin test vectors with pre-baked
+            // signatures. Our genesis-hash domain separator changes the sighash, making
+            // Bitcoin-signed transactions invalid on OpenSY by design.
+            if (TestInvolvesSigVerification(mapprevOutScriptPubKeys)) {
+                continue;
             }
 
             BOOST_CHECK_MESSAGE(CheckTxScripts(tx, mapprevOutScriptPubKeys, mapprevOutValues, ~verify_flags, txdata, strTest, /*expect_valid=*/true),
@@ -323,6 +370,13 @@ BOOST_AUTO_TEST_CASE(tx_invalid)
             // Check that the test gives a valid combination of flags (otherwise VerifyScript will throw). Don't edit the flags.
             if (verify_flags != FillFlags(verify_flags)) {
                 BOOST_ERROR("Bad test flags: " << strTest);
+            }
+
+            // [C-01] Skip VerifyScript for upstream Bitcoin test vectors with pre-baked
+            // signatures. Our genesis-hash domain separator changes the sighash, making
+            // the "flags are minimal" check invalid for sig-dependent tests.
+            if (TestInvolvesSigVerification(mapprevOutScriptPubKeys)) {
+                continue;
             }
 
             // Not using FillFlags() in the main test, in order to detect invalid verifyFlags combination

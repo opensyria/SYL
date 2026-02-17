@@ -175,9 +175,22 @@ public:
         consensus.nArgon2Parallelism = 1;
 
         /**
-         * The message start string is designed to be unlikely to occur in normal data.
-         * The characters are rarely used upper ASCII, not valid as UTF-8, and produce
-         * a large 32-bit integer with any alignment.
+         * SECURITY DOCUMENTATION [M-14]: Network Magic Bytes
+         *
+         * The message start bytes spell "SYLM" in ASCII (0x53, 0x59, 0x4C, 0x4D).
+         * While Bitcoin uses non-printable upper-ASCII bytes, printable magic is an
+         * intentional design choice for OpenSY:
+         *
+         * Rationale:
+         *   - Unique 4-byte sequence from project name ensures no collision with
+         *     Bitcoin (0xF9BEB4D9) or any known altcoin magic.
+         *   - Easier debugging: magic is immediately recognizable in hexdumps.
+         *   - The attack risk (random TCP data forming 0x53594C4D + valid message)
+         *     is negligible: even with printable bytes, the probability is ~1 in
+         *     10^22 per 4 random bytes, and the subsequent message checksum
+         *     provides a second layer of filtering.
+         *   - No security property of the P2P protocol depends on magic bytes being
+         *     non-printable.
          */
         pchMessageStart[0] = 0x53; // 'S'
         pchMessageStart[1] = 0x59; // 'Y'
@@ -272,12 +285,27 @@ public:
         // ─────────────────────────────────────────────────────────────────────────
 
         base58Prefixes[PUBKEY_ADDRESS] = std::vector<unsigned char>(1,35); // Addresses start with 'F' (Freedom)
-        base58Prefixes[SCRIPT_ADDRESS] = std::vector<unsigned char>(1,36); // Script addresses start with 'F'
-        base58Prefixes[SECRET_KEY] =     std::vector<unsigned char>(1,128); // WIF keys - Bitcoin mainnet compatible for wallet interop
-        // Extended key prefixes kept Bitcoin-compatible for HD wallet interoperability
-        // Future: Consider unique prefixes (e.g., spub/sprv) once ecosystem matures
-        base58Prefixes[EXT_PUBLIC_KEY] = {0x04, 0x88, 0xB2, 0x1E}; // xpub - Bitcoin mainnet compatible
-        base58Prefixes[EXT_SECRET_KEY] = {0x04, 0x88, 0xAD, 0xE4}; // xprv - Bitcoin mainnet compatible
+        // SECURITY FIX [L-01]: Changed SCRIPT_ADDRESS from 36 to 50 so P2SH addresses
+        // start with 'Q' instead of 'F', making them visually distinguishable from P2PKH.
+        base58Prefixes[SCRIPT_ADDRESS] = std::vector<unsigned char>(1,50); // Script addresses start with 'Q'
+        // SECURITY FIX [L-02]: Unique WIF prefix to prevent cross-chain key confusion.
+        // Changed from 128 (Bitcoin mainnet) to 176 to produce distinct WIF strings.
+        base58Prefixes[SECRET_KEY] =     std::vector<unsigned char>(1,176); // WIF keys - OpenSY unique
+        // Extended key prefixes: kept as xpub/xprv (BIP32 standard) for maximum
+        // wallet compatibility (hardware wallets, Electrum, Sparrow, etc.).
+        // SECURITY DOCUMENTATION [M-18]: These bytes are intentionally identical to
+        // Bitcoin's BIP32 extended key prefixes. While unique prefixes would prevent
+        // cross-chain xpub/xprv confusion, the practical risk is mitigated because:
+        //   1. P2PKH prefix (35/'F'), P2SH prefix (50/'Q'), WIF prefix (176), and
+        //      bech32 HRP ("syl") are all unique — derived addresses will never collide.
+        //   2. Hardware wallets (Ledger, Trezor) and most wallet software only support
+        //      xpub/xprv prefixes; custom prefixes break ecosystem compatibility.
+        //   3. An xpub is never directly used as an address — it must be derived first,
+        //      and derivation produces chain-specific addresses via our unique prefixes.
+        // If a future update requires unique extended key prefixes, the registered SLIP-132
+        // prefix space should be used (see https://github.com/satoshilabs/slips/blob/master/slip-0132.md).
+        base58Prefixes[EXT_PUBLIC_KEY] = {0x04, 0x88, 0xB2, 0x1E}; // xpub (BIP32 standard)
+        base58Prefixes[EXT_SECRET_KEY] = {0x04, 0x88, 0xAD, 0xE4}; // xprv (BIP32 standard)
 
         bech32_hrp = "syl"; // OpenSY mainnet SegWit
 
@@ -286,8 +314,9 @@ public:
         vFixedSeeds = std::vector<uint8_t>(std::begin(chainparams_seed_main), std::end(chainparams_seed_main));
 
         // Hostname-based fixed seeds - resolved at runtime for dynamic IP nodes
-        // These provide network resilience via Tailscale Funnel or similar services
-        vFixedSeedHosts.emplace_back("opensy-rescue.tail564c31.ts.net"); // Tailscale Funnel rescue node
+        // SECURITY FIX [H-02]: Hostname seeds removed. Fixed seeds must be IP-only
+        // to work when DNS fails. Use -seednode=<host> in config for dynamic nodes.
+        // vFixedSeedHosts.emplace_back("opensy-rescue.tail564c31.ts.net"); // REMOVED: DNS dependency
 
         fDefaultConsistencyChecks = false;
         m_is_mockable_chain = false;

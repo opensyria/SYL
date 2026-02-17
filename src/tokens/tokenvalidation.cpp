@@ -7,6 +7,8 @@
 #include <logging.h>
 #include <tinyformat.h>
 
+#include <limits>
+
 namespace tokens {
 
 std::unique_ptr<MempoolTokenState> g_mempool_tokens;
@@ -378,15 +380,35 @@ bool MempoolTokenState::AddTransaction(const CTransaction& tx, const CScript& se
             case src20::TokenAction::TRANSFER: {
                 const auto* transfer = op.GetTransfer();
                 if (transfer) {
-                    // Debit sender
-                    m_pending_balances[sender][transfer->token_id] -= transfer->amount;
-                    tx_deltas.deltas[sender][transfer->token_id] -= transfer->amount;
+                    // AUDIT FIX [L-08]: Check for int64_t overflow before modifying pending balances.
+                    // transfer->amount is uint64_t; casting to int64_t could overflow if > INT64_MAX.
+                    if (transfer->amount > static_cast<uint64_t>(std::numeric_limits<int64_t>::max())) {
+                        LogDebug(BCLog::MEMPOOL, "Token transfer amount exceeds int64_t range\n");
+                        break;
+                    }
+                    int64_t signed_amount = static_cast<int64_t>(transfer->amount);
+                    
+                    // Debit sender (check underflow)
+                    int64_t& sender_delta = m_pending_balances[sender][transfer->token_id];
+                    if (sender_delta < std::numeric_limits<int64_t>::min() + signed_amount) {
+                        LogDebug(BCLog::MEMPOOL, "Pending balance underflow for sender\n");
+                        break;
+                    }
+                    sender_delta -= signed_amount;
+                    tx_deltas.deltas[sender][transfer->token_id] -= signed_amount;
 
-                    // Credit recipient
+                    // Credit recipient (check overflow)
                     auto recipient = src20::GetTransferRecipient(tx);
                     if (recipient) {
-                        m_pending_balances[*recipient][transfer->token_id] += transfer->amount;
-                        tx_deltas.deltas[*recipient][transfer->token_id] += transfer->amount;
+                        int64_t& recip_delta = m_pending_balances[*recipient][transfer->token_id];
+                        if (recip_delta > std::numeric_limits<int64_t>::max() - signed_amount) {
+                            LogDebug(BCLog::MEMPOOL, "Pending balance overflow for recipient\n");
+                            // Undo sender debit
+                            sender_delta += signed_amount;
+                            break;
+                        }
+                        recip_delta += signed_amount;
+                        tx_deltas.deltas[*recipient][transfer->token_id] += signed_amount;
                     }
                 }
                 break;
@@ -395,8 +417,19 @@ bool MempoolTokenState::AddTransaction(const CTransaction& tx, const CScript& se
             case src20::TokenAction::BURN: {
                 const auto* burn = op.GetBurn();
                 if (burn) {
-                    m_pending_balances[sender][burn->token_id] -= burn->amount;
-                    tx_deltas.deltas[sender][burn->token_id] -= burn->amount;
+                    // AUDIT FIX [L-08]: Overflow check for burn amount
+                    if (burn->amount > static_cast<uint64_t>(std::numeric_limits<int64_t>::max())) {
+                        LogDebug(BCLog::MEMPOOL, "Token burn amount exceeds int64_t range\n");
+                        break;
+                    }
+                    int64_t signed_amount = static_cast<int64_t>(burn->amount);
+                    int64_t& sender_delta = m_pending_balances[sender][burn->token_id];
+                    if (sender_delta < std::numeric_limits<int64_t>::min() + signed_amount) {
+                        LogDebug(BCLog::MEMPOOL, "Pending balance underflow for burn\n");
+                        break;
+                    }
+                    sender_delta -= signed_amount;
+                    tx_deltas.deltas[sender][burn->token_id] -= signed_amount;
                 }
                 break;
             }

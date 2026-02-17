@@ -252,7 +252,8 @@ public:
         const uint256& txid,
         const CScript& issuer_address,
         int height,
-        int64_t time) EXCLUSIVE_LOCKS_REQUIRED(!m_cs);
+        int64_t time,
+        CDBBatch* external_batch = nullptr) EXCLUSIVE_LOCKS_REQUIRED(!m_cs);
 
     /**
      * Get token information by ID
@@ -327,7 +328,9 @@ public:
         uint64_t amount,
         const uint256& txid,
         int height,
-        int64_t time) EXCLUSIVE_LOCKS_REQUIRED(!m_cs);
+        int64_t time,
+        CDBBatch* external_batch = nullptr,
+        uint8_t op_index = 0) EXCLUSIVE_LOCKS_REQUIRED(!m_cs);
 
     /**
      * Burn tokens from an address
@@ -346,7 +349,9 @@ public:
         uint64_t amount,
         const uint256& txid,
         int height,
-        int64_t time) EXCLUSIVE_LOCKS_REQUIRED(!m_cs);
+        int64_t time,
+        CDBBatch* external_batch = nullptr,
+        uint8_t op_index = 0) EXCLUSIVE_LOCKS_REQUIRED(!m_cs);
 
     // ----- History -----
 

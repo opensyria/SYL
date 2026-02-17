@@ -509,14 +509,17 @@ void AddReservedTicker(const std::string& ticker)
 
 std::vector<std::string> GetReservedTickers()
 {
+    // SECURITY FIX [H-03b]: Acquire lock before accessing g_runtime_reserved_tickers.size()
+    // to prevent data race (undefined behavior per C++ standard). Previously the
+    // .size() call for reserve() was done without the lock.
     std::vector<std::string> result;
-    result.reserve(RESERVED_TICKERS.size() + g_runtime_reserved_tickers.size());
     
     for (const auto* reserved : RESERVED_TICKERS) {
         result.emplace_back(reserved);
     }
     
     LOCK(g_reserved_mutex);
+    result.reserve(result.size() + g_runtime_reserved_tickers.size());
     for (const auto& ticker : g_runtime_reserved_tickers) {
         result.push_back(ticker);
     }
@@ -531,7 +534,9 @@ namespace wellknown {
 TokenIssuance CreateESYP()
 {
     TokenIssuance issuance;
-    issuance.ticker = "eSYP";
+    // FIX [L-01b]: Use uppercase ticker to pass ticker validation.
+    // Previously "eSYP" contained lowercase 'e' which fails IsValid().
+    issuance.ticker = "ESYP";
     issuance.name = "Electronic Syrian Pound";
     issuance.decimals = 2;  // Pounds have 2 decimal places (piasters)
     issuance.total_supply = 100000000000ULL * 100;  // 100 billion SYP with 2 decimals
@@ -542,7 +547,9 @@ TokenIssuance CreateESYP()
 TokenIssuance CreateSUSDT()
 {
     TokenIssuance issuance;
-    issuance.ticker = "sUST";  // sUSDT -> sUST (4 chars max)
+    // FIX [L-01b]: Use uppercase ticker to pass ticker validation.
+    // Previously "sUST" contained lowercase 's' which fails IsValid().
+    issuance.ticker = "SUST";
     issuance.name = "Synthetic USDT";
     issuance.decimals = 6;  // Same as USDT
     issuance.total_supply = 1000000000ULL * 1000000;  // 1 billion with 6 decimals
