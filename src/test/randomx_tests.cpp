@@ -278,13 +278,14 @@ BOOST_AUTO_TEST_CASE(randomx_hash_empty_input)
 
 BOOST_AUTO_TEST_CASE(randomx_hash_large_input)
 {
-    // Test: Large input should hash correctly
+    // Test: Input at the limit (1KB) should hash correctly
+    // AUDIT FIX [L-04]: MAX_RANDOMX_INPUT reduced from 4MB to 1KB
     RandomXContext ctx;
     uint256 keyHash{"0000000000000000000000000000000000000000000000000000000000001234"};
     ctx.Initialize(keyHash);
     
-    // Create 1MB input
-    std::vector<unsigned char> largeInput(1024 * 1024);
+    // Create 1KB input (at the limit)
+    std::vector<unsigned char> largeInput(1024);
     for (size_t i = 0; i < largeInput.size(); ++i) {
         largeInput[i] = static_cast<unsigned char>(i % 256);
     }
@@ -589,8 +590,8 @@ BOOST_AUTO_TEST_CASE(randomx_hash_varying_input_sizes)
     uint256 keyHash{"0000000000000000000000000000000000000000000000000000000000001234"};
     ctx.Initialize(keyHash);
     
-    // Test various input sizes
-    std::vector<size_t> sizes = {1, 10, 80, 100, 256, 1000, 4096};
+    // Test various input sizes (up to MAX_RANDOMX_INPUT=1024)
+    std::vector<size_t> sizes = {1, 10, 80, 100, 256, 512, 1024};
     
     for (size_t size : sizes) {
         std::vector<unsigned char> input(size, 0x42);
@@ -1034,15 +1035,16 @@ BOOST_AUTO_TEST_CASE(input_size_limit_enforced)
     ctx.Initialize(keyHash);
 
     // Normal size should work
-    std::vector<unsigned char> normalInput(1024);
+    std::vector<unsigned char> normalInput(80);
     BOOST_CHECK_NO_THROW(ctx.CalculateHash(normalInput));
 
-    // 4MB should work (at the limit)
-    std::vector<unsigned char> maxInput(4 * 1024 * 1024);
+    // AUDIT FIX [L-04]: Limit reduced from 4MB to 1KB
+    // 1KB should work (at the limit)
+    std::vector<unsigned char> maxInput(1024);
     BOOST_CHECK_NO_THROW(ctx.CalculateHash(maxInput));
 
-    // Over 4MB should throw
-    std::vector<unsigned char> tooLargeInput(4 * 1024 * 1024 + 1);
+    // Over 1KB should throw
+    std::vector<unsigned char> tooLargeInput(1025);
     BOOST_CHECK_THROW(ctx.CalculateHash(tooLargeInput), std::runtime_error);
 }
 

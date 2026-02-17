@@ -47,10 +47,12 @@ std::optional<TokenId> TokenId::FromHex(const std::string& hex)
 
 bool TokenIssuance::IsValid() const
 {
-    // Ticker must be 1-4 characters, ASCII alphanumeric uppercase ONLY
+    // Ticker must be 3-4 characters, ASCII alphanumeric uppercase ONLY
+    // AUDIT FIX [M-06]: Enforce MIN_TICKER_LENGTH=3 to prevent single-char
+    // ticker squatting that could exhaust the namespace.
     // SECURITY: We explicitly reject any non-ASCII bytes to prevent Unicode
     // confusable attacks (e.g., Cyrillic "А" vs Latin "A", Greek "Ο" vs "O")
-    if (ticker.empty() || ticker.size() > MAX_TICKER_LENGTH) {
+    if (ticker.size() < MIN_TICKER_LENGTH || ticker.size() > MAX_TICKER_LENGTH) {
         return false;
     }
     for (unsigned char c : ticker) {
@@ -430,7 +432,13 @@ std::vector<SRC20Operation> ParseTransactionSRC20(const CTransaction& tx)
 {
     std::vector<SRC20Operation> ops;
     
+    // AUDIT FIX [H-05]: Limit the number of SRC-20 operations per transaction.
+    // Without this, a single transaction with hundreds of OP_RETURN outputs
+    // could consume the entire block's token budget and cause O(n) DB lookups.
+    static constexpr size_t MAX_OPS_PER_TX = 4;
+
     for (const auto& vout : tx.vout) {
+        if (ops.size() >= MAX_OPS_PER_TX) break;
         if (IsSRC20Script(vout.scriptPubKey)) {
             auto op = ParseSRC20Script(vout.scriptPubKey);
             if (op) {
@@ -457,8 +465,17 @@ std::optional<CScript> GetTransferRecipient(const CTransaction& tx)
         return std::nullopt;
     }
     
-    // Second output is recipient
-    return tx.vout[1].scriptPubKey;
+    // AUDIT FIX [RECIPIENT-01]: Validate the recipient script.
+    // Without this check, tokens could be transferred to an OP_RETURN or
+    // other unspendable output, silently burning them without generating a
+    // proper BURN record. An empty script is also rejected — it would result
+    // in unrecoverable tokens with no valid owner.
+    const CScript& recipient = tx.vout[1].scriptPubKey;
+    if (recipient.empty() || recipient.IsUnspendable()) {
+        return std::nullopt;
+    }
+    
+    return recipient;
 }
 
 std::optional<CScript> GetTransferChange(const CTransaction& tx)

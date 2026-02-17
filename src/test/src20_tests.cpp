@@ -608,9 +608,9 @@ BOOST_AUTO_TEST_CASE(wellknown_susdt_valid)
 
 BOOST_AUTO_TEST_CASE(ticker_boundary_exactly_min_length)
 {
-    // Single character ticker - minimum valid
+    // AUDIT FIX [M-06]: Minimum ticker length is now 3 characters
     src20::TokenIssuance issuance;
-    issuance.ticker = "A";
+    issuance.ticker = "ABC";
     issuance.name = "Test";
     issuance.decimals = 8;
     issuance.total_supply = 1000;
@@ -1352,9 +1352,10 @@ BOOST_AUTO_TEST_CASE(reserved_ticker_runtime_extension)
 
 BOOST_AUTO_TEST_CASE(roundtrip_issuance_min_values)
 {
+    // AUDIT FIX [M-06]: Updated to use MIN_TICKER_LENGTH=3 compliant values
     src20::TokenIssuance original;
-    original.ticker = "A";
-    original.name = "A";
+    original.ticker = "AAA";
+    original.name = "AAA";
     original.decimals = 0;
     original.total_supply = 1;
     

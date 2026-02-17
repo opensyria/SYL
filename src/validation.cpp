@@ -2388,6 +2388,12 @@ bool Chainstate::ConnectBlock(const CBlock& block, BlockValidationState& state, 
     uint256 block_hash{block.GetHash()};
     assert(*pindex->phashBlock == block_hash);
 
+    // AUDIT FIX [C-03]: Assert that PoW has been validated before connecting.
+    // Without this, a code path that skips header validation could connect
+    // an invalid-PoW block, violating the consensus invariant.
+    // BLOCK_VALID_TREE means the block's header and position in the tree are valid.
+    assert(pindex->IsValid(BLOCK_VALID_TREE));
+
     const auto time_start{SteadyClock::now()};
     const CChainParams& params{m_chainman.GetParams()};
 
@@ -4232,14 +4238,15 @@ bool HasValidProofOfWork(const std::vector<CBlockHeader>& headers, const Consens
                 // For RandomX blocks, verify the claimed target requires meaningful work.
                 // Full RandomX hash validation happens later in ContextualCheckBlockHeader.
                 //
-                // On mainnet (no min-difficulty blocks): require target <= powLimit/4,
-                // making header spam 4x more expensive to construct.
-                // On testnet (min-difficulty allowed): allow up to powLimit to avoid
-                // rejecting valid minimum-difficulty blocks.
+                // AUDIT FIX [H-03]: Tightened from >>2 (4x) to >>4 (16x).
+                // The original 4x reduction was insufficient — an attacker only
+                // needed to claim difficulty 4x the minimum to bypass this check,
+                // which is trivial to brute-force with SHA256d on the nBits field.
+                // 16x makes header spam 16x more expensive to fabricate.
                 arith_uint256 maxAllowedTarget = UintToArith256(consensusParams.powLimitRandomX);
                 if (!consensusParams.fPowAllowMinDifficultyBlocks) {
-                    // Mainnet: require at least 4x minimum work
-                    maxAllowedTarget >>= 2;
+                    // Mainnet: require at least 16x minimum work
+                    maxAllowedTarget >>= 4;
                 }
                 return *bnTarget <= maxAllowedTarget;
             });

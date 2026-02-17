@@ -136,6 +136,64 @@ std::string FormatUndoRecord(const TokenUndoRecord& undo, int height)
 
 } // namespace
 
+// AUDIT FIX [C-01/C-02]: Overlay-aware helper functions for ProcessBlock.
+// These read from the in-memory overlay first (capturing pending changes
+// within the current block), falling back to the DB for data not yet modified.
+
+/** Get balance from overlay first, then DB */
+static uint64_t GetBalanceWithOverlay(const TokenDB& db, const BalanceOverlay& overlay,
+                                       const CScript& address, const src20::TokenId& token_id)
+{
+    auto key = std::make_pair(std::vector<unsigned char>(address.begin(), address.end()), token_id);
+    auto it = overlay.balances.find(key);
+    if (it != overlay.balances.end()) {
+        return it->second;
+    }
+    return db.GetBalance(address, token_id);
+}
+
+/** Set balance in the overlay (does NOT write to DB/batch) */
+static void SetBalanceInOverlay(BalanceOverlay& overlay,
+                                 const CScript& address, const src20::TokenId& token_id,
+                                 uint64_t balance)
+{
+    auto key = std::make_pair(std::vector<unsigned char>(address.begin(), address.end()), token_id);
+    overlay.balances[key] = balance;
+}
+
+/** Get token info from overlay first, then DB */
+static std::optional<TokenInfo> GetTokenInfoWithOverlay(const TokenDB& db, const BalanceOverlay& overlay,
+                                                         const src20::TokenId& token_id)
+{
+    auto it = overlay.token_infos.find(token_id);
+    if (it != overlay.token_infos.end()) {
+        return it->second;
+    }
+    return db.GetTokenInfo(token_id);
+}
+
+/** Get addr_tokens set from overlay first, then DB — for ProcessBlock only */
+static std::set<src20::TokenId> GetAddrTokensWithOverlay(const CDBWrapper& dbw, const BalanceOverlay& overlay,
+                                                          const CScript& address)
+{
+    auto addr_key = std::vector<unsigned char>(address.begin(), address.end());
+    auto it = overlay.addr_tokens.find(addr_key);
+    if (it != overlay.addr_tokens.end()) {
+        return it->second;
+    }
+    // Read from DB using the same key that production code uses
+    std::set<src20::TokenId> tokens;
+    dbw.Read(AddrTokensKey(address), tokens);
+    return tokens;
+}
+
+static void SetAddrTokensInOverlay(BalanceOverlay& overlay,
+                                    const CScript& address, std::set<src20::TokenId> tokens)
+{
+    auto addr_key = std::vector<unsigned char>(address.begin(), address.end());
+    overlay.addr_tokens[addr_key] = std::move(tokens);
+}
+
 TokenDB::TokenDB(const fs::path& path, size_t cache_size, bool memory, bool wipe)
     : m_token_cache(MAX_CACHE_SIZE)  // Initialize LRU cache with max size
 {
@@ -222,7 +280,7 @@ void TokenDB::WriteBalanceToBatch(CDBBatch& batch, const CScript& address, const
     }
 }
 
-void TokenDB::WriteTokenInfoToBatch(CDBBatch& batch, const TokenInfo& info)
+void TokenDB::WriteTokenInfoToBatch(CDBBatch& batch, const TokenInfo& info, bool update_cache)
 {
     // Write token info
     auto token_key = TokenInfoKey(info.token_id);
@@ -232,8 +290,12 @@ void TokenDB::WriteTokenInfoToBatch(CDBBatch& batch, const TokenInfo& info)
     auto ticker_key = TickerKey(info.ticker);
     batch.Write(ticker_key, info.token_id);
     
-    // Update cache
-    UpdateCache(info);
+    // AUDIT FIX [M-01/M-02]: Only update cache when data is committed.
+    // When called from ProcessBlock with external_batch, skip caching
+    // until WriteBatch succeeds to prevent stale-on-crash inconsistency.
+    if (update_cache) {
+        UpdateCache(info);
+    }
 }
 
 bool TokenDB::ReadBalance(const CScript& address, const src20::TokenId& token_id, uint64_t& balance) const
@@ -339,8 +401,12 @@ std::optional<src20::TokenId> TokenDB::RegisterToken(
         }
     }
     
-    // Update cache AFTER successful write (or after adding to external batch)
-    UpdateCache(info);
+    // AUDIT FIX [M-01/M-02]: Only update cache when using local batch (data is committed).
+    // When external_batch is provided, the batch hasn't been committed yet — caching now
+    // would create a stale-on-crash inconsistency. ProcessBlock updates cache after WriteBatch.
+    if (!external_batch) {
+        UpdateCache(info);
+    }
     
     // AUDIT FIX M-04: Update cached token count
     if (m_token_count_initialized.load()) {
@@ -513,12 +579,16 @@ bool TokenDB::TransferTokens(
     int height,
     int64_t time,
     CDBBatch* external_batch,
-    uint16_t op_index)
+    uint16_t op_index,
+    BalanceOverlay* overlay)
 {
     if (!m_db) return false;
     
-    // Check sender balance
-    uint64_t from_balance = GetBalance(from, token_id);
+    // AUDIT FIX [C-01/C-02]: Use overlay-aware reads when processing a block.
+    // Without this, two transfers from the same address in one block each read
+    // the original DB balance, enabling double-spend (token inflation).
+    uint64_t from_balance = overlay ? GetBalanceWithOverlay(*this, *overlay, from, token_id)
+                                    : GetBalance(from, token_id);
     if (from_balance < amount) {
         LogDebug(BCLog::TOKEN, "Insufficient token balance: have %llu, need %llu\n",
                  from_balance, amount);
@@ -526,7 +596,8 @@ bool TokenDB::TransferTokens(
     }
     
     // Update balances
-    uint64_t to_balance = GetBalance(to, token_id);
+    uint64_t to_balance = overlay ? GetBalanceWithOverlay(*this, *overlay, to, token_id)
+                                  : GetBalance(to, token_id);
     
     // SECURITY: Check for overflow before adding to recipient balance
     auto new_to_balance = CheckedAdd(to_balance, amount);
@@ -541,7 +612,14 @@ bool TokenDB::TransferTokens(
     CDBBatch& batch = external_batch ? *external_batch : local_batch;
     
     // Write sender's new balance
-    batch.Write(BalanceKey(from, token_id), from_balance - amount);
+    uint64_t new_from = from_balance - amount;
+    batch.Write(BalanceKey(from, token_id), new_from);
+    
+    // AUDIT FIX [C-01/C-02]: Update overlay so subsequent ops in the same block
+    // see the correct post-transfer balances instead of stale DB values.
+    if (overlay) {
+        SetBalanceInOverlay(*overlay, from, token_id, new_from);
+    }
     
     // Update sender's holder index
     auto from_holder_key = TokenHoldersKey(token_id, from);
@@ -553,6 +631,11 @@ bool TokenDB::TransferTokens(
     // Write recipient's new balance
     batch.Write(BalanceKey(to, token_id), *new_to_balance);
     
+    // AUDIT FIX [C-01/C-02]: Update overlay for recipient balance.
+    if (overlay) {
+        SetBalanceInOverlay(*overlay, to, token_id, *new_to_balance);
+    }
+    
     // Update recipient's holder index
     auto to_holder_key = TokenHoldersKey(token_id, to);
     batch.Write(to_holder_key, true);
@@ -561,9 +644,16 @@ bool TokenDB::TransferTokens(
     if (to_balance == 0) {
         auto to_addr_key = AddrTokensKey(to);
         std::set<src20::TokenId> to_tokens;
-        m_db->Read(to_addr_key, to_tokens);
+        if (overlay) {
+            to_tokens = GetAddrTokensWithOverlay(*m_db, *overlay, to);
+        } else {
+            m_db->Read(to_addr_key, to_tokens);
+        }
         to_tokens.insert(token_id);
         batch.Write(to_addr_key, to_tokens);
+        if (overlay) {
+            SetAddrTokensInOverlay(*overlay, to, to_tokens);
+        }
     }
     
     // Record transfer
@@ -585,7 +675,19 @@ bool TokenDB::TransferTokens(
     
     // Include token stats update in the same batch
     TokenInfo info;
-    if (ReadTokenInfo(token_id, info)) {
+    bool found_info = false;
+    // AUDIT FIX [C-01/C-02]: Read token info from overlay if available
+    if (overlay) {
+        auto oi = overlay->token_infos.find(token_id);
+        if (oi != overlay->token_infos.end()) {
+            info = oi->second;
+            found_info = true;
+        }
+    }
+    if (!found_info) {
+        found_info = ReadTokenInfo(token_id, info);
+    }
+    if (found_info) {
         info.transfer_count++;
         
         // Update holder count
@@ -595,7 +697,15 @@ bool TokenDB::TransferTokens(
         // Write to batch instead of separate WriteTokenInfo call
         batch.Write(TokenInfoKey(info.token_id), info);
         batch.Write(TickerKey(info.ticker), info.token_id);
-        UpdateCache(info);
+        // AUDIT FIX [C-01/C-02]: Update overlay token info so subsequent ops
+        // in the same block see correct holder_count/transfer_count.
+        if (overlay) {
+            overlay->token_infos[token_id] = info;
+        }
+        // AUDIT FIX [M-01/M-02]: Only update cache when data is committed.
+        if (!external_batch) {
+            UpdateCache(info);
+        }
     }
     
     // Commit only if using local batch (standalone mode)
@@ -621,12 +731,14 @@ bool TokenDB::BurnTokens(
     int height,
     int64_t time,
     CDBBatch* external_batch,
-    uint16_t op_index)
+    uint16_t op_index,
+    BalanceOverlay* overlay)
 {
     if (!m_db) return false;
     
-    // Check sender balance
-    uint64_t from_balance = GetBalance(from, token_id);
+    // AUDIT FIX [C-01/C-02]: Use overlay-aware reads when processing a block.
+    uint64_t from_balance = overlay ? GetBalanceWithOverlay(*this, *overlay, from, token_id)
+                                    : GetBalance(from, token_id);
     if (from_balance < amount) {
         LogDebug(BCLog::TOKEN, "Insufficient token balance for burn: have %llu, need %llu\n",
                  from_balance, amount);
@@ -635,7 +747,19 @@ bool TokenDB::BurnTokens(
     
     // Read token info for validation before modifying anything
     TokenInfo info;
-    if (!ReadTokenInfo(token_id, info)) {
+    bool found_info = false;
+    // AUDIT FIX [C-01/C-02]: Read token info from overlay if available
+    if (overlay) {
+        auto oi = overlay->token_infos.find(token_id);
+        if (oi != overlay->token_infos.end()) {
+            info = oi->second;
+            found_info = true;
+        }
+    }
+    if (!found_info) {
+        found_info = ReadTokenInfo(token_id, info);
+    }
+    if (!found_info) {
         LogDebug(BCLog::TOKEN, "Token burn failed: token %s not found\n",
                  token_id.ToString().substr(0, 16));
         return false;
@@ -653,7 +777,14 @@ bool TokenDB::BurnTokens(
     CDBBatch& batch = external_batch ? *external_batch : local_batch;
     
     // Write sender's new balance
-    WriteBalanceToBatch(batch, from, token_id, from_balance - amount);
+    uint64_t new_from = from_balance - amount;
+    WriteBalanceToBatch(batch, from, token_id, new_from);
+    
+    // AUDIT FIX [C-01/C-02]: Update overlay so subsequent ops in the same block
+    // see the correct post-burn balance instead of stale DB values.
+    if (overlay) {
+        SetBalanceInOverlay(*overlay, from, token_id, new_from);
+    }
     
     // Update holder index if sender now has zero balance
     if (from_balance == amount) {
@@ -669,7 +800,12 @@ bool TokenDB::BurnTokens(
     info.circulating_supply -= amount;
     
     // Write token info to batch (atomic with balance update)
-    WriteTokenInfoToBatch(batch, info);
+    // AUDIT FIX [M-01/M-02]: Skip cache update when using external_batch.
+    WriteTokenInfoToBatch(batch, info, /*update_cache=*/!external_batch);
+    // AUDIT FIX [C-01/C-02]: Update overlay token info
+    if (overlay) {
+        overlay->token_infos[token_id] = info;
+    }
     
     // Record burn as transfer to empty script (marks it as a burn for history)
     TokenTransferRecord record;
@@ -819,10 +955,20 @@ int TokenDB::ProcessBlock(const CBlock& block, int height, const CBlockUndo& blo
     std::vector<uint256> block_token_txs;
     CDBBatch batch(*m_db);
 
+    // AUDIT FIX [C-01/C-02]: In-memory balance overlay prevents stale reads.
+    // Without this, two transfers from the same address in one block each read
+    // the original balance from DB, enabling double-spend (token inflation).
+    // The overlay tracks cumulative balance changes across all ops in the block.
+    BalanceOverlay overlay;
+
     // AUDIT FIX [M-04]: Enforce MAX_TOKENS_PER_BLOCK at the processing level.
     // Previously this limit was only checked in mempool relay policy, allowing
     // miners to include unlimited token ops and cause I/O load on all nodes.
     static constexpr size_t MAX_OPS = src20::MAX_TOKENS_PER_BLOCK;
+
+    // AUDIT FIX [H-05]: Per-transaction SRC-20 operation limit is enforced in
+    // ParseTransactionSRC20() (MAX_OPS_PER_TX = 4), which caps the ops vector
+    // size before it reaches this loop.
     
     // blockundo.vtxundo has entries for non-coinbase transactions (index i-1 for block.vtx[i])
     for (unsigned int i = 0; i < block.vtx.size() && static_cast<size_t>(ops_count) < MAX_OPS; i++) {
@@ -924,16 +1070,17 @@ int TokenDB::ProcessBlock(const CBlock& block, int height, const CBlockUndo& blo
                             // Use sender derived from blockundo
                             CScript sender = tx_sender;
                             
-                            // Get current balances for undo record
-                            uint64_t prev_from_balance = GetBalance(sender, transfer->token_id);
-                            uint64_t prev_to_balance = GetBalance(*recipient, transfer->token_id);
+                            // AUDIT FIX [C-01/C-02]: Read balances from overlay to get
+                            // correct values reflecting prior ops in this block.
+                            uint64_t prev_from_balance = GetBalanceWithOverlay(*this, overlay, sender, transfer->token_id);
+                            uint64_t prev_to_balance = GetBalanceWithOverlay(*this, overlay, *recipient, transfer->token_id);
                             
-                            auto token_info = GetTokenInfo(transfer->token_id);
+                            auto token_info = GetTokenInfoWithOverlay(*this, overlay, transfer->token_id);
                             uint64_t prev_holder_count = token_info ? token_info->holder_count : 0;
                             
                             const uint256 txhash = tx->GetHash().ToUint256();
                             if (TransferTokens(transfer->token_id, sender, *recipient,
-                                             transfer->amount, txhash, height, block_time, &batch, tx_op_index)) {
+                                             transfer->amount, txhash, height, block_time, &batch, tx_op_index, &overlay)) {
                                 // Create undo record for transfer
                                 TokenUndoRecord undo;
                                 undo.op_type = TokenOpType::TRANSFER;
@@ -964,14 +1111,15 @@ int TokenDB::ProcessBlock(const CBlock& block, int height, const CBlockUndo& blo
                         // Use sender derived from blockundo as the burner
                         CScript burner = tx_sender;
                         
-                        // Get current state for undo
-                        auto token_info = GetTokenInfo(burn->token_id);
+                        // AUDIT FIX [C-01/C-02]: Read state from overlay to get
+                        // correct values reflecting prior ops in this block.
+                        auto token_info = GetTokenInfoWithOverlay(*this, overlay, burn->token_id);
                         uint64_t prev_circulating = token_info ? token_info->circulating_supply : 0;
-                        uint64_t prev_balance = GetBalance(burner, burn->token_id);
+                        uint64_t prev_balance = GetBalanceWithOverlay(*this, overlay, burner, burn->token_id);
                         
                         const uint256 txhash = tx->GetHash().ToUint256();
                         if (BurnTokens(burn->token_id, burner, burn->amount,
-                                      txhash, height, block_time, &batch, tx_op_index)) {
+                                      txhash, height, block_time, &batch, tx_op_index, &overlay)) {
                             // Create undo record for burn
                             TokenUndoRecord undo;
                             undo.op_type = TokenOpType::BURN;
@@ -1022,6 +1170,13 @@ int TokenDB::ProcessBlock(const CBlock& block, int height, const CBlockUndo& blo
         throw;  // Re-throw to signal block processing failure
     }
     
+    // AUDIT FIX [M-01/M-02]: Now that WriteBatch succeeded, flush overlay
+    // token_infos to the in-memory LRU cache. Doing this AFTER commit ensures
+    // the cache never contains data that isn't on disk.
+    for (const auto& [tid, tinfo] : overlay.token_infos) {
+        UpdateCache(tinfo);
+    }
+    
     if (ops_count > 0) {
         LogDebug(BCLog::TOKEN, "Processed %d token operations in block %d\n", ops_count, height);
     }
@@ -1041,6 +1196,12 @@ int TokenDB::ProcessBlock(const CBlock& block, int height, const CCoinsViewCache
     int64_t block_time = block.GetBlockTime();
     std::vector<uint256> block_token_txs;
     CDBBatch batch(*m_db);
+
+    // AUDIT FIX [C-01/C-02]: In-memory balance overlay prevents stale reads.
+    // Same fix as the main ProcessBlock(CBlockUndo) overload — without this,
+    // two transfers from the same address in one block each read the original
+    // balance from DB, enabling double-spend (token inflation).
+    BalanceOverlay overlay;
 
     // AUDIT FIX [M-04]: Enforce MAX_TOKENS_PER_BLOCK at the processing level.
     static constexpr size_t MAX_OPS = src20::MAX_TOKENS_PER_BLOCK;
@@ -1092,6 +1253,13 @@ int TokenDB::ProcessBlock(const CBlock& block, int height, const CCoinsViewCache
                                          tx_fee, MIN_TOKEN_ISSUANCE_FEE);
                                 break;
                             }
+                        } else if (!view) {
+                            // AUDIT FIX [M-04]: Without a UTXO view we cannot verify the
+                            // issuance fee. Reject the issuance rather than silently skipping
+                            // the fee check, which would let miners issue tokens for free via
+                            // the legacy code path.
+                            LogDebug(BCLog::TOKEN, "Token issuance rejected: no UTXO view available to verify fee\n");
+                            break;
                         }
                         
                         // Get issuer address from first non-OP_RETURN output
@@ -1134,16 +1302,17 @@ int TokenDB::ProcessBlock(const CBlock& block, int height, const CCoinsViewCache
                             // Use sender derived from UTXO
                             CScript sender = tx_sender;
                             
-                            // Get current balances for undo record
-                            uint64_t prev_from_balance = GetBalance(sender, transfer->token_id);
-                            uint64_t prev_to_balance = GetBalance(*recipient, transfer->token_id);
+                            // AUDIT FIX [C-01/C-02]: Read balances from overlay to get
+                            // correct values reflecting prior ops in this block.
+                            uint64_t prev_from_balance = GetBalanceWithOverlay(*this, overlay, sender, transfer->token_id);
+                            uint64_t prev_to_balance = GetBalanceWithOverlay(*this, overlay, *recipient, transfer->token_id);
                             
-                            auto token_info = GetTokenInfo(transfer->token_id);
+                            auto token_info = GetTokenInfoWithOverlay(*this, overlay, transfer->token_id);
                             uint64_t prev_holder_count = token_info ? token_info->holder_count : 0;
                             
                             const uint256 txhash = tx->GetHash().ToUint256();
                             if (TransferTokens(transfer->token_id, sender, *recipient,
-                                             transfer->amount, txhash, height, block_time, &batch, tx_op_index)) {
+                                             transfer->amount, txhash, height, block_time, &batch, tx_op_index, &overlay)) {
                                 // Create undo record for transfer
                                 TokenUndoRecord undo;
                                 undo.op_type = TokenOpType::TRANSFER;
@@ -1174,14 +1343,15 @@ int TokenDB::ProcessBlock(const CBlock& block, int height, const CCoinsViewCache
                         // Use sender derived from UTXO as the burner
                         CScript burner = tx_sender;
                         
-                        // Get current state for undo
-                        auto token_info = GetTokenInfo(burn->token_id);
+                        // AUDIT FIX [C-01/C-02]: Read state from overlay to get
+                        // correct values reflecting prior ops in this block.
+                        auto token_info = GetTokenInfoWithOverlay(*this, overlay, burn->token_id);
                         uint64_t prev_circulating = token_info ? token_info->circulating_supply : 0;
-                        uint64_t prev_balance = GetBalance(burner, burn->token_id);
+                        uint64_t prev_balance = GetBalanceWithOverlay(*this, overlay, burner, burn->token_id);
                         
                         const uint256 txhash = tx->GetHash().ToUint256();
                         if (BurnTokens(burn->token_id, burner, burn->amount,
-                                      txhash, height, block_time, &batch, tx_op_index)) {
+                                      txhash, height, block_time, &batch, tx_op_index, &overlay)) {
                             // Create undo record for burn
                             TokenUndoRecord undo;
                             undo.op_type = TokenOpType::BURN;
@@ -1226,6 +1396,11 @@ int TokenDB::ProcessBlock(const CBlock& block, int height, const CCoinsViewCache
     } catch (const dbwrapper_error& e) {
         LogPrintf("CRITICAL: Failed to write token operations for block %d: %s\n", height, e.what());
         throw;  // Re-throw to signal block processing failure
+    }
+
+    // AUDIT FIX [M-01/M-02]: Flush overlay token_infos to LRU cache after commit.
+    for (const auto& [tid, tinfo] : overlay.token_infos) {
+        UpdateCache(tinfo);
     }
     
     if (ops_count > 0) {

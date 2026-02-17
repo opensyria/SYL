@@ -15,6 +15,7 @@
 #include <util/lru_cache.h>
 
 #include <list>
+#include <map>
 #include <memory>
 #include <optional>
 #include <set>
@@ -135,7 +136,16 @@ struct TokenUndoRecord {
         // Serialize enum as uint8_t
         uint8_t op_type_u8{static_cast<uint8_t>(obj.op_type)};
         READWRITE(op_type_u8);
-        SER_READ(obj, obj.op_type = static_cast<TokenOpType>(op_type_u8));
+        // AUDIT FIX [M-01]: Validate op_type on deserialization to catch DB corruption.
+        // Without this, corrupted undo records silently produce invalid op_types,
+        // leading to incorrect reorg behavior.
+        SER_READ(obj, {
+            if (op_type_u8 < static_cast<uint8_t>(TokenOpType::ISSUE) ||
+                op_type_u8 > static_cast<uint8_t>(TokenOpType::BURN)) {
+                throw std::ios_base::failure("Invalid TokenUndoRecord op_type: " + std::to_string(op_type_u8));
+            }
+            obj.op_type = static_cast<TokenOpType>(op_type_u8);
+        });
         READWRITE(obj.txid, obj.token_id, obj.ticker,
                   obj.from_address, obj.to_address, obj.amount,
                   obj.prev_from_balance, obj.prev_to_balance,
@@ -155,7 +165,7 @@ namespace db_prefix {
     static constexpr uint8_t TOKEN_HOLDERS = 'H';   // H<token_id><address> -> balance
     static constexpr uint8_t TRANSFER = 'X';        // X<token_id><height><txid> -> TransferRecord
     static constexpr uint8_t BLOCK_TOKENS = 'b';    // b<height> -> list of token ops in block
-    static constexpr uint8_t BEST_BLOCK = 'B' + 'H'; // Best indexed block hash
+    static constexpr uint8_t BEST_BLOCK = 'Z';       // Z -> Best indexed block hash (distinct from BALANCE 'B')
     // UNDO prefix is defined above with other prefixes
 }
 
@@ -168,6 +178,28 @@ namespace db_prefix {
  * - Transfer history
  * - Holder information
  */
+/**
+ * AUDIT FIX [C-01/C-02]: In-memory balance overlay for batch processing.
+ *
+ * During ProcessBlock, multiple token operations may affect the same
+ * address+token pair. Without an overlay, each operation reads stale
+ * balances from the DB (batch not yet committed), enabling double-spend.
+ *
+ * The overlay tracks pending balance/supply/holder/addr_tokens deltas,
+ * ensuring each operation sees the cumulative effect of prior operations
+ * within the same block.
+ */
+struct BalanceOverlay {
+    //! Pending balance state: key=(address, token_id) -> current balance
+    std::map<std::pair<std::vector<unsigned char>, src20::TokenId>, uint64_t> balances;
+    //! Pending addr_tokens sets: key=address -> set of token_ids
+    std::map<std::vector<unsigned char>, std::set<src20::TokenId>> addr_tokens;
+    //! Pending token info updates: key=token_id -> TokenInfo
+    std::map<src20::TokenId, TokenInfo> token_infos;
+    //! Pending tickers: key=ticker -> true (for dupe detection within a block)
+    std::set<std::string> pending_tickers;
+};
+
 class TokenDB {
 private:
     std::unique_ptr<CDBWrapper> m_db;
@@ -209,7 +241,7 @@ private:
     void WriteBalanceToBatch(CDBBatch& batch, const CScript& address, const src20::TokenId& token_id, uint64_t balance);
     
     /** Write token info to a batch for atomic writes */
-    void WriteTokenInfoToBatch(CDBBatch& batch, const TokenInfo& info) EXCLUSIVE_LOCKS_REQUIRED(!m_cs);
+    void WriteTokenInfoToBatch(CDBBatch& batch, const TokenInfo& info, bool update_cache = true) EXCLUSIVE_LOCKS_REQUIRED(!m_cs);
     
     void InvalidateCache(const src20::TokenId& token_id) const EXCLUSIVE_LOCKS_REQUIRED(!m_cs);
     void UpdateCache(const TokenInfo& info) const EXCLUSIVE_LOCKS_REQUIRED(!m_cs);
@@ -330,7 +362,8 @@ public:
         int height,
         int64_t time,
         CDBBatch* external_batch = nullptr,
-        uint16_t op_index = 0) EXCLUSIVE_LOCKS_REQUIRED(!m_cs);
+        uint16_t op_index = 0,
+        BalanceOverlay* overlay = nullptr) EXCLUSIVE_LOCKS_REQUIRED(!m_cs);
 
     /**
      * Burn tokens from an address
@@ -351,7 +384,8 @@ public:
         int height,
         int64_t time,
         CDBBatch* external_batch = nullptr,
-        uint16_t op_index = 0) EXCLUSIVE_LOCKS_REQUIRED(!m_cs);
+        uint16_t op_index = 0,
+        BalanceOverlay* overlay = nullptr) EXCLUSIVE_LOCKS_REQUIRED(!m_cs);
 
     // ----- History -----
 

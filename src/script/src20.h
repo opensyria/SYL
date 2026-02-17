@@ -96,6 +96,10 @@ static constexpr std::array<uint8_t, 5> SRC20_PROTOCOL_ID = {'S', 'R', 'C', '2',
 /** Maximum ticker length (4 bytes) */
 static constexpr size_t MAX_TICKER_LENGTH = 4;
 
+/** AUDIT FIX [M-06]: Minimum ticker length (3 chars) to prevent single-char
+ *  ticker squatting (e.g., "A", "B") which would exhaust the namespace. */
+static constexpr size_t MIN_TICKER_LENGTH = 3;
+
 /** Maximum name length (32 bytes) */
 static constexpr size_t MAX_NAME_LENGTH = 32;
 

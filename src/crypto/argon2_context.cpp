@@ -4,6 +4,7 @@
 
 #include <crypto/argon2_context.h>
 #include <consensus/params.h>
+#include <crypto/sha256.h>
 #include <logging.h>
 #include <streams.h>
 #include <util/check.h>
@@ -79,11 +80,19 @@ uint256 Argon2Context::CalculateHash(const std::vector<unsigned char>& input,
 uint256 Argon2Context::CalculateHash(const unsigned char* data, size_t len,
                                       const uint256& salt) const
 {
-    LOCK(m_mutex);
-
-    if (!m_initialized) {
-        throw std::runtime_error("Argon2 context not initialized");
+    // AUDIT FIX [M-03]: Narrowed lock scope. Previously the mutex was held for
+    // the entire crypto_pwhash call (which allocates 2GB and runs for seconds),
+    // serializing all Argon2 computations. The parameters (m_time_cost, etc.)
+    // are immutable after construction, and crypto_pwhash is thread-safe,
+    // so we only need the lock to verify initialization.
+    {
+        LOCK(m_mutex);
+        if (!m_initialized) {
+            throw std::runtime_error("Argon2 context not initialized");
+        }
     }
+    // After this point, m_time_cost/m_memory_cost/m_parallelism are safe to read
+    // without the lock — they are set once in the constructor and never modified.
 
     // Limit input size to prevent DoS
     static constexpr size_t ARGON2_MAX_INPUT_SIZE = 4 * 1024 * 1024; // 4MB
@@ -96,12 +105,26 @@ uint256 Argon2Context::CalculateHash(const unsigned char* data, size_t len,
 #if USE_LIBSODIUM
     // Use libsodium's Argon2id implementation
     // crypto_pwhash with ALG_ARGON2ID13
+    //
+    // AUDIT FIX [H-01]: libsodium's crypto_pwhash requires exactly
+    // crypto_pwhash_SALTBYTES (16) bytes of salt. The prev block hash is
+    // 32 bytes (uint256). We truncate via SHA-256 → first 16 bytes to ensure
+    // deterministic, domain-separated salt derivation.
+    unsigned char salt_16[crypto_pwhash_SALTBYTES];
+    {
+        CSHA256 hasher;
+        unsigned char full_hash[CSHA256::OUTPUT_SIZE];
+        hasher.Write(salt.begin(), 32);
+        hasher.Finalize(full_hash);
+        memcpy(salt_16, full_hash, crypto_pwhash_SALTBYTES);
+    }
+
     int ret = crypto_pwhash(
         result.begin(),                           // output
         HASH_LENGTH,                              // output length
         reinterpret_cast<const char*>(data),      // password (block header)
         len,                                      // password length
-        salt.begin(),                             // salt (prev block hash)
+        salt_16,                                  // salt (truncated to 16 bytes)
         m_time_cost,                              // opslimit (iterations)
         static_cast<size_t>(m_memory_cost) * 1024,// memlimit (bytes)
         crypto_pwhash_ALG_ARGON2ID13              // algorithm
@@ -181,23 +204,30 @@ bool Argon2Context::IsInitialized() const
 
 void InitArgon2Context(uint32_t memory_cost, uint32_t time_cost, uint32_t parallelism)
 {
-    // SECURITY FIX [M-01]: Use std::call_once to prevent data race on g_argon2_context.
-    // Previously, two threads could both read g_argon2_context as null and both call
-    // make_unique, causing undefined behavior on the non-atomic unique_ptr assignment.
-    //
-    // SECURITY FIX [M-11]: Capture parameters by VALUE, not by reference.
-    // With [&], if the first call wins the race with different parameters
-    // (e.g., from test code), all subsequent calls silently use wrong values,
-    // causing consensus divergence. Capturing by value freezes the parameters
-    // at the point of the winning call.
-    static std::once_flag g_argon2_init_flag;
-    std::call_once(g_argon2_init_flag, [memory_cost, time_cost, parallelism]() {
+    // AUDIT FIX [H-04]: Replaced std::call_once with parameter-aware init.
+    // std::call_once is permanent — once the flag is set, subsequent calls with
+    // different parameters (e.g., regtest vs mainnet in the same process) are
+    // silently ignored, causing consensus divergence. Now we compare params and
+    // re-initialize if they differ.
+    static std::mutex g_argon2_init_mutex;
+    std::lock_guard<std::mutex> lock(g_argon2_init_mutex);
+
+    if (g_argon2_context) {
+        // Already initialized — check if parameters match
+        if (g_argon2_context->GetMemoryCost() == memory_cost &&
+            g_argon2_context->GetTimeCost() == time_cost &&
+            g_argon2_context->GetParallelism() == parallelism) {
+            return; // Same params, nothing to do
+        }
+        LogPrintf("Argon2 context re-initializing with new params: m=%u t=%u p=%u\n",
+                  memory_cost, time_cost, parallelism);
+    }
+
 #if !USE_LIBSODIUM
-        LogPrintf("WARNING: Argon2 context using weak SHA256 fallback (libsodium not available)\n");
+    LogPrintf("WARNING: Argon2 context using weak SHA256 fallback (libsodium not available)\n");
 #endif
-        g_argon2_context = std::make_unique<Argon2Context>(
-            memory_cost, time_cost, parallelism);
-    });
+    g_argon2_context = std::make_unique<Argon2Context>(
+        memory_cost, time_cost, parallelism);
 }
 
 uint256 CalculateArgon2Hash(const CBlockHeader& header, const Consensus::Params& params)

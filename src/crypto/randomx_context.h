@@ -56,6 +56,9 @@ private:
     //! Flag indicating if context is ready for hashing
     bool m_initialized{false};
 
+    //! AUDIT FIX [L-01]: Cached CPU flags to avoid repeated randomx_get_flags() calls.
+    randomx_flags_int m_cached_flags{0};
+
     //! Cleanup internal resources
     void Cleanup() EXCLUSIVE_LOCKS_REQUIRED(m_mutex);
 
@@ -114,11 +117,10 @@ public:
      */
     uint256 GetKeyBlockHash() const EXCLUSIVE_LOCKS_REQUIRED(!m_mutex);
 
-    /**
-     * Get raw cache pointer for creating additional VMs.
-     * The cache must remain valid for the lifetime of any VMs created from it.
-     */
-    randomx_cache* GetCache() const EXCLUSIVE_LOCKS_REQUIRED(!m_mutex);
+    // AUDIT FIX [H-02]: GetCache() removed. It returned a raw randomx_cache*
+    // after releasing the lock, creating a use-after-free risk if the cache
+    // is destroyed by ShutdownRandomXContext() while the caller still holds
+    // the pointer. Callers that need a VM should use CalculateHash() instead.
 
     /**
      * Get the flags used for this context.

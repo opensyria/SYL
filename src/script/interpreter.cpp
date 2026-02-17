@@ -1473,8 +1473,12 @@ template PrecomputedTransactionData::PrecomputedTransactionData(const CMutableTr
 // A Taproot signature valid on OpenSY will fail verification on Bitcoin
 // (and vice versa) because the tagged hash prefix differs.
 const HashWriter HASHER_TAPSIGHASH{TaggedHash("TapSighash/opensy")};
-const HashWriter HASHER_TAPLEAF{TaggedHash("TapLeaf")};
-const HashWriter HASHER_TAPBRANCH{TaggedHash("TapBranch")};
+// AUDIT FIX [L-05]: Domain-separate TapLeaf and TapBranch hashers with /opensy
+// suffix for consistency with TapSighash/opensy. This ensures the entire Taproot
+// commitment structure (leaf hashes, branch hashes, sighash) is OpenSY-specific,
+// preventing any theoretical cross-chain script replay.
+const HashWriter HASHER_TAPLEAF{TaggedHash("TapLeaf/opensy")};
+const HashWriter HASHER_TAPBRANCH{TaggedHash("TapBranch/opensy")};
 
 static bool HandleMissingData(MissingDataBehavior mdb)
 {

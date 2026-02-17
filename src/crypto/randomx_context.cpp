@@ -86,6 +86,8 @@ bool RandomXContext::Initialize(const uint256& keyBlockHash)
 
     m_keyBlockHash = keyBlockHash;
     m_initialized = true;
+    // AUDIT FIX [L-01]: Cache the flags so GetFlags() doesn't call randomx_get_flags() each time.
+    m_cached_flags = static_cast<randomx_flags_int>(flags);
 
     return true;
 }
@@ -98,9 +100,10 @@ uint256 RandomXContext::CalculateHash(const std::vector<unsigned char>& input)
         throw std::runtime_error("RandomX context not initialized");
     }
 
-    // Limit input size to prevent DoS attacks
-    // Block headers are 80 bytes; allow generous margin for other uses
-    static constexpr size_t MAX_RANDOMX_INPUT = 4 * 1024 * 1024; // 4MB
+    // AUDIT FIX [L-04]: Reduced from 4MB to 1KB. Block headers are ~80 bytes;
+    // 4MB was unnecessarily generous and could amplify DoS (each call allocates
+    // a 2MB scratchpad). 1KB still provides ample headroom for any legitimate use.
+    static constexpr size_t MAX_RANDOMX_INPUT = 1024;
     if (input.size() > MAX_RANDOMX_INPUT) {
         throw std::runtime_error("RandomX input exceeds maximum size");
     }
@@ -126,7 +129,8 @@ uint256 RandomXContext::CalculateHash(const unsigned char* data, size_t len)
     }
 
     // Limit input size to prevent DoS attacks
-    static constexpr size_t MAX_RANDOMX_INPUT = 4 * 1024 * 1024; // 4MB
+    // AUDIT FIX [L-04]: Reduced from 4MB to 1KB (see vector overload comment).
+    static constexpr size_t MAX_RANDOMX_INPUT = 1024;
     if (len > MAX_RANDOMX_INPUT) {
         throw std::runtime_error("RandomX input exceeds maximum size");
     }
@@ -150,16 +154,13 @@ uint256 RandomXContext::GetKeyBlockHash() const
     return m_keyBlockHash;
 }
 
-randomx_cache* RandomXContext::GetCache() const
-{
-    LOCK(m_mutex);
-    return m_cache;
-}
+// AUDIT FIX [H-02]: GetCache() removed — see randomx_context.h for rationale.
 
 randomx_flags_int RandomXContext::GetFlags() const
 {
     LOCK(m_mutex);
-    return static_cast<randomx_flags_int>(randomx_get_flags());
+    // AUDIT FIX [L-01]: Return cached flags instead of querying CPU each time.
+    return m_cached_flags;
 }
 
 // ============================================================================
@@ -284,25 +285,36 @@ bool RandomXMiningContext::Initialize(const uint256& keyBlockHash, unsigned int 
         std::vector<std::thread> initThreads;
         unsigned long itemsPerThread = datasetItemCount / initThreads_count;
         
-        for (unsigned int i = 0; i < initThreads_count; ++i) {
-            unsigned long startItem = i * itemsPerThread;
-            unsigned long itemCount = (i == initThreads_count - 1) 
-                ? (datasetItemCount - startItem) 
-                : itemsPerThread;
-            
-            LogPrintf("RandomX Mining: Starting init thread %u for items [%lu, %lu)\n", 
-                      i, startItem, startItem + itemCount);
-            initThreads.emplace_back([this, startItem, itemCount, i]() {
-                LogPrintf("RandomX Mining: Thread %u initializing dataset...\n", i);
-                randomx_init_dataset(m_dataset.get(), m_cache, startItem, itemCount);
-                LogPrintf("RandomX Mining: Thread %u completed\n", i);
-            });
+        // AUDIT FIX [M-07]: Scope guard ensures all threads are joined even if
+        // emplace_back throws (e.g., out of memory for thread stack).
+        // Without this, std::thread destructor on a joinable thread calls std::terminate.
+        auto thread_guard = [&initThreads]() {
+            for (auto& t : initThreads) {
+                if (t.joinable()) t.join();
+            }
+        };
+        try {
+            for (unsigned int i = 0; i < initThreads_count; ++i) {
+                unsigned long startItem = i * itemsPerThread;
+                unsigned long itemCount = (i == initThreads_count - 1) 
+                    ? (datasetItemCount - startItem) 
+                    : itemsPerThread;
+                
+                LogPrintf("RandomX Mining: Starting init thread %u for items [%lu, %lu)\n", 
+                          i, startItem, startItem + itemCount);
+                initThreads.emplace_back([this, startItem, itemCount, i]() {
+                    LogPrintf("RandomX Mining: Thread %u initializing dataset...\n", i);
+                    randomx_init_dataset(m_dataset.get(), m_cache, startItem, itemCount);
+                    LogPrintf("RandomX Mining: Thread %u completed\n", i);
+                });
+            }
+        } catch (...) {
+            thread_guard();
+            throw;
         }
         
         LogPrintf("RandomX Mining: Waiting for %zu init threads to complete...\n", initThreads.size());
-        for (auto& t : initThreads) {
-            t.join();
-        }
+        thread_guard();
         LogPrintf("RandomX Mining: All init threads completed\n");
     } else {
         LogPrintf("RandomX Mining: Using single-threaded dataset init\n");

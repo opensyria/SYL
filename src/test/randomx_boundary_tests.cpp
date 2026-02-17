@@ -6,8 +6,8 @@
  * RandomX Input Boundary Tests
  * 
  * Tests boundary conditions for RandomX hashing:
- * - Input exactly at 4MB limit
- * - Input exceeding 4MB limit (expect throw)
+ * - Input exactly at 1KB limit
+ * - Input exceeding 1KB limit (expect throw)
  * - Single byte input
  * - Max hash constant verification
  */
@@ -26,18 +26,18 @@
 BOOST_FIXTURE_TEST_SUITE(randomx_boundary_tests, BasicTestingSetup)
 
 // =============================================================================
-// G-01: INPUT AT 4MB LIMIT
+// G-01: INPUT AT 1KB LIMIT
 // =============================================================================
 
 BOOST_AUTO_TEST_CASE(randomx_hash_at_exactly_max_input_size)
 {
-    // Test: Input at exactly 4MB should succeed
+    // Test: Input at exactly 1KB should succeed
     RandomXContext ctx;
     uint256 keyHash = uint256::ONE;
     BOOST_REQUIRE(ctx.Initialize(keyHash));
 
-    // Create exactly 4MB input (4 * 1024 * 1024 bytes)
-    const size_t MAX_RANDOMX_INPUT = 4 * 1024 * 1024;
+    // Create exactly 1KB input (1024 bytes)
+    const size_t MAX_RANDOMX_INPUT = 1024;
     std::vector<unsigned char> maxInput(MAX_RANDOMX_INPUT);
     
     // Fill with deterministic pattern for reproducibility
@@ -56,46 +56,46 @@ BOOST_AUTO_TEST_CASE(randomx_hash_at_exactly_max_input_size)
     uint256 hash2 = ctx.CalculateHash(maxInput);
     BOOST_CHECK_EQUAL(hash, hash2);
     
-    BOOST_TEST_MESSAGE("Successfully hashed 4MB input (exact limit): " << hash.GetHex().substr(0, 16) << "...");
+    BOOST_TEST_MESSAGE("Successfully hashed 1KB input (exact limit): " << hash.GetHex().substr(0, 16) << "...");
 }
 
 // =============================================================================
-// G-02: INPUT EXCEEDS 4MB LIMIT
+// G-02: INPUT EXCEEDS 1KB LIMIT
 // =============================================================================
 
 BOOST_AUTO_TEST_CASE(randomx_hash_exceeds_max_input_throws)
 {
-    // Test: Input exceeding 4MB should throw runtime_error
+    // Test: Input exceeding 1KB should throw runtime_error
     RandomXContext ctx;
     uint256 keyHash = uint256::ONE;
     BOOST_REQUIRE(ctx.Initialize(keyHash));
 
-    // Create 4MB + 1 byte input
-    const size_t OVER_LIMIT = 4 * 1024 * 1024 + 1;
+    // Create 1KB + 1 byte input (1025 bytes)
+    const size_t OVER_LIMIT = 1025;
     std::vector<unsigned char> tooLarge(OVER_LIMIT);
     std::fill(tooLarge.begin(), tooLarge.end(), 0xDE);
 
     // Should throw runtime_error
     BOOST_CHECK_THROW(ctx.CalculateHash(tooLarge), std::runtime_error);
     
-    BOOST_TEST_MESSAGE("Correctly rejected input of " << OVER_LIMIT << " bytes (exceeds 4MB limit)");
+    BOOST_TEST_MESSAGE("Correctly rejected input of " << OVER_LIMIT << " bytes (exceeds 1KB limit)");
 }
 
 BOOST_AUTO_TEST_CASE(randomx_hash_significantly_exceeds_max_input)
 {
-    // Test: 8MB input should also throw
+    // Test: 2048-byte input (well above 1KB limit) should also throw
     RandomXContext ctx;
     uint256 keyHash = uint256::ONE;
     BOOST_REQUIRE(ctx.Initialize(keyHash));
 
-    // Create 8MB input
-    const size_t DOUBLE_LIMIT = 8 * 1024 * 1024;
+    // Create 2048-byte input (well above 1KB limit)
+    const size_t DOUBLE_LIMIT = 2048;
     std::vector<unsigned char> veryLarge(DOUBLE_LIMIT);
     std::fill(veryLarge.begin(), veryLarge.end(), 0xAB);
 
     BOOST_CHECK_THROW(ctx.CalculateHash(veryLarge), std::runtime_error);
     
-    BOOST_TEST_MESSAGE("Correctly rejected 8MB input");
+    BOOST_TEST_MESSAGE("Correctly rejected 2048-byte input");
 }
 
 // =============================================================================
@@ -193,22 +193,17 @@ BOOST_AUTO_TEST_CASE(randomx_hash_various_sizes)
     uint256 keyHash = uint256::ONE;
     BOOST_REQUIRE(ctx.Initialize(keyHash));
 
-    // Test various sizes
+    // Test various sizes (up to 1KB limit)
     std::vector<size_t> testSizes = {
         0,          // Empty
         1,          // Single byte
         80,         // Block header size
         255,        // Max uint8
         256,        // Boundary
-        1023,
-        1024,       // 1KB
-        4095,
-        4096,       // 4KB
-        65535,
-        65536,      // 64KB
-        1048576,    // 1MB
-        2097152,    // 2MB
-        4194304     // 4MB (limit)
+        512,        // Mid-range
+        768,        // 3/4 of limit
+        1023,       // One byte below limit
+        1024        // 1KB (limit)
     };
 
     std::set<uint256> hashes;
@@ -238,12 +233,12 @@ BOOST_AUTO_TEST_CASE(randomx_hash_various_sizes)
 
 BOOST_AUTO_TEST_CASE(randomx_hash_raw_pointer_at_limit)
 {
-    // Test: Raw pointer interface at 4MB limit
+    // Test: Raw pointer interface at 1KB limit
     RandomXContext ctx;
     uint256 keyHash = uint256::ONE;
     BOOST_REQUIRE(ctx.Initialize(keyHash));
 
-    const size_t MAX_SIZE = 4 * 1024 * 1024;
+    const size_t MAX_SIZE = 1024;
     std::vector<unsigned char> data(MAX_SIZE, 0xCD);
     
     // Use raw pointer interface
@@ -258,12 +253,12 @@ BOOST_AUTO_TEST_CASE(randomx_hash_raw_pointer_at_limit)
 
 BOOST_AUTO_TEST_CASE(randomx_hash_raw_pointer_exceeds_limit)
 {
-    // Test: Raw pointer interface exceeding limit
+    // Test: Raw pointer interface exceeding 1KB limit
     RandomXContext ctx;
     uint256 keyHash = uint256::ONE;
     BOOST_REQUIRE(ctx.Initialize(keyHash));
 
-    const size_t OVER_SIZE = 4 * 1024 * 1024 + 1;
+    const size_t OVER_SIZE = 1025;
     std::vector<unsigned char> data(OVER_SIZE, 0xEF);
     
     BOOST_CHECK_THROW(ctx.CalculateHash(data.data(), data.size()), std::runtime_error);
