@@ -156,14 +156,15 @@ static_assert(MAX_BLOCKTXN_DEPTH <= MIN_BLOCKS_TO_KEEP, "MAX_BLOCKTXN_DEPTH too 
  *  degree of disordering of blocks on disk (which make reindexing and pruning harder). We'll probably
  *  want to make this a per-peer adaptive value at some point. */
 static const unsigned int BLOCK_DOWNLOAD_WINDOW = 1024;
-/** Block download timeout base, expressed in multiples of the block interval (i.e. 10 min) */
+/** Block download timeout base, expressed in multiples of the block interval (i.e. 2 min) */
 static constexpr double BLOCK_DOWNLOAD_TIMEOUT_BASE = 1;
-/** Additional block download timeout per parallel downloading peer (i.e. 5 min) */
+/** Additional block download timeout per parallel downloading peer (i.e. 1 min) */
 static constexpr double BLOCK_DOWNLOAD_TIMEOUT_PER_PEER = 0.5;
 /** Maximum number of headers to announce when relaying blocks with headers message.*/
 static const unsigned int MAX_BLOCKS_TO_ANNOUNCE = 8;
 /** Minimum blocks required to signal NODE_NETWORK_LIMITED */
-static const unsigned int NODE_NETWORK_LIMITED_MIN_BLOCKS = 288;
+// AUDIT FIX [P-01]: Increased from 288 to 1440 for 2-minute blocks (~48 hours).
+static const unsigned int NODE_NETWORK_LIMITED_MIN_BLOCKS = 1440;
 /** Window, in blocks, for connecting to NODE_NETWORK_LIMITED peers */
 static const unsigned int NODE_NETWORK_LIMITED_ALLOW_CONN_BLOCKS = 144;
 /** Average delay between local address broadcasts */
@@ -1746,13 +1747,47 @@ bool PeerManagerImpl::HasAllDesirableServiceFlags(ServiceFlags services) const
 
 ServiceFlags PeerManagerImpl::GetDesirableServiceFlags(ServiceFlags services) const
 {
-    if (services & NODE_NETWORK_LIMITED) {
+    ServiceFlags network_flag = NODE_NETWORK;
+
+    if ((services & NODE_NETWORK_LIMITED) &&
+        ApproximateBestBlockDepth() < NODE_NETWORK_LIMITED_ALLOW_CONN_BLOCKS) {
         // Limited peers are desirable when we are close to the tip.
-        if (ApproximateBestBlockDepth() < NODE_NETWORK_LIMITED_ALLOW_CONN_BLOCKS) {
-            return ServiceFlags(NODE_NETWORK_LIMITED | NODE_WITNESS);
+        network_flag = NODE_NETWORK_LIMITED;
+    }
+
+    // AUDIT FIX [N-01]: After the RandomX fork, require NODE_RANDOMX from peers.
+    // Un-upgraded nodes that cannot validate RandomX blocks waste outbound slots
+    // and cannot relay valid blocks post-fork.
+    //
+    // We approximate whether the chain has passed the fork by checking if enough
+    // time has elapsed for the fork height to have been reached:
+    //   estimated_fork_time = genesis_time + fork_height * target_spacing
+    // This avoids requiring cs_main. We add a generous 30-day buffer to avoid
+    // prematurely disconnecting peers during slow initial sync.
+    //
+    // Skipped on regtest (fPowNoRetargeting) since regtest chains are short-lived
+    // and may never reach the fork height.
+    const auto& consensusParams = m_chainparams.GetConsensus();
+    ServiceFlags extra_flags{};
+    if (!consensusParams.fPowNoRetargeting &&
+        consensusParams.nRandomXForkHeight > 0 &&
+        consensusParams.nRandomXForkHeight < std::numeric_limits<int>::max() / 2) {
+        // Estimate when the fork should have occurred (seconds since epoch)
+        const int64_t estimated_fork_seconds =
+            static_cast<int64_t>(consensusParams.nRandomXForkHeight) * consensusParams.nPowTargetSpacing;
+        // Genesis timestamp for mainnet is ~1733631480 (Dec 8, 2024)
+        // We don't need exact genesis time — just check if enough wall-clock time
+        // has passed since the node started that the fork is certainly in the past.
+        // Using a conservative 30-day buffer beyond the estimated fork duration.
+        const auto now = GetTime<std::chrono::seconds>();
+        const int64_t chain_age_seconds = now.count() - 1733631480; // approx genesis time
+        const int64_t buffer_seconds = 30 * 24 * 60 * 60; // 30 days
+        if (chain_age_seconds > estimated_fork_seconds + buffer_seconds) {
+            extra_flags = NODE_RANDOMX;
         }
     }
-    return ServiceFlags(NODE_NETWORK | NODE_WITNESS);
+
+    return ServiceFlags(network_flag | NODE_WITNESS | extra_flags);
 }
 
 PeerRef PeerManagerImpl::GetPeerRef(NodeId id) const
@@ -4256,7 +4291,8 @@ void PeerManagerImpl::ProcessMessage(CNode& pfrom, const std::string& msg_type, 
                 break;
             }
             // If pruning, don't inv blocks unless we have on disk and are likely to still have
-            // for some reasonable time window (1 hour) that block relay might require.
+            // for some reasonable time window (1 hour = 3600s) that block relay might require.
+            // With 2-min blocks: 3600/120 = 30 blocks subtracted from MIN_BLOCKS_TO_KEEP.
             const int nPrunedBlocksLikelyToHave = MIN_BLOCKS_TO_KEEP - 3600 / m_chainparams.GetConsensus().nPowTargetSpacing;
             if (m_chainman.m_blockman.IsPruneMode() && (!(pindex->nStatus & BLOCK_HAVE_DATA) || pindex->nHeight <= m_chainman.ActiveChain().Tip()->nHeight - nPrunedBlocksLikelyToHave)) {
                 LogDebug(BCLog::NET, " getblocks stopping, pruned or too old block at %d %s\n", pindex->nHeight, pindex->GetBlockHash().ToString());

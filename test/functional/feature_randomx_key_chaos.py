@@ -25,9 +25,9 @@ class RandomXKeyChaosTest(OpenSYTestFramework):
         self.setup_clean_chain = True
         # Use low fork height and short key interval for faster testing
         self.extra_args = [
-            ["-randomxforkheight=10", "-randomxkeyblockinterval=8"],
-            ["-randomxforkheight=10", "-randomxkeyblockinterval=8"],
-            ["-randomxforkheight=10", "-randomxkeyblockinterval=8"],
+            ["-randomxforkheight=10", "-randomxkeyinterval=8"],
+            ["-randomxforkheight=10", "-randomxkeyinterval=8"],
+            ["-randomxforkheight=10", "-randomxkeyinterval=8"],
         ]
 
     def run_test(self):

@@ -17,8 +17,6 @@ from test_framework.test_framework import OpenSYTestFramework
 from test_framework.util import (
     assert_equal,
     assert_greater_than,
-    connect_nodes,
-    disconnect_nodes,
 )
 import time
 
@@ -40,6 +38,11 @@ class NetworkPartitionRecoveryTest(OpenSYTestFramework):
 
     def run_test(self):
         self.log.info("=== M-04 Network Partition Recovery Tests ===")
+
+        # Mine initial blocks to exit IBD on all nodes — during IBD,
+        # block relay between peers is restricted and sync won't work.
+        self.log.info("Mining initial blocks to exit IBD")
+        self.generate(self.nodes[0], 2)
         
         self.log.info("Test 1: Basic two-node partition recovery")
         self.test_basic_partition_recovery()
@@ -65,18 +68,18 @@ class NetworkPartitionRecoveryTest(OpenSYTestFramework):
         
         # Partition: disconnect node 0 from node 1
         self.log.info(f"Partitioning at height {initial_height}")
-        disconnect_nodes(self.nodes[0], 1)
+        self.disconnect_nodes(0, 1)
         
-        # Mine a block on node 0
+        # Mine a block on node 0 (no sync — network is partitioned)
         addr0 = self.nodes[0].getnewaddress()
-        self.generatetoaddress(self.nodes[0], 1, addr0)
+        self.generatetoaddress(self.nodes[0], 1, addr0, sync_fun=self.no_op)
         
         # Verify node 0 has one more block than node 1
         assert_equal(self.nodes[0].getblockcount(), initial_height + 1)
         
         # Reconnect
         self.log.info("Reconnecting partition")
-        connect_nodes(self.nodes[0], 1)
+        self.connect_nodes(0, 1)
         
         # Wait for sync
         self.sync_all()
@@ -104,19 +107,19 @@ class NetworkPartitionRecoveryTest(OpenSYTestFramework):
         
         # Create partition: nodes 0,1 vs nodes 2,3
         self.log.info("Creating partition: [0,1] vs [2,3]")
-        disconnect_nodes(self.nodes[1], 2)
-        disconnect_nodes(self.nodes[0], 2)
-        disconnect_nodes(self.nodes[0], 3)
-        disconnect_nodes(self.nodes[1], 3)
+        self.disconnect_nodes(1, 2)
+        self.disconnect_nodes(0, 2)
+        self.disconnect_nodes(0, 3)
+        self.disconnect_nodes(1, 3)
         
         # Mine 2 blocks on partition A (nodes 0,1)
         addr0 = self.nodes[0].getnewaddress()
-        self.generatetoaddress(self.nodes[0], 2, addr0)
+        self.generatetoaddress(self.nodes[0], 2, addr0, sync_fun=self.no_op)
         self.sync_blocks([self.nodes[0], self.nodes[1]])
         
         # Mine 3 blocks on partition B (nodes 2,3) - this should win
         addr2 = self.nodes[2].getnewaddress()
-        self.generatetoaddress(self.nodes[2], 3, addr2)
+        self.generatetoaddress(self.nodes[2], 3, addr2, sync_fun=self.no_op)
         self.sync_blocks([self.nodes[2], self.nodes[3]])
         
         # Verify chains diverged
@@ -126,10 +129,10 @@ class NetworkPartitionRecoveryTest(OpenSYTestFramework):
         
         # Reconnect all nodes
         self.log.info("Reconnecting all nodes")
-        connect_nodes(self.nodes[1], 2)
-        connect_nodes(self.nodes[0], 2)
-        connect_nodes(self.nodes[0], 3)
-        connect_nodes(self.nodes[1], 3)
+        self.connect_nodes(1, 2)
+        self.connect_nodes(0, 2)
+        self.connect_nodes(0, 3)
+        self.connect_nodes(1, 3)
         
         # Wait for reorg to complete
         self.sync_all()
@@ -137,20 +140,12 @@ class NetworkPartitionRecoveryTest(OpenSYTestFramework):
         # All nodes should be on the longer chain (partition B's chain)
         expected_height = initial_height + 3
         for i, node in enumerate(self.nodes):
-            assert_equal(
-                node.getblockcount(),
-                expected_height,
-                f"Node {i} should be at height {expected_height}"
-            )
+            assert_equal(node.getblockcount(), expected_height)
         
         # All nodes should have same tip
         tip = self.nodes[2].getbestblockhash()
         for i, node in enumerate(self.nodes):
-            assert_equal(
-                node.getbestblockhash(),
-                tip,
-                f"Node {i} should have same tip as winning partition"
-            )
+            assert_equal(node.getbestblockhash(), tip)
         
         self.log.info("✓ Partition with competing chains resolved correctly")
 
@@ -163,19 +158,19 @@ class NetworkPartitionRecoveryTest(OpenSYTestFramework):
         
         # Partition node 3 from everyone
         self.log.info("Isolating node 3")
-        disconnect_nodes(self.nodes[2], 3)
-        disconnect_nodes(self.nodes[0], 3)
-        disconnect_nodes(self.nodes[1], 3)
+        self.disconnect_nodes(2, 3)
+        self.disconnect_nodes(0, 3)
+        self.disconnect_nodes(1, 3)
         
         # Mine blocks on both partitions
         # Majority (nodes 0,1,2) mines 2 blocks
         addr0 = self.nodes[0].getnewaddress()
-        self.generatetoaddress(self.nodes[0], 2, addr0)
+        self.generatetoaddress(self.nodes[0], 2, addr0, sync_fun=self.no_op)
         self.sync_blocks([self.nodes[0], self.nodes[1], self.nodes[2]])
         
         # Isolated node 3 mines 1 block
         addr3 = self.nodes[3].getnewaddress()
-        self.generatetoaddress(self.nodes[3], 1, addr3)
+        self.generatetoaddress(self.nodes[3], 1, addr3, sync_fun=self.no_op)
         
         # Verify chains diverged
         assert_equal(self.nodes[0].getblockcount(), initial_height + 2)
@@ -183,7 +178,7 @@ class NetworkPartitionRecoveryTest(OpenSYTestFramework):
         
         # Reconnect
         self.log.info("Reconnecting isolated node")
-        connect_nodes(self.nodes[2], 3)
+        self.connect_nodes(2, 3)
         
         # Wait for sync - node 3 should reorg to majority chain
         self.sync_all()
@@ -212,20 +207,20 @@ class NetworkPartitionRecoveryTest(OpenSYTestFramework):
         self.log.info(f"Testing partition across key rotation from height {current_height}")
         
         # Partition
-        disconnect_nodes(self.nodes[0], 1)
+        self.disconnect_nodes(0, 1)
         
         # Mine 5 blocks on each partition
         addr0 = self.nodes[0].getnewaddress()
         addr1 = self.nodes[1].getnewaddress()
         
         # Node 0 mines 5 blocks
-        self.generatetoaddress(self.nodes[0], 5, addr0)
+        self.generatetoaddress(self.nodes[0], 5, addr0, sync_fun=self.no_op)
         
         # Node 1 mines 6 blocks (will win)
-        self.generatetoaddress(self.nodes[1], 6, addr1)
+        self.generatetoaddress(self.nodes[1], 6, addr1, sync_fun=self.no_op)
         
         # Reconnect
-        connect_nodes(self.nodes[0], 1)
+        self.connect_nodes(0, 1)
         
         # Sync
         self.sync_all()
@@ -233,11 +228,7 @@ class NetworkPartitionRecoveryTest(OpenSYTestFramework):
         # Verify all nodes on same chain
         tip = self.nodes[1].getbestblockhash()
         for i, node in enumerate(self.nodes):
-            assert_equal(
-                node.getbestblockhash(),
-                tip,
-                f"Node {i} should converge to winning chain"
-            )
+            assert_equal(node.getbestblockhash(), tip)
         
         # Verify chain is valid (blocks can be retrieved)
         height = self.nodes[0].getblockcount()

@@ -22,6 +22,7 @@
 #include <deque>
 #include <mutex>
 #include <stdexcept>
+#include <string>
 
 using node::NodeContext;
 
@@ -252,10 +253,29 @@ UniValue TokenInfoToJSON(const tokens::TokenInfo& info)
     result.pushKV("holder_count", info.holder_count);
     result.pushKV("transfer_count", info.transfer_count);
     
-    // Calculate human-readable supply
-    double divisor = std::pow(10, info.decimals);
-    result.pushKV("total_supply_formatted", info.total_supply / divisor);
-    result.pushKV("circulating_supply_formatted", info.circulating_supply / divisor);
+    // AUDIT FIX [M-R6]: Use integer arithmetic + string formatting instead of
+    // double division, which loses precision for values > 2^53 (~9 * 10^15).
+    // With MAX_MONEY = 2.1 * 10^18, double cannot represent all values exactly.
+    auto FormatWithDecimals = [](int64_t value, int decimals) -> std::string {
+        if (decimals <= 0) return std::to_string(value);
+        int64_t divisor = 1;
+        for (int i = 0; i < decimals; ++i) divisor *= 10;
+        int64_t whole = value / divisor;
+        int64_t frac = std::abs(value % divisor);
+        // Format fractional part with leading zeros, then strip trailing zeros
+        std::string frac_str = std::to_string(frac);
+        while (static_cast<int>(frac_str.size()) < decimals) frac_str = "0" + frac_str;
+        // Remove trailing zeros for cleaner output
+        size_t last_nonzero = frac_str.find_last_not_of('0');
+        if (last_nonzero != std::string::npos) {
+            frac_str = frac_str.substr(0, last_nonzero + 1);
+        } else {
+            frac_str = "0";
+        }
+        return std::to_string(whole) + "." + frac_str;
+    };
+    result.pushKV("total_supply_formatted", FormatWithDecimals(info.total_supply, info.decimals));
+    result.pushKV("circulating_supply_formatted", FormatWithDecimals(info.circulating_supply, info.decimals));
     
     return result;
 }
@@ -272,8 +292,24 @@ UniValue TokenBalanceToJSON(const tokens::TokenBalance& balance, const tokens::T
         result.pushKV("name", info->name);
         result.pushKV("decimals", info->decimals);
         
-        double divisor = std::pow(10, info->decimals);
-        result.pushKV("balance_formatted", balance.balance / divisor);
+        // AUDIT FIX [M-R6]: Integer arithmetic for formatted balance (no float precision loss)
+        auto FormatBalance = [](int64_t value, int decimals) -> std::string {
+            if (decimals <= 0) return std::to_string(value);
+            int64_t divisor = 1;
+            for (int i = 0; i < decimals; ++i) divisor *= 10;
+            int64_t whole = value / divisor;
+            int64_t frac = std::abs(value % divisor);
+            std::string frac_str = std::to_string(frac);
+            while (static_cast<int>(frac_str.size()) < decimals) frac_str = "0" + frac_str;
+            size_t last_nonzero = frac_str.find_last_not_of('0');
+            if (last_nonzero != std::string::npos) {
+                frac_str = frac_str.substr(0, last_nonzero + 1);
+            } else {
+                frac_str = "0";
+            }
+            return std::to_string(whole) + "." + frac_str;
+        };
+        result.pushKV("balance_formatted", FormatBalance(balance.balance, info->decimals));
     }
     
     return result;
@@ -343,8 +379,8 @@ static RPCHelpMan gettokeninfo()
                 {RPCResult::Type::NUM, "issuance_time", "Unix timestamp of issuance"},
                 {RPCResult::Type::NUM, "holder_count", "Number of holders"},
                 {RPCResult::Type::NUM, "transfer_count", "Number of transfers"},
-                {RPCResult::Type::NUM, "total_supply_formatted", "Human-readable total supply"},
-                {RPCResult::Type::NUM, "circulating_supply_formatted", "Human-readable circulating supply"},
+                {RPCResult::Type::STR, "total_supply_formatted", "Human-readable total supply"},
+                {RPCResult::Type::STR, "circulating_supply_formatted", "Human-readable circulating supply"},
             }
         },
         RPCExamples{
@@ -354,6 +390,8 @@ static RPCHelpMan gettokeninfo()
         [&](const RPCHelpMan& self, const JSONRPCRequest& request) -> UniValue
         {
             EnsureTokenDB();
+            // AUDIT FIX [RPC-RL]: Rate-limit gettokeninfo to prevent lookup spam.
+            CheckRPCRateLimit(request, "gettokeninfo");
 
             std::string token_id_hex = request.params[0].get_str();
             auto token_id = src20::TokenId::FromHex(token_id_hex);
@@ -388,6 +426,8 @@ static RPCHelpMan gettokenbyname()
         [&](const RPCHelpMan& self, const JSONRPCRequest& request) -> UniValue
         {
             EnsureTokenDB();
+            // AUDIT FIX [RPC-RL]: Rate-limit gettokenbyname to prevent lookup spam.
+            CheckRPCRateLimit(request, "gettokenbyname");
 
             std::string ticker = request.params[0].get_str();
             
@@ -420,7 +460,7 @@ static RPCHelpMan gettokenbalance()
                         {RPCResult::Type::STR, "name", "Token name"},
                         {RPCResult::Type::NUM, "decimals", "Decimal places"},
                         {RPCResult::Type::NUM, "balance", "Balance in smallest units"},
-                        {RPCResult::Type::NUM, "balance_formatted", "Human-readable balance"},
+                        {RPCResult::Type::STR, "balance_formatted", "Human-readable balance"},
                     }
                 }
             }
@@ -595,8 +635,19 @@ static RPCHelpMan gettokenholders()
                 
                 obj.pushKV("balance", holder.balance);
                 
-                double percentage = 100.0 * holder.balance / info->total_supply;
-                obj.pushKV("percentage", percentage);
+                // Percentage with 2 decimal places via integer arithmetic.
+                // balance * 10000 could overflow int64_t for very large values,
+                // so we compute in two steps: whole % first, then fractional.
+                int64_t pct_whole = (info->total_supply > 0) ? (holder.balance / (info->total_supply / 100)) : 0;
+                int64_t remainder = (info->total_supply > 0) ? (holder.balance % (info->total_supply / 100)) : 0;
+                int64_t pct_frac = (info->total_supply > 0) ? (remainder * 100 / (info->total_supply / 100)) : 0;
+                // Clamp to avoid display issues
+                if (pct_whole > 100) pct_whole = 100;
+                if (pct_frac < 0) pct_frac = 0;
+                char pct_buf[16];
+                std::snprintf(pct_buf, sizeof(pct_buf), "%d.%02d",
+                              static_cast<int>(pct_whole), static_cast<int>(pct_frac));
+                obj.pushKV("percentage", std::string(pct_buf));
                 
                 result.push_back(obj);
             }
@@ -895,6 +946,8 @@ static RPCHelpMan gettokenstats()
         [&](const RPCHelpMan& self, const JSONRPCRequest& request) -> UniValue
         {
             EnsureTokenDB();
+            // AUDIT FIX [RPC-RL]: Rate-limit gettokenstats to prevent stats-query spam.
+            CheckRPCRateLimit(request, "gettokenstats");
 
             UniValue result(UniValue::VOBJ);
             result.pushKV("token_count", tokens::g_tokendb->GetTokenCount());
@@ -926,6 +979,9 @@ static RPCHelpMan decodesrc20()
         },
         [&](const RPCHelpMan& self, const JSONRPCRequest& request) -> UniValue
         {
+            // AUDIT FIX [RPC-RL]: Rate-limit decodesrc20 to prevent parsing spam.
+            CheckRPCRateLimit(request, "decodesrc20");
+
             std::string hex = request.params[0].get_str();
             std::vector<unsigned char> script_data = ParseHex(hex);
             CScript script(script_data.begin(), script_data.end());
@@ -1004,6 +1060,9 @@ static RPCHelpMan getreservedtickers()
         },
         [&](const RPCHelpMan& self, const JSONRPCRequest& request) -> UniValue
         {
+            // AUDIT FIX [RPC-RL]: Rate-limit getreservedtickers to prevent enumeration spam.
+            CheckRPCRateLimit(request, "getreservedtickers");
+
             std::vector<std::string> reserved = src20::reserved::GetReservedTickers();
 
             UniValue tickers(UniValue::VARR);

@@ -667,7 +667,10 @@ def LegacySignatureMsg(script, txTo, inIdx, hashtype):
         txtmp.vin = []
         txtmp.vin.append(tmp)
 
-    s = txtmp.serialize_without_witness()
+    # OPENSY: Prepend genesis hash for cross-chain replay protection (matches C++ SignatureHash)
+    OPENSY_GENESIS = bytes.fromhex("000000c4c94f54e5ae60a67df5c113dfbfd9ef872639e2359d15796f27920fd1")[::-1]
+    s = OPENSY_GENESIS
+    s += txtmp.serialize_without_witness()
     s += hashtype.to_bytes(4, "little")
 
     return (s, None)
@@ -709,6 +712,8 @@ def sign_input_segwitv0(tx, input_index, input_scriptpubkey, input_amount, privk
 # for version 0 witnesses.
 def SegwitV0SignatureMsg(script, txTo, inIdx, hashtype, amount):
     ZERO_HASH = bytes([0]*32)
+    # OPENSY: Prepend genesis hash for cross-chain replay protection (matches C++ SignatureHash)
+    OPENSY_GENESIS = bytes.fromhex("000000c4c94f54e5ae60a67df5c113dfbfd9ef872639e2359d15796f27920fd1")[::-1]
 
     hashPrevouts = ZERO_HASH
     hashSequence = ZERO_HASH
@@ -736,6 +741,7 @@ def SegwitV0SignatureMsg(script, txTo, inIdx, hashtype, amount):
         hashOutputs = hash256(serialize_outputs)
 
     ss = bytes()
+    ss += OPENSY_GENESIS
     ss += txTo.version.to_bytes(4, "little")
     ss += hashPrevouts
     ss += hashSequence
@@ -845,14 +851,14 @@ def TaprootSignatureMsg(txTo, spent_utxos, hash_type, input_index=0, *, scriptpa
         else:
             ss += bytes(0 for _ in range(32))
     if scriptpath:
-        ss += TaggedHash("TapLeaf", bytes([leaf_ver]) + ser_string(leaf_script))
+        ss += TaggedHash("TapLeaf/opensy", bytes([leaf_ver]) + ser_string(leaf_script))
         ss += bytes([0])
         ss += codeseparator_pos.to_bytes(4, "little", signed=False)
     assert len(ss) == 175 - (in_type == SIGHASH_ANYONECANPAY) * 49 - (out_type != SIGHASH_ALL and out_type != SIGHASH_SINGLE) * 32 + (annex is not None) * 32 + scriptpath * 37
     return ss
 
 def TaprootSignatureHash(*args, **kwargs):
-    return TaggedHash("TapSighash", TaprootSignatureMsg(*args, **kwargs))
+    return TaggedHash("TapSighash/opensy", TaprootSignatureMsg(*args, **kwargs))
 
 def taproot_tree_helper(scripts):
     if len(scripts) == 0:
@@ -871,7 +877,7 @@ def taproot_tree_helper(scripts):
             version = script[2]
         assert version & 1 == 0
         assert isinstance(code, bytes)
-        h = TaggedHash("TapLeaf", bytes([version]) + ser_string(code))
+        h = TaggedHash("TapLeaf/opensy", bytes([version]) + ser_string(code))
         if name is None:
             return ([], h)
         return ([(name, version, code, bytes(), h)], h)
@@ -890,7 +896,7 @@ def taproot_tree_helper(scripts):
         right = [(name, version, script, control + left_h, leaf) for name, version, script, control, leaf in right]
     if right_h < left_h:
         right_h, left_h = left_h, right_h
-    h = TaggedHash("TapBranch", left_h + right_h)
+    h = TaggedHash("TapBranch/opensy", left_h + right_h)
     return (left + right, h)
 
 # A TaprootInfo object has the following fields:

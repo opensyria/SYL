@@ -405,19 +405,13 @@ public:
         consensus.vDeployments[Consensus::DEPLOYMENT_TAPROOT].threshold = 7560; // 75% of 10080
         consensus.vDeployments[Consensus::DEPLOYMENT_TAPROOT].period = 10080; // Matches DifficultyAdjustmentInterval()
 
-        // AUDIT FIX [M-3]: Testnet chain work values are currently empty, making
-        // the testnet trivially attackable. Once testnet has stabilized with
-        // sufficient chain work, update these values:
+        // AUDIT FIX [M-3]: Testnet minimum chain work — requires 1000+ RandomX blocks
+        // to be mined before a peer is considered synced. Update periodically:
         //   opensy-cli -testnet getblockchaininfo | jq '.chainwork, .bestblockhash'
-        // Then set:
-        //   consensus.nMinimumChainWork = uint256{"<chainwork_hex>"};
-        //   consensus.defaultAssumeValid = uint256{"<bestblockhash>"};
         //
-        // STATUS (2026-02-17): Testnet at block 0 (genesis only). Chainwork
-        // 0x01000100 is trivially meetable — no value in setting it yet.
-        // Revisit once testnet has 1000+ blocks of RandomX work.
-        consensus.nMinimumChainWork = uint256{};
-        consensus.defaultAssumeValid = uint256{}; // New chain - no assumed valid block yet
+        // Last updated: 2026-02-17 at block 1000 (RandomX from block 1)
+        consensus.nMinimumChainWork = uint256{"000000000000000000000000000000000000000000000000000000000103e900"};
+        consensus.defaultAssumeValid = uint256{"7f80ea6743d8dd496812b761494196fc264bfe94ba9e36964e8eb164c8fd1dbd"}; // Block 1000
 
         // RandomX from block 1 for testing (mainnet forks at 210,000)
         consensus.nRandomXForkHeight = 1;
@@ -467,11 +461,13 @@ public:
         m_assumeutxo_data = {};
 
 
-        // Chain transaction data - initialized for genesis
+        // Chain transaction data — for sync time estimation
+        // Last updated: 2026-02-17 at block 1000
+        //   opensy-cli -testnet getchaintxstats
         chainTxData = ChainTxData{
-            .nTime    = 1733616001, // Testnet genesis timestamp
-            .tx_count = 1,
-            .dTxRate  = 0.001, // Initial low rate for new chain
+            .nTime    = 1771361348,  // Block 1000 timestamp
+            .tx_count = 1001,
+            .dTxRate  = 2.4545,      // ~2.45 tx/s during bootstrap
         };
 
 

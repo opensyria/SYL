@@ -2392,7 +2392,15 @@ bool Chainstate::ConnectBlock(const CBlock& block, BlockValidationState& state, 
     // Without this, a code path that skips header validation could connect
     // an invalid-PoW block, violating the consensus invariant.
     // BLOCK_VALID_TREE means the block's header and position in the tree are valid.
-    assert(pindex->IsValid(BLOCK_VALID_TREE));
+    //
+    // Exception: When fJustCheck is true, ConnectBlock is called by
+    // TestBlockValidity (via CreateNewBlock) with a dummy CBlockIndex that
+    // was never processed through AddToBlockIndex, so it won't have
+    // BLOCK_VALID_TREE. TestBlockValidity independently validates PoW via
+    // ContextualCheckBlockHeader before reaching this point.
+    if (!fJustCheck) {
+        assert(pindex->IsValid(BLOCK_VALID_TREE));
+    }
 
     const auto time_start{SteadyClock::now()};
     const CChainParams& params{m_chainman.GetParams()};

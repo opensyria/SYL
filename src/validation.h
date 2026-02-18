@@ -69,18 +69,21 @@ class SignalInterrupt;
 } // namespace util
 
 /** Block files containing a block-height within MIN_BLOCKS_TO_KEEP of ActiveChain().Tip() will not be pruned. */
-static const unsigned int MIN_BLOCKS_TO_KEEP = 288;
+// AUDIT FIX [P-01]: Increased from 288 to 1440 for 2-minute block times.
+// Bitcoin's 288 blocks × 10 min = 48 hours. OpenSY's 1440 blocks × 2 min = 48 hours.
+// This ensures pruned nodes retain ~48 hours of blocks, matching Bitcoin's pruning horizon.
+static const unsigned int MIN_BLOCKS_TO_KEEP = 1440;
 static const signed int DEFAULT_CHECKBLOCKS = 6;
 static constexpr int DEFAULT_CHECKLEVEL{3};
-// Require that user allocate at least 550 MiB for block & undo files (blk???.dat and rev???.dat)
-// At 1MB per block, 288 blocks = 288MB.
-// Add 15% for Undo data = 331MB
-// Add 20% for Orphan block rate = 397MB
-// We want the low water mark after pruning to be at least 397 MB and since we prune in
+// Require that user allocate at least 2000 MiB for block & undo files (blk???.dat and rev???.dat)
+// At ~1MB per block, 1440 blocks = 1440MB.
+// Add 15% for Undo data = 1656MB
+// Add 20% for Orphan block rate = 1987MB
+// We want the low water mark after pruning to be at least 1987 MB and since we prune in
 // full block file chunks, we need the high water mark which triggers the prune to be
-// one 128MB block file + added 15% undo data = 147MB greater for a total of 545MB
-// Setting the target to >= 550 MiB will make it likely we can respect the target.
-static const uint64_t MIN_DISK_SPACE_FOR_BLOCK_FILES = 550 * 1024 * 1024;
+// one 128MB block file + added 15% undo data = 147MB greater for a total of ~2134MB
+// Setting the target to >= 2200 MiB will make it likely we can respect the target.
+static const uint64_t MIN_DISK_SPACE_FOR_BLOCK_FILES = uint64_t{2200} * 1024 * 1024;
 
 /** Maximum number of dedicated script-checking threads allowed */
 static constexpr int MAX_SCRIPTCHECK_THREADS{15};

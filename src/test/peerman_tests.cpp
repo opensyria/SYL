@@ -3,6 +3,7 @@
 // file COPYING or https://www.opensource.org/licenses/mit-license.php.
 
 #include <chainparams.h>
+#include <consensus/merkle.h>
 #include <node/miner.h>
 #include <net_processing.h>
 #include <pow.h>
@@ -21,8 +22,26 @@ static void mineBlock(const node::NodeContext& node, std::chrono::seconds block_
     auto curr_time = GetTime<std::chrono::seconds>();
     SetMockTime(block_time); // update time so the block is created with it
     CBlock block = node::BlockAssembler{node.chainman->ActiveChainstate(), nullptr, {}}.CreateNewBlock()->block;
-    while (!CheckProofOfWork(block.GetHash(), block.nBits, node.chainman->GetConsensus())) ++block.nNonce;
-    block.fChecked = true; // little speedup
+
+    // CreateNewBlock() returns a template with hashMerkleRoot unset (miners
+    // are expected to compute it). Set it now so CheckBlock passes.
+    block.hashMerkleRoot = BlockMerkleRoot(block);
+
+    // AUDIT FIX [C-03]: Mine with the correct PoW algorithm for the target height.
+    // Previously this helper always used SHA256d CheckProofOfWork() and set
+    // block.fChecked=true to skip validation. With RandomX active from block 1
+    // on regtest, this produced blocks with invalid PoW that triggered the
+    // [C-03] assertion in ConnectBlock (BLOCK_VALID_TREE check).
+    const auto* pindexPrev = WITH_LOCK(::cs_main, return node.chainman->ActiveChain().Tip());
+    int newHeight = pindexPrev ? pindexPrev->nHeight + 1 : 0;
+    const Consensus::Params& params = node.chainman->GetConsensus();
+
+    if (params.IsRandomXActive(newHeight)) {
+        while (!CheckProofOfWorkAtHeight(block, newHeight, pindexPrev, params)) ++block.nNonce;
+    } else {
+        while (!CheckProofOfWork(block.GetHash(), block.nBits, params)) ++block.nNonce;
+    }
+
     SetMockTime(curr_time); // process block at current time
     Assert(node.chainman->ProcessNewBlock(std::make_shared<const CBlock>(block), /*force_processing=*/true, /*min_pow_checked=*/true, nullptr));
     node.validation_signals->SyncWithValidationInterfaceQueue(); // drain events queue

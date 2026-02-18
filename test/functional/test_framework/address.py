@@ -59,7 +59,7 @@ def create_deterministic_address_bcrt1_p2tr_op_true(explicit_internal_key=None):
     taproot_info = taproot_construct(internal_key, [("only-path", CScript([OP_TRUE]))])
     address = output_key_to_p2tr(taproot_info.output_pubkey)
     if explicit_internal_key is None:
-        assert_equal(address, 'rsyl1p9yfmy5h72durp7zrhlw9lf7jpwjgvwdg0jr0lqmmjtgg83266lqshv7sru')
+        assert_equal(address, 'rsyl1prnr8ezhd88yy49me5gwhz7ux7yc6g7xj8dtyj6n4vg4ma2fdwdtskkauqq')
     return (address, taproot_info)
 
 

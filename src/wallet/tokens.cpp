@@ -14,6 +14,8 @@
 #include <wallet/coincontrol.h>
 #include <wallet/spend.h>
 
+#include <set>
+
 namespace wallet {
 
 bool WalletTokenManager::IsMine(const CScript& script) const
@@ -110,16 +112,23 @@ std::optional<WalletTokenBalance> WalletTokenManager::GetTokenBalance(
     result.decimals = info->decimals;
     result.balance = 0;
 
-    // Sum balance across all wallet addresses
+    // AUDIT FIX [M-R5]: Collect all wallet scripts into a set first to prevent
+    // double-counting when the same address appears in both m_address_book and
+    // GetScriptPubKeys(). Previously balance was summed in two independent loops
+    // over overlapping address sources. GetTokenBalances() (plural) already used
+    // a set — this singular version now matches that pattern.
+    std::set<CScript> wallet_scripts;
     for (const auto& [dest, label] : m_wallet.m_address_book) {
-        CScript script = GetScriptForDestination(dest);
-        result.balance += tokens::g_tokendb->GetBalance(script, token_id);
+        wallet_scripts.insert(GetScriptForDestination(dest));
     }
-
     for (const auto& spk_man : m_wallet.GetAllScriptPubKeyMans()) {
         for (const auto& script : spk_man->GetScriptPubKeys()) {
-            result.balance += tokens::g_tokendb->GetBalance(script, token_id);
+            wallet_scripts.insert(script);
         }
+    }
+
+    for (const auto& script : wallet_scripts) {
+        result.balance += tokens::g_tokendb->GetBalance(script, token_id);
     }
 
     double divisor = std::pow(10, result.decimals);

@@ -16,7 +16,18 @@
 namespace tokens {
 
 /** AUDIT FIX [H-04]: Minimum transaction fee required for token issuance.
- *  Prevents token-spam attacks by requiring an economic cost to create tokens. */
+ *  Prevents token-spam attacks by requiring an economic cost to create tokens.
+ *
+ *  AUDIT NOTE [M-R3]: This fee is enforced in the overlay only, not at the
+ *  consensus level (CheckBlock/ContextualCheckBlock). A miner who crafts a
+ *  custom block can include a low-fee issuance tx. However, the practical
+ *  risk is mitigated because:
+ *    1. The overlay rejects it on ALL nodes (including the miner's own node),
+ *       so the token is never registered in any TokenDB.
+ *    2. Coinbase issuance is explicitly blocked (M-03).
+ *    3. The no-UTXO-view path is explicitly blocked (M-04).
+ *  Moving this check into consensus would require a hard fork and is planned
+ *  for Phase 2 (deterministic token validation). See doc/src20-spec.md. */
 static constexpr CAmount MIN_TOKEN_ISSUANCE_FEE = 100 * COIN; // 100 SYL
 
 std::unique_ptr<TokenDB> g_tokendb;

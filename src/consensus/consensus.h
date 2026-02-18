@@ -17,7 +17,13 @@ static const unsigned int MAX_BLOCK_WEIGHT = 4000000;
 static const int64_t MAX_BLOCK_SIGOPS_COST = 80000;
 /** Coinbase transaction outputs can only be spent after this number of new blocks (network rule) */
 static const int COINBASE_MATURITY = 100;
-// NOTE: With 2-minute blocks, 100 blocks = ~3.3 hours maturity time.
+// NOTE: With 2-minute blocks, 100 blocks = ~3.3 hours maturity time
+// (vs Bitcoin's ~16.7 hours at 10-minute blocks).
+// AUDIT REVIEW [M-MATURITY]: This shorter maturity window means miners can spend
+// coinbase rewards faster. If reorg depth exceeds 100 blocks (~3.3 hours),
+// spent coinbase outputs become invalid. Consider increasing to 500 (~16.7 hours)
+// if deep reorgs are observed. Current value is kept for faster mining reward
+// liquidity which benefits early network economics.
 // Confirmation recommendations for services:
 //   - Standard transactions: 6 confirmations (~12 min)
 //   - High-value transactions: 30-60 confirmations (~1-2 hours)

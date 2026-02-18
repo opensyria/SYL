@@ -191,18 +191,18 @@ class BlockchainTest(OpenSYTestFramework):
         )
         self.start_node(0, extra_args=[
             '-stopatheight=207',
-            '-prune=550',
+            '-prune=2200',
         ])
 
         res = self.nodes[0].getblockchaininfo()
-        # result should have these additional pruning keys if prune=550
+        # result should have these additional pruning keys if prune=2200
         assert_equal(sorted(res.keys()), sorted(['pruneheight', 'automatic_pruning', 'prune_target_size'] + keys))
 
         # check related fields
         assert res['pruned']
         assert_equal(res['pruneheight'], 0)
         assert res['automatic_pruning']
-        assert_equal(res['prune_target_size'], 576716800)
+        assert_equal(res['prune_target_size'], 2306867200)
         assert_greater_than(res['size_on_disk'], 0)
 
         assert_equal(res['bits'], nbits_str(REGTEST_N_BITS))

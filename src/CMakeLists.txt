@@ -18,7 +18,9 @@ include_directories(${CMAKE_CURRENT_BINARY_DIR} ${CMAKE_CURRENT_SOURCE_DIR})
 include(../cmake/crc32c.cmake)
 include(../cmake/leveldb.cmake)
 include(../cmake/minisketch.cmake)
-include(../cmake/randomx.cmake)
+if(ENABLE_RANDOMX_POW)
+  include(../cmake/randomx.cmake)
+endif()
 add_subdirectory(univalue)
 if (ENABLE_IPC AND NOT WITH_EXTERNAL_LIBMULTIPROCESS)
   include(../cmake/libmultiprocess.cmake)
@@ -137,7 +139,7 @@ add_library(opensy_common STATIC EXCLUDE_FROM_ALL
   script/sign.cpp
   script/signingprovider.cpp
   script/solver.cpp
-  script/src20.cpp
+  $<$<BOOL:${ENABLE_SRC20_TOKENS}>:script/src20.cpp>
 )
 target_link_libraries(opensy_common
   PRIVATE
@@ -261,13 +263,13 @@ add_library(opensy_node STATIC EXCLUDE_FROM_ALL
   rpc/server.cpp
   rpc/server_util.cpp
   rpc/signmessage.cpp
-  rpc/tokens.cpp
+  $<$<BOOL:${ENABLE_SRC20_TOKENS}>:rpc/tokens.cpp>
   rpc/txoutproof.cpp
   script/sigcache.cpp
   signet.cpp
-  tokens/tokendb.cpp
-  tokens/tokennotifications.cpp
-  tokens/tokenvalidation.cpp
+  $<$<BOOL:${ENABLE_SRC20_TOKENS}>:tokens/tokendb.cpp>
+  $<$<BOOL:${ENABLE_SRC20_TOKENS}>:tokens/tokennotifications.cpp>
+  $<$<BOOL:${ENABLE_SRC20_TOKENS}>:tokens/tokenvalidation.cpp>
   torcontrol.cpp
   txdb.cpp
   txgraph.cpp
@@ -284,7 +286,7 @@ target_link_libraries(opensy_node
     core_interface
     opensy_common
     opensy_util
-    randomx
+    $<$<BOOL:${ENABLE_RANDOMX_POW}>:randomx>
     $<TARGET_NAME_IF_EXISTS:opensy_zmq>
     leveldb
     minisketch
@@ -295,6 +297,16 @@ target_link_libraries(opensy_node
     $<TARGET_NAME_IF_EXISTS:libevent::pthreads>
     $<TARGET_NAME_IF_EXISTS:USDT::headers>
 )
+
+# Propagate feature flags as compile definitions
+if(ENABLE_SRC20_TOKENS)
+  target_compile_definitions(opensy_node PRIVATE ENABLE_SRC20_TOKENS)
+  target_compile_definitions(opensy_common PRIVATE ENABLE_SRC20_TOKENS)
+endif()
+if(ENABLE_RANDOMX_POW)
+  target_compile_definitions(opensy_node PRIVATE ENABLE_RANDOMX_POW)
+  target_compile_definitions(opensy_common PRIVATE ENABLE_RANDOMX_POW)
+endif()
 
 # OpenSY wrapper executable that can call other executables.
 if(BUILD_OPENSY_BIN)

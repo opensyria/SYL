@@ -75,16 +75,17 @@ OP_RETURN <PROTOCOL_ID> <VERSION> <ACTION> <DATA>
 
 ### Token ID Generation
 
-The Token ID is deterministically generated as:
+The Token ID is the issuance transaction's txid, stored as a full 32-byte
+uint256:
 
 ```
-TokenID = SHA256(issuer_scriptPubKey || txid || vout)[:16]
+TokenID = txid  (32 bytes, the hash of the issuance transaction)
 ```
 
 This ensures:
-- Uniqueness across all tokens
-- Issuer verifiability
-- No pre-computation attacks
+- Uniqueness across all tokens (each txid is globally unique)
+- Simple verification (look up the issuance tx)
+- No additional computation required
 
 ### Validation Rules
 
@@ -124,20 +125,26 @@ Outputs:
 ### Payload Format
 
 ```
-<TOKEN_ID:16> <AMOUNT:8>
+<TOKEN_ID:32> <AMOUNT:8>
 ```
 
 | Field | Size | Constraints |
 |-------|------|-------------|
-| TOKEN_ID | 16 bytes | Valid existing token |
+| TOKEN_ID | 32 bytes | Valid existing token (issuance txid) |
 | AMOUNT | 8 bytes | Little-endian uint64, > 0 |
 
 ### Recipient Determination
 
-The recipient is determined by the **first non-OP_RETURN output** in the transaction. This output must:
+The recipient is determined from **output[1]** (the second output). The
+transaction layout is:
+
+- Output[0]: OP_RETURN with SRC-20 transfer data
+- Output[1]: Recipient address (must be spendable)
+
+Output[1] must:
 
 1. Be a valid address script (P2PKH, P2SH, P2WPKH, P2WSH, P2TR)
-2. Have at least dust value (546 satoshis)
+2. Not be empty or unspendable (OP_RETURN)
 
 ### Validation Rules
 
@@ -153,8 +160,8 @@ Inputs:
   - UTXO from sender wallet
 
 Outputs:
-  [0] Recipient address (dust amount, e.g., 546 satoshis)
-  [1] OP_RETURN SRC20 01 02 <transfer_data>
+  [0] OP_RETURN SRC20 01 02 <transfer_data>
+  [1] Recipient address (dust amount, e.g., 546 satoshis)
   [2] Change address
 ```
 
@@ -165,7 +172,7 @@ Outputs:
 ### Payload Format
 
 ```
-<TOKEN_ID:16> <AMOUNT:8>
+<TOKEN_ID:32> <AMOUNT:8>
 ```
 
 ### Validation Rules
@@ -360,7 +367,7 @@ static constexpr uint8_t MAX_DECIMALS = 18;
 static constexpr size_t MAX_TOKENS_PER_BLOCK = 100;
 
 // Token ID
-static constexpr size_t TOKEN_ID_SIZE = 16;  // 128 bits
+static constexpr size_t TOKEN_ID_SIZE = 32;  // 256 bits (full txid)
 ```
 
 ---

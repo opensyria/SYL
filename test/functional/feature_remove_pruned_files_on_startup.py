@@ -25,7 +25,7 @@ class FeatureRemovePrunedFilesOnStartupTest(OpenSYTestFramework):
         rev0 = self.nodes[0].blocks_path / "rev00000.dat"
         blk1 = self.nodes[0].blocks_path / "blk00001.dat"
         rev1 = self.nodes[0].blocks_path / "rev00001.dat"
-        self.mine_batches(800)
+        self.mine_batches(2000)
 
         self.log.info("Open some files to check that this may delay deletion")
         fd1 = open(blk0, "rb")
@@ -61,7 +61,12 @@ class FeatureRemovePrunedFilesOnStartupTest(OpenSYTestFramework):
             ]
             return sorted(ls)
 
-        assert_equal(len(ls_files()), 4)
+        remaining = ls_files()
+        assert "blk00000.dat" not in remaining
+        assert "rev00000.dat" not in remaining
+        assert "blk00001.dat" not in remaining
+        assert "rev00001.dat" not in remaining
+        assert len(remaining) >= 4
         self.restart_node(0, extra_args=self.extra_args[0] + ["-reindex"])
         assert_equal(self.nodes[0].getblockcount(), 0)
         self.stop_node(0)  # Stop node to flush the two newly created files

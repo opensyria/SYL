@@ -139,6 +139,9 @@ option(BUILD_UTIL_CHAINSTATE "Build experimental opensy-chainstate executable." 
 option(BUILD_KERNEL_LIB "Build experimental opensykernel library." ${BUILD_UTIL_CHAINSTATE})
 option(BUILD_KERNEL_TEST "Build tests for the experimental opensykernel library." ${BUILD_KERNEL_LIB})
 
+option(ENABLE_SRC20_TOKENS "Enable SRC-20 token overlay indexing." ON)
+option(ENABLE_RANDOMX_POW "Enable RandomX ASIC-resistant proof-of-work." ON)
+
 option(ENABLE_WALLET "Enable wallet." ON)
 if(ENABLE_WALLET)
   if(VCPKG_TARGET_TRIPLET)
