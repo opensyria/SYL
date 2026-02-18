@@ -18,6 +18,42 @@
 
 namespace wallet {
 
+/**
+ * SECURITY FIX [L-09]: Format a token balance using integer arithmetic only.
+ * Avoids floating-point precision loss that occurs with double division
+ * for large balances (e.g., 2^53+ smallest units).
+ *
+ * @param value Balance in smallest units
+ * @param decimals Number of decimal places
+ * @return String representation (e.g., "1000.5" for value=10005, decimals=1)
+ */
+static std::string FormatTokenBalance(uint64_t value, uint8_t decimals)
+{
+    if (decimals == 0) {
+        return std::to_string(value);
+    }
+
+    uint64_t divisor = 1;
+    for (int i = 0; i < decimals; i++) divisor *= 10;
+
+    uint64_t whole = value / divisor;
+    uint64_t frac = value % divisor;
+
+    std::string frac_str = std::to_string(frac);
+    // Left-pad with zeros to match decimals width
+    while (static_cast<int>(frac_str.size()) < decimals) {
+        frac_str = "0" + frac_str;
+    }
+    // Trim trailing zeros for cleaner display
+    size_t last_nonzero = frac_str.find_last_not_of('0');
+    if (last_nonzero != std::string::npos) {
+        frac_str = frac_str.substr(0, last_nonzero + 1);
+    } else {
+        frac_str = "0";
+    }
+
+    return std::to_string(whole) + "." + frac_str;
+}
 bool WalletTokenManager::IsMine(const CScript& script) const
 {
     LOCK(m_wallet.cs_wallet);
@@ -77,8 +113,9 @@ std::vector<WalletTokenBalance> WalletTokenManager::GetTokenBalances() const
     // Convert map to vector and calculate formatted balances
     for (auto& [id, balance] : balances_map) {
         if (balance.balance > 0) {
-            double divisor = std::pow(10, balance.decimals);
-            balance.balance_formatted = balance.balance / divisor;
+            // SECURITY FIX [L-09]: Use integer arithmetic for formatting
+            // to avoid floating-point precision loss with large token balances.
+            balance.balance_formatted = FormatTokenBalance(balance.balance, balance.decimals);
             result.push_back(balance);
         }
     }
@@ -131,8 +168,8 @@ std::optional<WalletTokenBalance> WalletTokenManager::GetTokenBalance(
         result.balance += tokens::g_tokendb->GetBalance(script, token_id);
     }
 
-    double divisor = std::pow(10, result.decimals);
-    result.balance_formatted = result.balance / divisor;
+    // SECURITY FIX [L-09]: Use integer arithmetic for formatting
+    result.balance_formatted = FormatTokenBalance(result.balance, result.decimals);
 
     return result;
 }
@@ -175,8 +212,7 @@ std::vector<WalletTokenTx> WalletTokenManager::GetTokenHistory(
             auto info = tokens::g_tokendb->GetTokenInfo(record.token_id);
             if (info) {
                 tx.ticker = info->ticker;
-                double divisor = std::pow(10, info->decimals);
-                tx.amount_formatted = tx.amount / divisor;
+                tx.amount_formatted = FormatTokenBalance(tx.amount, info->decimals);
             }
 
             // Determine from/to and direction

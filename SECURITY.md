@@ -71,17 +71,28 @@ Bounty amounts (when available):
 
 For sensitive communications, you may encrypt your report using our PGP key.
 
-> ⚠️ **Note:** A real PGP key has not yet been published. Until it is available
-> at https://opensyria.net/security, please encrypt sensitive reports using
-> the security team's email address with standard email encryption, or
-> coordinate key exchange over a verified channel.
+> **⚠️ ACTION REQUIRED — PGP KEY NOT YET PUBLISHED**
 >
-> To generate the production key, the security team should run:
+> A production PGP key has **not** been generated or published.
+> This is a **security gap**: reporters cannot encrypt sensitive disclosures.
+>
+> **Impact:** Vulnerability reports sent via email are transmitted in cleartext,
+> risking interception of exploit details before patches are available.
+>
+> **To resolve (project maintainer):**
 > ```bash
+> # 1. Generate a dedicated security key (RSA-4096, 2-year expiry)
 > gpg --full-generate-key  # Select RSA 4096, 2 years, security@opensyria.net
-> gpg --armor --export security@opensyria.net
+>
+> # 2. Export the public key
+> gpg --armor --export security@opensyria.net > security-pgp-key.asc
+>
+> # 3. Publish at https://opensyria.net/security
+> # 4. Replace this section with the actual -----BEGIN PGP PUBLIC KEY BLOCK-----
 > ```
-> Then replace this section with the actual public key block.
+>
+> **Until then:** Contact security@opensyria.net to arrange key exchange over a
+> verified channel before transmitting sensitive vulnerability details.
 
 ## Security Best Practices for Node Operators
 

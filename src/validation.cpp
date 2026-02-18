@@ -951,6 +951,16 @@ bool MemPoolAccept::PreChecks(ATMPArgs& args, Workspace& ws)
                         return state.Invalid(TxValidationResult::TX_MEMPOOL_POLICY, "token-ticker-pending",
                                              "Ticker already pending in mempool");
                     }
+                    // SECURITY FIX [L-11]: Enforce minimum issuance fee at mempool acceptance.
+                    // This was only checked during block processing (tokendb.cpp), allowing
+                    // under-fee issuance txs to waste relay bandwidth before being rejected.
+                    // MIN_TOKEN_ISSUANCE_FEE = 100 SYL (100 * COIN).
+                    static constexpr CAmount MIN_TOKEN_ISSUANCE_FEE = 100 * COIN;
+                    if (ws.m_base_fees < MIN_TOKEN_ISSUANCE_FEE) {
+                        return state.Invalid(TxValidationResult::TX_MEMPOOL_POLICY, "token-issuance-fee-too-low",
+                                             strprintf("Token issuance requires minimum fee of %d SYL, got %d",
+                                                       MIN_TOKEN_ISSUANCE_FEE / COIN, ws.m_base_fees / COIN));
+                    }
                 } else if (op.action == src20::TokenAction::TRANSFER) {
                     const auto* transfer = op.GetTransfer();
                     if (transfer && !tokens::g_mempool_tokens->CanTransfer(
@@ -2757,26 +2767,37 @@ bool Chainstate::ConnectBlock(const CBlock& block, BlockValidationState& state, 
     // This must happen during block connection (not in BlockConnected callback)
     // because we need access to the spent UTXO data to identify senders
     if (tokens::g_tokendb && tokens::g_tokendb->IsValid()) {
+        // SECURITY FIX [M-04]: Consecutive failure counter for token processing.
+        // Tracks repeated failures to alert operators of systemic issues.
+        static int token_consecutive_failures = 0;
         try {
             int token_ops = tokens::g_tokendb->ProcessBlock(block, pindex->nHeight, blockundo);
             if (token_ops > 0) {
                 LogDebug(BCLog::TOKEN, "ConnectBlock: processed %d token operations at height %d\n",
                          token_ops, pindex->nHeight);
             }
+            // Reset consecutive failure counter on success
+            token_consecutive_failures = 0;
         } catch (const std::exception& e) {
-            // SECURITY FIX [M-04]: Token ProcessBlock failures are now logged prominently.
-            // Token processing is non-consensus, so we log the error and continue
-            // rather than failing block connection. However, token state may diverge.
+            // SECURITY FIX [M-04]: Token ProcessBlock failures are now logged prominently
+            // with a consecutive failure counter. Token processing is non-consensus, so we
+            // log the error and continue rather than failing block connection.
             //
             // SECURITY FIX [M-12]: Enhanced error logging with actionable guidance.
             // Token processing failures mean token state has diverged from the canonical
             // chain at this height. Repeated failures indicate a systemic issue (corrupt
             // token DB, unexpected OP_RETURN format, etc.) that requires operator attention.
             // Monitor logs for this message and consider -reindex if it persists.
-            LogPrintf("ERROR: Token ProcessBlock FAILED at height %d: %s. "
+            ++token_consecutive_failures;
+            LogPrintf("ERROR: Token ProcessBlock FAILED at height %d (consecutive failure #%d): %s. "
                       "Token state may have DIVERGED — RPC token queries may return stale/incorrect data. "
                       "If this persists, consider running with -reindex to rebuild token state.\n",
-                      pindex->nHeight, e.what());
+                      pindex->nHeight, token_consecutive_failures, e.what());
+            if (token_consecutive_failures >= 10) {
+                LogPrintf("CRITICAL: Token processing has failed %d consecutive times. "
+                          "Token database may be corrupt. Strongly recommend -reindex.\n",
+                          token_consecutive_failures);
+            }
         }
     } else if (tokens::g_tokendb && !tokens::g_tokendb->IsValid()) {
         // SECURITY FIX [M-04]: Warn if token DB is present but invalid
@@ -4192,6 +4213,20 @@ bool CheckBlock(const CBlock& block, BlockValidationState& state, const Consensu
     }
     if (nSigOps * WITNESS_SCALE_FACTOR > MAX_BLOCK_SIGOPS_COST)
         return state.Invalid(BlockValidationResult::BLOCK_CONSENSUS, "bad-blk-sigops", "out-of-bounds SigOpCount");
+
+    // SECURITY FIX [M-03]: Enforce token operation limit per block.
+    // ConsensusTokenValidator::CheckBlockTokenLimit() existed but was never
+    // wired into block validation. Without this check, a miner could stuff
+    // unlimited token ops into a block, causing O(n) processing in ConnectBlock.
+    // This is a policy enforcement (non-consensus) — blocks exceeding the limit
+    // are logged as warnings rather than rejected, since the token overlay is
+    // non-consensus. The limit is separately enforced in ProcessBlock (tokendb.cpp)
+    // which silently skips excess operations.
+    if (!tokens::ConsensusTokenValidator::CheckBlockTokenLimit(block)) {
+        LogPrintf("WARNING: Block exceeds MAX_TOKENS_PER_BLOCK (%zu). "
+                  "Excess token operations will be skipped during processing.\n",
+                  src20::MAX_TOKENS_PER_BLOCK);
+    }
 
     if (fCheckPOW && fCheckMerkleRoot)
         block.fChecked = true;

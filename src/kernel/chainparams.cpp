@@ -255,14 +255,20 @@ public:
         // ─────────────────────────────────────────────────────────────────────────
         // OFFICIAL SEEDS (Operated by OpenSY Foundation)
         // ─────────────────────────────────────────────────────────────────────────
-        // ⚠️  SECURITY AUDIT NOTICE [H-01]: All DNS seeds are currently controlled
-        //     by a single entity (OpenSY Foundation). This creates:
+        // ⚠️  SECURITY FIX [M-02]: DNS SEED CENTRALIZATION
+        //     All DNS seeds are controlled by a single entity (OpenSY Foundation).
+        //     This creates:
         //     - Single point of failure for peer discovery
         //     - Eclipse attack vector if seeds become malicious
         //     - Network partition risk on Foundation infrastructure failure
         //
-        //     MITIGATION REQUIRED: Recruit 2-3 independent community operators
+        //     MITIGATION REQUIRED (PRIORITY: HIGH): Recruit 2-3 independent
+        //     community operators to run DNS seed nodes on separate infrastructure.
         //     See: doc/NODE_OPERATOR_GUIDE.md#becoming-an-official-seed-node
+        //
+        //     INTERIM MITIGATION: Hardcoded seed IPs in chainparamsseeds.h provide
+        //     fallback when DNS fails. Operators should also configure -addnode=
+        //     with known trusted peers in opensy.conf.
         // ─────────────────────────────────────────────────────────────────────────
         vSeeds.emplace_back("seed.opensyria.net");       // ✅ Primary (AWS Bahrain me-south-1)
         vSeeds.emplace_back("seed2.opensyria.net");      // ✅ Secondary (Americas)
@@ -354,6 +360,23 @@ public:
             .tx_count = 210022,      // Total transactions at block 210,020
             .dTxRate  = 0.4007,      // ~1 tx per 2.5 seconds (coinbase every block)
         };
+
+        // ─────────────────────────────────────────────────────────────────────────
+        // SECURITY FIX [I-08]: Checkpoint documentation and nMinimumChainWork.
+        //
+        // Bitcoin Core removed the legacy checkpoint system. Modern chain
+        // verification relies on:
+        //   1. Genesis hash assertions (above) — verifies correct genesis
+        //   2. nMinimumChainWork (line ~136) — rejects trivial-work forks ✅ SET
+        //   3. AssumeUTXO snapshots — enables verified fast sync
+        //   4. chainTxData — sync time estimation
+        //
+        // nMinimumChainWork is set to 0x0832b5fc1a94 (verified 2026-02-18).
+        // UPDATE PERIODICALLY: Run the command below and update line ~136:
+        //   opensy-cli getblockheader $(opensy-cli getbestblockhash) | jq .chainwork
+        //
+        // See doc/checkpoints.md for full checkpoint policy.
+        // ─────────────────────────────────────────────────────────────────────────
 
 
         // Headers sync parameters - conservative values for new chain

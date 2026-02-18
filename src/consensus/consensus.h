@@ -41,7 +41,15 @@ static constexpr unsigned int LOCKTIME_VERIFY_SEQUENCE = (1 << 0);
  * Maximum number of seconds that the timestamp of the first
  * block of a difficulty adjustment period is allowed to
  * be earlier than the last block of the previous period (BIP94).
+ *
+ * SECURITY FIX [H-01]: Reduced from 600 to 120 for OpenSY's 2-minute blocks.
+ * Bitcoin uses 600s (= 1 block at 10-min intervals). Proportionally,
+ * OpenSY's 2-minute blocks require 120s to maintain the same 1-block tolerance.
+ * 600s on a 2-min chain allows a 5-block timewarp, which is excessive.
+ *
+ * DEPLOYMENT NOTE: This is a consensus rule change that requires a coordinated
+ * network upgrade (hard fork). All nodes must upgrade before activation height.
  */
-static constexpr int64_t MAX_TIMEWARP = 600;
+static constexpr int64_t MAX_TIMEWARP = 120;
 
 #endif // OPENSY_CONSENSUS_CONSENSUS_H

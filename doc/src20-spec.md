@@ -89,7 +89,7 @@ This ensures:
 
 ### Validation Rules
 
-1. **Ticker**: 1-4 uppercase alphanumeric characters
+1. **Ticker**: 1-4 uppercase alphanumeric characters (minimum 1 character in code; tickers shorter than 3 characters are valid but discouraged)
 2. **Name**: 1-32 printable characters, no leading/trailing/consecutive spaces
 3. **Decimals**: 0-18 (18 is maximum, matching Ethereum)
 4. **Supply**: Must be > 0

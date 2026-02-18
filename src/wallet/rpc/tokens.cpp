@@ -326,7 +326,7 @@ RPCHelpMan gettokenbalances()
                         {RPCResult::Type::STR, "name", "Token name"},
                         {RPCResult::Type::NUM, "decimals", "Decimal places"},
                         {RPCResult::Type::NUM, "balance", "Balance in smallest units"},
-                        {RPCResult::Type::NUM, "balance_formatted", "Human-readable balance"},
+                        {RPCResult::Type::STR, "balance_formatted", "Human-readable balance"},
                     }
                 }
             }
@@ -383,7 +383,7 @@ RPCHelpMan gettokentxhistory()
                         {RPCResult::Type::STR, "ticker", "Token ticker"},
                         {RPCResult::Type::STR, "type", "Transaction type: issue, transfer, or burn"},
                         {RPCResult::Type::NUM, "amount", "Amount"},
-                        {RPCResult::Type::NUM, "amount_formatted", "Human-readable amount"},
+                        {RPCResult::Type::STR, "amount_formatted", "Human-readable amount"},
                         {RPCResult::Type::STR, "from", /*optional=*/true, "From address (empty for issuance)"},
                         {RPCResult::Type::STR, "to", /*optional=*/true, "To address (empty for burn)"},
                         {RPCResult::Type::BOOL, "is_incoming", "True if receiving tokens"},

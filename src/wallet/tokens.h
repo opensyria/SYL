@@ -26,9 +26,9 @@ struct WalletTokenBalance {
     std::string name;
     uint8_t decimals;
     uint64_t balance;           // In smallest units
-    double balance_formatted;   // Human-readable
+    std::string balance_formatted;   // Human-readable (string to avoid floating-point precision loss)
     
-    WalletTokenBalance() : decimals(0), balance(0), balance_formatted(0) {}
+    WalletTokenBalance() : decimals(0), balance(0), balance_formatted("0") {}
 };
 
 /**
@@ -41,13 +41,13 @@ struct WalletTokenTx {
     CTxDestination from;
     CTxDestination to;
     uint64_t amount;
-    double amount_formatted;
+    std::string amount_formatted;
     int height;
     int64_t time;
     bool is_incoming;           // true if we received tokens
     int confirmations;
 
-    WalletTokenTx() : amount(0), amount_formatted(0), height(0), time(0), 
+    WalletTokenTx() : amount(0), amount_formatted("0"), height(0), time(0), 
                       is_incoming(false), confirmations(0) {}
 };
 
@@ -128,7 +128,7 @@ public:
      * Estimate fee for a token transaction
      * 
      * @param action Token action type
-     * @return Estimated fee in satoshis
+     * @return Estimated fee in qirsh (smallest SYL unit)
      */
     CAmount EstimateTokenTxFee(src20::TokenAction action) const;
 
