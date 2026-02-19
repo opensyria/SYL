@@ -33,10 +33,11 @@ unsigned int GetNextWorkRequired(const CBlockIndex* pindexLast, const CBlockHead
 unsigned int CalculateNextWorkRequired(const CBlockIndex* pindexLast, int64_t nFirstBlockTime, const Consensus::Params&);
 
 /** Check whether a block hash satisfies the proof-of-work requirement specified by nBits (SHA256d) */
-bool CheckProofOfWork(uint256 hash, unsigned int nBits, const Consensus::Params&);
-bool CheckProofOfWorkImpl(uint256 hash, unsigned int nBits, const Consensus::Params&);
+// AUDIT FIX [v4 ISSUE-010]: Take hash by const reference (avoids 32-byte copy on hot path).
+bool CheckProofOfWork(const uint256& hash, unsigned int nBits, const Consensus::Params&);
+bool CheckProofOfWorkImpl(const uint256& hash, unsigned int nBits, const Consensus::Params&);
 /** Height-aware version that uses appropriate powLimit for SHA256d vs RandomX */
-bool CheckProofOfWorkImpl(uint256 hash, unsigned int nBits, int height, const Consensus::Params&);
+bool CheckProofOfWorkImpl(const uint256& hash, unsigned int nBits, int height, const Consensus::Params&);
 
 /**
  * Check proof-of-work for a block at a specific height.

@@ -367,6 +367,17 @@ bool MempoolTokenState::AddTransaction(const CTransaction& tx, const CScript& se
     // was left orphaned in m_pending_tickers after the early return false.
     std::vector<std::string> local_pending_tickers;
 
+    // AUDIT FIX [v4 ISSUE-011]: Helper lambda to reverse any balance deltas
+    // accumulated in m_pending_balances by earlier ops in this tx, in case
+    // we need to return false mid-loop (e.g., duplicate ticker).
+    auto RevertTxDeltas = [&]() EXCLUSIVE_LOCKS_REQUIRED(m_cs) {
+        for (const auto& [addr, token_map] : tx_deltas.deltas) {
+            for (const auto& [token_id, delta] : token_map) {
+                m_pending_balances[addr][token_id] -= delta;
+            }
+        }
+    };
+
     for (const auto& op : ops) {
         switch (op.action) {
             case src20::TokenAction::ISSUE: {
@@ -376,6 +387,7 @@ bool MempoolTokenState::AddTransaction(const CTransaction& tx, const CScript& se
                     if (m_pending_tickers.count(issuance->ticker)) {
                         LogPrintf("Ticker %s already pending in mempool\n",
                                  issuance->ticker.c_str());
+                        RevertTxDeltas();
                         return false;
                     }
                     local_pending_tickers.push_back(issuance->ticker);

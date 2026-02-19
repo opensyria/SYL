@@ -285,7 +285,8 @@ public:
         int height,
         int64_t time,
         CDBBatch* external_batch = nullptr,
-        BalanceOverlay* overlay = nullptr) EXCLUSIVE_LOCKS_REQUIRED(!m_cs);
+        BalanceOverlay* overlay = nullptr,
+        uint16_t op_index = 0) EXCLUSIVE_LOCKS_REQUIRED(!m_cs);
 
     /**
      * Get token information by ID

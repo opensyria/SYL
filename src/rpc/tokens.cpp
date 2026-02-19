@@ -4,6 +4,7 @@
 
 #include <rpc/tokens.h>
 
+#include <arith_uint256.h>
 #include <core_io.h>
 #include <key_io.h>
 #include <node/context.h>
@@ -259,6 +260,8 @@ UniValue TokenInfoToJSON(const tokens::TokenInfo& info)
     // double division, which loses precision for values > 2^53 (~9 * 10^15).
     // With MAX_MONEY = 2.1 * 10^18, double cannot represent all values exactly.
     auto FormatWithDecimals = [](uint64_t value, int decimals) -> std::string {
+        // AUDIT FIX [v4 ISSUE-006]: Clamp decimals to prevent divisor overflow.
+        if (decimals > 18) decimals = 18;
         if (decimals <= 0) return std::to_string(value);
         uint64_t divisor = 1;
         for (int i = 0; i < decimals; ++i) divisor *= 10;
@@ -296,6 +299,8 @@ UniValue TokenBalanceToJSON(const tokens::TokenBalance& balance, const tokens::T
         
         // AUDIT FIX [M-R6]: Integer arithmetic for formatted balance (no float precision loss)
         auto FormatBalance = [](uint64_t value, int decimals) -> std::string {
+            // AUDIT FIX [v4 ISSUE-006]: Clamp decimals to prevent divisor overflow.
+            if (decimals > 18) decimals = 18;
             if (decimals <= 0) return std::to_string(value);
             uint64_t divisor = 1;
             for (int i = 0; i < decimals; ++i) divisor *= 10;
@@ -645,10 +650,14 @@ static RPCHelpMan gettokenholders()
                 int64_t pct_whole = 0;
                 int64_t pct_frac = 0;
                 if (info->total_supply > 0) {
-                    // Use __int128 to avoid overflow for large balances
-                    __int128 bp = static_cast<__int128>(holder.balance) * 10000 / info->total_supply;
-                    pct_whole = static_cast<int64_t>(bp / 100);
-                    pct_frac = static_cast<int64_t>(bp % 100);
+                    // AUDIT FIX [v4 ISSUE-007]: Use arith_uint256 instead of __int128
+                    // for portability (MSVC does not support __int128).
+                    arith_uint256 bp = arith_uint256(holder.balance) * arith_uint256(10000) / arith_uint256(info->total_supply);
+                    arith_uint256 hundred(100);
+                    arith_uint256 whole_bp = bp / hundred;
+                    arith_uint256 frac_bp = bp - whole_bp * hundred;
+                    pct_whole = static_cast<int64_t>(whole_bp.GetLow64());
+                    pct_frac = static_cast<int64_t>(frac_bp.GetLow64());
                 }
                 // Clamp to avoid display issues
                 if (pct_whole > 100) pct_whole = 100;

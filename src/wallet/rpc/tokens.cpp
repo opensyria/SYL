@@ -39,12 +39,21 @@ static constexpr int64_t WALLET_TOKEN_RPC_COOLDOWN_SECS = 1;
 static std::atomic<int64_t> g_last_wallet_token_rpc{0};
 static void EnforceWalletTokenRateLimit()
 {
+    // AUDIT FIX [v4 ISSUE-009]: Use compare_exchange_strong instead of
+    // separate load()/store() to eliminate TOCTOU race between concurrent RPCs.
     int64_t now = GetTime();
     int64_t last = g_last_wallet_token_rpc.load();
-    if (now - last < WALLET_TOKEN_RPC_COOLDOWN_SECS) {
-        throw JSONRPCError(RPC_IN_WARMUP, "Token wallet RPC rate limited. Try again shortly.");
+    while (true) {
+        if (now - last < WALLET_TOKEN_RPC_COOLDOWN_SECS) {
+            // AUDIT FIX [v4 ISSUE-008]: Use RPC_MISC_ERROR, not RPC_IN_WARMUP.
+            // RPC_IN_WARMUP (-28) misleads clients into thinking the node is starting up.
+            throw JSONRPCError(RPC_MISC_ERROR, "Token wallet RPC rate limited. Try again shortly.");
+        }
+        if (g_last_wallet_token_rpc.compare_exchange_strong(last, now)) {
+            break; // Successfully claimed this time slot
+        }
+        // CAS failed — 'last' was updated to the current value; retry check
     }
-    g_last_wallet_token_rpc.store(now);
 }
 
 // RPC: walletissuetoken

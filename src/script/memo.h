@@ -138,6 +138,84 @@ size_t GetMaxMemoSize();
 
 // ============ Implementation ============
 
+/**
+ * AUDIT FIX [v4 ISSUE-004/005]: Single RFC 3629 compliant UTF-8 validator.
+ * Checks for:
+ * - Valid lead/continuation byte structure
+ * - 2-byte overlongs (lead < 0xC2)
+ * - 3-byte overlongs (0xE0 + byte2 < 0xA0)
+ * - 4-byte overlongs (0xF0 + byte2 < 0x90)
+ * - Surrogate halves (0xED + byte2 >= 0xA0 → U+D800–U+DFFF)
+ * - Code points > U+10FFFF (lead bytes 0xF5–0xF7)
+ *
+ * @param data  pointer to the byte sequence
+ * @param len   length in bytes
+ * @param error_pos  if non-null, set to the byte offset of the first error
+ * @return true if the entire sequence is valid UTF-8
+ */
+inline bool IsValidUTF8(const unsigned char* data, size_t len, size_t* error_pos = nullptr)
+{
+    for (size_t i = 0; i < len; ) {
+        uint8_t c = data[i];
+        size_t seq_len = 0;
+
+        if (c <= 0x7F) {
+            seq_len = 1;
+        } else if ((c & 0xE0) == 0xC0) {
+            seq_len = 2;
+            // Reject 2-byte overlongs (lead < 0xC2 encodes < U+0080)
+            if (c < 0xC2) { if (error_pos) *error_pos = i; return false; }
+        } else if ((c & 0xF0) == 0xE0) {
+            seq_len = 3;
+        } else if ((c & 0xF8) == 0xF0) {
+            seq_len = 4;
+            // Reject lead bytes 0xF5–0xF7 (encode > U+10FFFF)
+            if (c >= 0xF5) { if (error_pos) *error_pos = i; return false; }
+        } else {
+            // Invalid lead byte (0x80–0xBF or 0xF8+)
+            if (error_pos) *error_pos = i;
+            return false;
+        }
+
+        // Check for truncated sequence
+        if (i + seq_len > len) {
+            if (error_pos) *error_pos = i;
+            return false;
+        }
+
+        // Validate continuation bytes
+        for (size_t j = 1; j < seq_len; j++) {
+            if ((data[i + j] & 0xC0) != 0x80) {
+                if (error_pos) *error_pos = i + j;
+                return false;
+            }
+        }
+
+        // Inter-byte validity: 3-byte overlongs and surrogates
+        if (seq_len == 3) {
+            if (c == 0xE0 && data[i + 1] < 0xA0) {
+                // 3-byte overlong (encodes < U+0800)
+                if (error_pos) *error_pos = i;
+                return false;
+            }
+            if (c == 0xED && data[i + 1] >= 0xA0) {
+                // Surrogate half U+D800–U+DFFF
+                if (error_pos) *error_pos = i;
+                return false;
+            }
+        }
+
+        // 4-byte overlongs
+        if (seq_len == 4 && c == 0xF0 && data[i + 1] < 0x90) {
+            if (error_pos) *error_pos = i;
+            return false;
+        }
+
+        i += seq_len;
+    }
+    return true;
+}
+
 inline MemoScript CreateMemoScript(const std::string& memo) {
     return CreateTypedMemoScript(memo, MemoType::TEXT);
 }
@@ -158,43 +236,14 @@ inline MemoScript CreateTypedMemoScript(const std::string& memo, MemoType type) 
         return result;
     }
     
-    // AUDIT FIX [ISSUE-010]: Validate UTF-8 encoding for TEXT, INVOICE, and
-    // RECEIPT memo types.  These are human-readable and displaying invalid
-    // UTF-8 could cause rendering issues or be used for homoglyph attacks.
+    // AUDIT FIX [ISSUE-010 / v4 ISSUE-004]: Validate UTF-8 encoding for TEXT,
+    // INVOICE, and RECEIPT memo types using the unified RFC 3629 validator.
     if (type == MemoType::TEXT || type == MemoType::INVOICE || type == MemoType::RECEIPT) {
-        size_t i = 0;
-        while (i < memo.size()) {
-            uint8_t c = static_cast<uint8_t>(memo[i]);
-            size_t seq_len = 0;
-            if (c <= 0x7F) { seq_len = 1; }
-            else if ((c & 0xE0) == 0xC0) { seq_len = 2; }
-            else if ((c & 0xF0) == 0xE0) { seq_len = 3; }
-            else if ((c & 0xF8) == 0xF0) { seq_len = 4; }
-            else {
-                result.success = false;
-                result.error = "Memo contains invalid UTF-8 at byte " + std::to_string(i);
-                return result;
-            }
-            if (i + seq_len > memo.size()) {
-                result.success = false;
-                result.error = "Memo contains truncated UTF-8 sequence at byte " + std::to_string(i);
-                return result;
-            }
-            // Validate continuation bytes
-            for (size_t j = 1; j < seq_len; j++) {
-                if ((static_cast<uint8_t>(memo[i + j]) & 0xC0) != 0x80) {
-                    result.success = false;
-                    result.error = "Memo contains invalid UTF-8 continuation at byte " + std::to_string(i + j);
-                    return result;
-                }
-            }
-            // Reject overlong encodings
-            if (seq_len == 2 && c < 0xC2) {
-                result.success = false;
-                result.error = "Memo contains overlong UTF-8 encoding at byte " + std::to_string(i);
-                return result;
-            }
-            i += seq_len;
+        size_t err_pos = 0;
+        if (!IsValidUTF8(reinterpret_cast<const unsigned char*>(memo.data()), memo.size(), &err_pos)) {
+            result.success = false;
+            result.error = "Memo contains invalid UTF-8 at byte " + std::to_string(err_pos);
+            return result;
         }
     }
     
@@ -351,39 +400,28 @@ inline bool ValidateMemoContent(const std::string& memo) {
         return false;
     }
     
-    // Check for valid UTF-8
+    // AUDIT FIX [v4 ISSUE-005]: Use the unified RFC 3629 UTF-8 validator
+    // instead of the separate, less strict implementation that was here before.
     const unsigned char* bytes = reinterpret_cast<const unsigned char*>(memo.c_str());
     size_t len = memo.size();
     
+    if (!IsValidUTF8(bytes, len)) {
+        return false;
+    }
+
+    // Reject control characters except tab (0x09) and newline (0x0A)
     for (size_t i = 0; i < len; ) {
         if (bytes[i] < 0x80) {
-            // ASCII
-            // Reject control characters except tab, newline
             if (bytes[i] < 0x20 && bytes[i] != 0x09 && bytes[i] != 0x0A) {
                 return false;
             }
             i++;
         } else if ((bytes[i] & 0xE0) == 0xC0) {
-            // 2-byte UTF-8
-            if (i + 1 >= len || (bytes[i + 1] & 0xC0) != 0x80) {
-                return false;
-            }
             i += 2;
         } else if ((bytes[i] & 0xF0) == 0xE0) {
-            // 3-byte UTF-8
-            if (i + 2 >= len || (bytes[i + 1] & 0xC0) != 0x80 || (bytes[i + 2] & 0xC0) != 0x80) {
-                return false;
-            }
             i += 3;
-        } else if ((bytes[i] & 0xF8) == 0xF0) {
-            // 4-byte UTF-8
-            if (i + 3 >= len || (bytes[i + 1] & 0xC0) != 0x80 || 
-                (bytes[i + 2] & 0xC0) != 0x80 || (bytes[i + 3] & 0xC0) != 0x80) {
-                return false;
-            }
-            i += 4;
         } else {
-            return false;
+            i += 4;
         }
     }
     

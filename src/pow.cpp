@@ -238,7 +238,8 @@ bool PermittedDifficultyTransition(const Consensus::Params& params, int64_t heig
 
 // Bypasses the actual proof of work check during fuzz testing with a simplified validation checking whether
 // the most significant bit of the last byte of the hash is set.
-bool CheckProofOfWork(uint256 hash, unsigned int nBits, const Consensus::Params& params)
+// AUDIT FIX [v4 ISSUE-010]: Take hash by const reference.
+bool CheckProofOfWork(const uint256& hash, unsigned int nBits, const Consensus::Params& params)
 {
     if (EnableFuzzDeterminism()) return (hash.data()[31] & 0x80) == 0;
     return CheckProofOfWorkImpl(hash, nBits, params);
@@ -259,7 +260,8 @@ std::optional<arith_uint256> DeriveTarget(unsigned int nBits, const uint256& pow
     return bnTarget;
 }
 
-bool CheckProofOfWorkImpl(uint256 hash, unsigned int nBits, const Consensus::Params& params)
+// AUDIT FIX [v4 ISSUE-010]: Take hash by const reference.
+bool CheckProofOfWorkImpl(const uint256& hash, unsigned int nBits, const Consensus::Params& params)
 {
     auto bnTarget{DeriveTarget(nBits, params.powLimit)};
     if (!bnTarget) return false;
@@ -272,7 +274,8 @@ bool CheckProofOfWorkImpl(uint256 hash, unsigned int nBits, const Consensus::Par
 }
 
 // Height-aware version that uses appropriate powLimit for SHA256d vs RandomX
-bool CheckProofOfWorkImpl(uint256 hash, unsigned int nBits, int height, const Consensus::Params& params)
+// AUDIT FIX [v4 ISSUE-010]: Take hash by const reference.
+bool CheckProofOfWorkImpl(const uint256& hash, unsigned int nBits, int height, const Consensus::Params& params)
 {
     const uint256& activePowLimit = params.GetRandomXPowLimit(height);
     auto bnTarget{DeriveTarget(nBits, activePowLimit)};

@@ -343,7 +343,8 @@ std::optional<src20::TokenId> TokenDB::RegisterToken(
     int height,
     int64_t time,
     CDBBatch* external_batch,
-    BalanceOverlay* overlay)
+    BalanceOverlay* overlay,
+    uint16_t op_index)
 {
     if (!m_db) return std::nullopt;
     
@@ -412,7 +413,11 @@ std::optional<src20::TokenId> TokenDB::RegisterToken(
     record.height = height;
     record.time = time;
     
-    batch.Write(TransferKey(token_id, height, txid), record);
+    // AUDIT FIX [v4-ISSUE-002]: Include op_index in TransferKey so that
+    // DisconnectBlock's ISSUE undo can erase the correct key.  Previously
+    // op_index defaulted to 0, causing a key mismatch when the ISSUE was
+    // not the first SRC-20 op in its transaction.
+    batch.Write(TransferKey(token_id, height, txid, op_index), record);
     
     // Commit only if using local batch (standalone mode)
     if (!external_batch) {
@@ -1110,7 +1115,9 @@ int TokenDB::ProcessBlock(const CBlock& block, int height, const CBlockUndo& blo
                         }
                         
                         const uint256 txhash = tx->GetHash().ToUint256();
-                        auto token_id_opt = RegisterToken(*issuance, txhash, issuer, height, block_time, &batch, &overlay);
+                        // AUDIT FIX [v4-ISSUE-002]: Pass tx_op_index so RegisterToken writes
+                        // the TransferRecord at the correct key for DisconnectBlock erasure.
+                        auto token_id_opt = RegisterToken(*issuance, txhash, issuer, height, block_time, &batch, &overlay, tx_op_index);
                         if (token_id_opt) {
                             overlay.pending_tickers.insert(issuance->ticker);
                             // Create undo record for token issuance
@@ -1188,6 +1195,10 @@ int TokenDB::ProcessBlock(const CBlock& block, int height, const CBlockUndo& blo
                         // correct values reflecting prior ops in this block.
                         auto token_info = GetTokenInfoWithOverlay(*this, overlay, burn->token_id);
                         uint64_t prev_circulating = token_info ? token_info->circulating_supply : 0;
+                        // AUDIT FIX [v4-ISSUE-001]: Capture prev_holder_count BEFORE BurnTokens()
+                        // so DisconnectBlock can restore it.  Previously omitted, causing reorg
+                        // to reset holder_count to 0 (the TokenUndoRecord default).
+                        uint64_t prev_holder_count = token_info ? token_info->holder_count : 0;
                         uint64_t prev_balance = GetBalanceWithOverlay(*this, overlay, burner, burn->token_id);
                         
                         const uint256 txhash = tx->GetHash().ToUint256();
@@ -1202,6 +1213,7 @@ int TokenDB::ProcessBlock(const CBlock& block, int height, const CBlockUndo& blo
                             undo.amount = burn->amount;
                             undo.prev_from_balance = prev_balance;
                             undo.prev_circulating_supply = prev_circulating;
+                            undo.prev_holder_count = prev_holder_count;
                             
                             auto undo_key = UndoKey(height, txhash, tx_op_index++);
                             batch.Write(undo_key, undo);
@@ -1357,7 +1369,8 @@ int TokenDB::ProcessBlock(const CBlock& block, int height, const CCoinsViewCache
                         }
                         
                         const uint256 txhash = tx->GetHash().ToUint256();
-                        auto token_id_opt = RegisterToken(*issuance, txhash, issuer, height, block_time, &batch, &overlay);
+                        // AUDIT FIX [v4-ISSUE-002]: Pass tx_op_index for correct TransferKey.
+                        auto token_id_opt = RegisterToken(*issuance, txhash, issuer, height, block_time, &batch, &overlay, tx_op_index);
                         if (token_id_opt) {
                             overlay.pending_tickers.insert(issuance->ticker);
                             // Create undo record for token issuance
@@ -1433,6 +1446,8 @@ int TokenDB::ProcessBlock(const CBlock& block, int height, const CCoinsViewCache
                         // correct values reflecting prior ops in this block.
                         auto token_info = GetTokenInfoWithOverlay(*this, overlay, burn->token_id);
                         uint64_t prev_circulating = token_info ? token_info->circulating_supply : 0;
+                        // AUDIT FIX [v4-ISSUE-001]: Capture prev_holder_count BEFORE BurnTokens()
+                        uint64_t prev_holder_count = token_info ? token_info->holder_count : 0;
                         uint64_t prev_balance = GetBalanceWithOverlay(*this, overlay, burner, burn->token_id);
                         
                         const uint256 txhash = tx->GetHash().ToUint256();
@@ -1447,6 +1462,7 @@ int TokenDB::ProcessBlock(const CBlock& block, int height, const CCoinsViewCache
                             undo.amount = burn->amount;
                             undo.prev_from_balance = prev_balance;
                             undo.prev_circulating_supply = prev_circulating;
+                            undo.prev_holder_count = prev_holder_count;
                             
                             auto undo_key = UndoKey(height, txhash, tx_op_index++);
                             batch.Write(undo_key, undo);
@@ -1534,11 +1550,26 @@ bool TokenDB::DisconnectBlock(const CBlock& block, int height)
     // of N times).
     std::map<src20::TokenId, TokenInfo> disconnect_info_overlay;
     
+    // AUDIT FIX [v4-ISSUE-003]: In-memory overlay for addr_tokens during disconnect.
+    // Without this, multiple undo operations for the same address read stale
+    // addr_tokens from the DB (CDBBatch writes are not visible until WriteBatch),
+    // causing later undos to overwrite earlier ones and leaving phantom entries.
+    std::map<CScript, std::set<src20::TokenId>> disconnect_addr_overlay;
+    
     // Helper: get token info from overlay first, then DB
     auto GetInfoForDisconnect = [&](const src20::TokenId& tid) -> std::optional<TokenInfo> {
         auto it = disconnect_info_overlay.find(tid);
         if (it != disconnect_info_overlay.end()) return it->second;
         return GetTokenInfo(tid);
+    };
+    
+    // Helper: get addr_tokens from overlay first, then DB
+    auto GetAddrTokensForDisconnect = [&](const CScript& addr) -> std::set<src20::TokenId> {
+        auto it = disconnect_addr_overlay.find(addr);
+        if (it != disconnect_addr_overlay.end()) return it->second;
+        std::set<src20::TokenId> tokens;
+        m_db->Read(AddrTokensKey(addr), tokens);
+        return tokens;
     };
     
     // Process transactions in reverse order to properly undo
@@ -1618,15 +1649,16 @@ bool TokenDB::DisconnectBlock(const CBlock& block, int height)
                         // Remove holder index entry
                         batch.Erase(TokenHoldersKey(undo.token_id, undo.from_address));
                         // Remove token from issuer's address token list
+                        // AUDIT FIX [v4-ISSUE-003]: Use disconnect addr overlay
                         auto addr_key = AddrTokensKey(undo.from_address);
-                        std::set<src20::TokenId> addr_tokens;
-                        m_db->Read(addr_key, addr_tokens);
+                        std::set<src20::TokenId> addr_tokens = GetAddrTokensForDisconnect(undo.from_address);
                         addr_tokens.erase(undo.token_id);
                         if (addr_tokens.empty()) {
                             batch.Erase(addr_key);
                         } else {
                             batch.Write(addr_key, addr_tokens);
                         }
+                        disconnect_addr_overlay[undo.from_address] = addr_tokens;
                     }
                 
                     // AUDIT FIX [ISSUE-011]: Delete the issuance's TransferRecord.
@@ -1664,15 +1696,17 @@ bool TokenDB::DisconnectBlock(const CBlock& block, int height)
                     // transfer (i.e. was a new holder), remove the token from their addr_tokens
                     // set to mirror the forward-path logic in TransferTokens().
                     if (undo.prev_to_balance == 0 && !undo.to_address.empty()) {
-                        auto to_addr_key = AddrTokensKey(undo.to_address);
-                        std::set<src20::TokenId> to_tokens;
-                        m_db->Read(to_addr_key, to_tokens);
+                        // AUDIT FIX [v4 ISSUE-003]: Use disconnect overlay for addr_tokens
+                        // to prevent stale reads when multiple undos affect the same address.
+                        auto to_tokens = GetAddrTokensForDisconnect(undo.to_address);
                         to_tokens.erase(undo.token_id);
+                        auto to_addr_key = AddrTokensKey(undo.to_address);
                         if (to_tokens.empty()) {
                             batch.Erase(to_addr_key);
                         } else {
                             batch.Write(to_addr_key, to_tokens);
                         }
+                        disconnect_addr_overlay[undo.to_address] = to_tokens;
                     }
                 
                     // Restore holder count and transfer count (to batch)
