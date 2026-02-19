@@ -205,10 +205,18 @@ inline bool IsValidUTF8(const unsigned char* data, size_t len, size_t* error_pos
             }
         }
 
-        // 4-byte overlongs
-        if (seq_len == 4 && c == 0xF0 && data[i + 1] < 0x90) {
-            if (error_pos) *error_pos = i;
-            return false;
+        // 4-byte overlongs and out-of-range
+        if (seq_len == 4) {
+            if (c == 0xF0 && data[i + 1] < 0x90) {
+                // 4-byte overlong (encodes < U+10000)
+                if (error_pos) *error_pos = i;
+                return false;
+            }
+            if (c == 0xF4 && data[i + 1] > 0x8F) {
+                // Code point > U+10FFFF
+                if (error_pos) *error_pos = i;
+                return false;
+            }
         }
 
         i += seq_len;
