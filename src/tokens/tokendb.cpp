@@ -1689,6 +1689,20 @@ bool TokenDB::DisconnectBlock(const CBlock& block, int height)
                     // Restore sender's balance (to batch for atomicity)
                     WriteBalanceToBatch(batch, undo.from_address, undo.token_id, undo.prev_from_balance);
                 
+                    // SPOT-CHECK FIX: If the forward transfer completely drained the
+                    // sender (prev_from_balance == amount → post-transfer balance was 0),
+                    // TransferTokens() erased the sender's holder index key AND removed
+                    // the token from their addr_tokens.  Undo must restore both.
+                    if (undo.prev_from_balance == undo.amount && !undo.from_address.empty()) {
+                        // Re-add sender's holder index entry
+                        batch.Write(TokenHoldersKey(undo.token_id, undo.from_address), true);
+                        // Re-add token to sender's addr_tokens via overlay
+                        auto from_tokens = GetAddrTokensForDisconnect(undo.from_address);
+                        from_tokens.insert(undo.token_id);
+                        batch.Write(AddrTokensKey(undo.from_address), from_tokens);
+                        disconnect_addr_overlay[undo.from_address] = from_tokens;
+                    }
+                
                     // Restore recipient's balance (to batch for atomicity)
                     WriteBalanceToBatch(batch, undo.to_address, undo.token_id, undo.prev_to_balance);
                 
@@ -1758,6 +1772,17 @@ bool TokenDB::DisconnectBlock(const CBlock& block, int height)
                     if (undo.prev_from_balance > 0 && !undo.from_address.empty()) {
                         // Re-add holder index entry (was erased if balance went to 0)
                         batch.Write(TokenHoldersKey(undo.token_id, undo.from_address), true);
+                    }
+                
+                    // SPOT-CHECK FIX: If the burn completely drained the burner
+                    // (prev_from_balance == amount → post-burn balance was 0),
+                    // BurnTokens() removed the token from their addr_tokens.
+                    // Undo must re-add it.
+                    if (undo.prev_from_balance == undo.amount && !undo.from_address.empty()) {
+                        auto from_tokens = GetAddrTokensForDisconnect(undo.from_address);
+                        from_tokens.insert(undo.token_id);
+                        batch.Write(AddrTokensKey(undo.from_address), from_tokens);
+                        disconnect_addr_overlay[undo.from_address] = from_tokens;
                     }
                 
                     // AUDIT FIX [ISSUE-004]: Use disconnect overlay instead of GetTokenInfo()
