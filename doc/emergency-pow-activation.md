@@ -127,7 +127,7 @@ File: `src/kernel/chainparams.cpp`
 // Mainnet
 consensus.nArgon2ForkHeight = 500000;  // Example height
 consensus.fArgon2Emergency = true;
-consensus.nArgon2MemoryCost = 65536;   // 64 MB
+consensus.nArgon2MemoryCost = 2097152;  // 2 GB (matches mainnet default / RandomX dataset)
 consensus.nArgon2TimeCost = 3;
 consensus.nArgon2Parallelism = 1;
 ```
@@ -163,7 +163,7 @@ The emergency Argon2id configuration:
 
 | Parameter | Value | Description |
 |-----------|-------|-------------|
-| Memory Cost | 65536 KiB (64 MB) | RAM required per hash |
+| Memory Cost | 2097152 KiB (2 GB) | RAM required per hash |
 | Time Cost | 3 | Iterations |
 | Parallelism | 1 | Single-threaded |
 | Hash Length | 32 bytes | Output size |

@@ -16,6 +16,7 @@
 
 #include <cstdint>
 #include <iterator>
+#include <map>
 #include <memory>
 #include <optional>
 #include <string>
@@ -119,6 +120,11 @@ public:
     const std::vector<std::string>& FixedSeedHosts() const { return vFixedSeedHosts; }
     const HeadersSyncParams& HeadersSync() const { return m_headers_sync_params; }
 
+    /** Return hardcoded checkpoint map (height → expected block hash).
+     *  A header whose height matches a checkpoint must have the expected hash;
+     *  otherwise it is rejected by AcceptBlockHeader(). */
+    const std::map<int, uint256>& Checkpoints() const { return m_checkpoints; }
+
     std::optional<AssumeutxoData> AssumeutxoForHeight(int height) const
     {
         return FindFirst(m_assumeutxo_data, [&](const auto& d) { return d.height == height; });
@@ -188,6 +194,10 @@ protected:
     std::vector<AssumeutxoData> m_assumeutxo_data;
     ChainTxData chainTxData;
     HeadersSyncParams m_headers_sync_params;
+    //! Hardcoded checkpoints: height → expected block hash.
+    //! Used by AcceptBlockHeader() to reject forked chains that diverge
+    //! before a checkpointed height.  See doc/checkpoints.md.
+    std::map<int, uint256> m_checkpoints;
 };
 
 std::optional<ChainType> GetNetworkForMagic(const MessageStartChars& pchMessageStart);

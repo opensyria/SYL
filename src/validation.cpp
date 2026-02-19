@@ -2769,7 +2769,9 @@ bool Chainstate::ConnectBlock(const CBlock& block, BlockValidationState& state, 
     if (tokens::g_tokendb && tokens::g_tokendb->IsValid()) {
         // SECURITY FIX [M-04]: Consecutive failure counter for token processing.
         // Tracks repeated failures to alert operators of systemic issues.
-        static int token_consecutive_failures = 0;
+        // AUDIT FIX [ISSUE-010]: Made atomic — ConnectBlock may run on
+        // different threads during parallel block validation.
+        static std::atomic<int> token_consecutive_failures{0};
         try {
             int token_ops = tokens::g_tokendb->ProcessBlock(block, pindex->nHeight, blockundo);
             if (token_ops > 0) {
@@ -4546,6 +4548,20 @@ bool ChainstateManager::AcceptBlockHeader(const CBlockHeader& block, BlockValida
         if (!ContextualCheckBlockHeader(block, state, m_blockman, *this, pindexPrev)) {
             LogDebug(BCLog::VALIDATION, "%s: Consensus::ContextualCheckBlockHeader: %s, %s\n", __func__, hash.ToString(), state.ToString());
             return false;
+        }
+
+        // AUDIT FIX [ISSUE-015]: Enforce hardcoded checkpoints.
+        // If this header's height matches a checkpoint, its hash must match.
+        // This prevents long-range forks that diverge before a checkpointed height.
+        {
+            const int nHeight = pindexPrev->nHeight + 1;
+            const auto& checkpoints = GetParams().Checkpoints();
+            auto it = checkpoints.find(nHeight);
+            if (it != checkpoints.end() && hash != it->second) {
+                LogPrintf("ERROR: %s: header %s at height %d does not match checkpoint (expected %s)\n",
+                          __func__, hash.ToString(), nHeight, it->second.ToString());
+                return state.Invalid(BlockValidationResult::BLOCK_CHECKPOINT, "checkpoint-mismatch");
+            }
         }
     }
     if (!min_pow_checked) {

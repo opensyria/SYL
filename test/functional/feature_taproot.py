@@ -266,7 +266,7 @@ def default_sighash(ctx):
     msg = get(ctx, "sigmsg")
     mode = get(ctx, "mode")
     if mode == "taproot":
-        return TaggedHash("TapSighash", msg)
+        return TaggedHash("TapSighash/opensy", msg)
     else:
         if msg is None:
             return (1).to_bytes(32, 'little')
@@ -1670,7 +1670,7 @@ class TaprootTest(OpenSYTestFramework):
         assert_equal(self.nodes[0].getblockcount(), 1)
         self.generate(self.nodes[0], COINBASE_MATURITY)
 
-        SEED = 317
+        SEED = 341
         VALID_LEAF_VERS = list(range(0xc0, 0x100, 2)) + [0x66, 0x7e, 0x80, 0x84, 0x96, 0x98, 0xba, 0xbc, 0xbe]
         # Generate private keys
         prvs = [hashlib.sha256(SEED.to_bytes(2, 'big') + bytes([i])).digest() for i in range(100)]

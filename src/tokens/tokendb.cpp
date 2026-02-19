@@ -342,7 +342,8 @@ std::optional<src20::TokenId> TokenDB::RegisterToken(
     const CScript& issuer_address,
     int height,
     int64_t time,
-    CDBBatch* external_batch)
+    CDBBatch* external_batch,
+    BalanceOverlay* overlay)
 {
     if (!m_db) return std::nullopt;
     
@@ -384,11 +385,22 @@ std::optional<src20::TokenId> TokenDB::RegisterToken(
     batch.Write(BalanceKey(issuer_address, token_id), issuance.total_supply);
     batch.Write(TokenHoldersKey(token_id, issuer_address), true);
     
-    // Update address token list
+    // Update address token list (overlay-aware for intra-block consistency)
     std::set<src20::TokenId> addr_tokens;
-    m_db->Read(AddrTokensKey(issuer_address), addr_tokens);
+    if (overlay) {
+        addr_tokens = GetAddrTokensWithOverlay(*m_db, *overlay, issuer_address);
+    } else {
+        m_db->Read(AddrTokensKey(issuer_address), addr_tokens);
+    }
     addr_tokens.insert(token_id);
     batch.Write(AddrTokensKey(issuer_address), addr_tokens);
+    if (overlay) {
+        SetAddrTokensInOverlay(*overlay, issuer_address, addr_tokens);
+        // Keep overlay balance & token_info current so subsequent
+        // operations in the same block see the newly-issued token.
+        SetBalanceInOverlay(*overlay, issuer_address, token_id, issuance.total_supply);
+        overlay->token_infos[token_id] = info;
+    }
     
     // Record issuance as transfer from empty script (marks it as an issuance)
     TokenTransferRecord record;
@@ -1048,9 +1060,20 @@ int TokenDB::ProcessBlock(const CBlock& block, int height, const CBlockUndo& blo
                             }
                         }
                         
+                        // AUDIT FIX [ISSUE-001]: Reject duplicate tickers within the same block.
+                        // The DB-level TickerExists() check only sees committed data, so two
+                        // ISSUE ops for the same ticker in one block would both pass.  The
+                        // overlay's pending_tickers set catches the intra-block duplicate.
+                        if (overlay.pending_tickers.count(issuance->ticker)) {
+                            LogPrintf("Token issuance rejected: duplicate ticker '%s' within block at height %d\n",
+                                      issuance->ticker, height);
+                            break;
+                        }
+                        
                         const uint256 txhash = tx->GetHash().ToUint256();
-                        auto token_id_opt = RegisterToken(*issuance, txhash, issuer, height, block_time, &batch);
+                        auto token_id_opt = RegisterToken(*issuance, txhash, issuer, height, block_time, &batch, &overlay);
                         if (token_id_opt) {
+                            overlay.pending_tickers.insert(issuance->ticker);
                             // Create undo record for token issuance
                             TokenUndoRecord undo;
                             undo.op_type = TokenOpType::ISSUE;
@@ -1282,9 +1305,17 @@ int TokenDB::ProcessBlock(const CBlock& block, int height, const CCoinsViewCache
                             }
                         }
                         
+                        // AUDIT FIX [ISSUE-001]: Reject duplicate tickers within the same block.
+                        if (overlay.pending_tickers.count(issuance->ticker)) {
+                            LogPrintf("Token issuance rejected: duplicate ticker '%s' within block at height %d\n",
+                                      issuance->ticker, height);
+                            break;
+                        }
+                        
                         const uint256 txhash = tx->GetHash().ToUint256();
-                        auto token_id_opt = RegisterToken(*issuance, txhash, issuer, height, block_time, &batch);
+                        auto token_id_opt = RegisterToken(*issuance, txhash, issuer, height, block_time, &batch, &overlay);
                         if (token_id_opt) {
+                            overlay.pending_tickers.insert(issuance->ticker);
                             // Create undo record for token issuance
                             TokenUndoRecord undo;
                             undo.op_type = TokenOpType::ISSUE;
@@ -1444,7 +1475,10 @@ bool TokenDB::DisconnectBlock(const CBlock& block, int height)
         // A single transaction may have multiple token operations, each with
         // a unique undo record keyed by (height, txid, op_index).
         // AUDIT FIX [L-04]: Widened to uint16_t to match ProcessBlock key width.
-        for (uint16_t op_idx = 0; op_idx < 65535; op_idx++) {
+        // AUDIT FIX [ISSUE-009]: Tightened from 65535.  ParseTransactionSRC20()
+        // caps each tx to 4 ops, so 8 is a generous safety upper bound.
+        static constexpr uint16_t MAX_UNDO_OPS_PER_TX = 8;
+        for (uint16_t op_idx = 0; op_idx < MAX_UNDO_OPS_PER_TX; op_idx++) {
             auto undo_key = UndoKey(height, txid, op_idx);
             TokenUndoRecord undo;
             if (!m_db->Read(undo_key, undo)) {
@@ -1527,6 +1561,21 @@ bool TokenDB::DisconnectBlock(const CBlock& block, int height)
                 
                     // Restore recipient's balance (to batch for atomicity)
                     WriteBalanceToBatch(batch, undo.to_address, undo.token_id, undo.prev_to_balance);
+                
+                    // AUDIT FIX [ISSUE-008]: If the recipient had zero balance before the
+                    // transfer (i.e. was a new holder), remove the token from their addr_tokens
+                    // set to mirror the forward-path logic in TransferTokens().
+                    if (undo.prev_to_balance == 0 && !undo.to_address.empty()) {
+                        auto to_addr_key = AddrTokensKey(undo.to_address);
+                        std::set<src20::TokenId> to_tokens;
+                        m_db->Read(to_addr_key, to_tokens);
+                        to_tokens.erase(undo.token_id);
+                        if (to_tokens.empty()) {
+                            batch.Erase(to_addr_key);
+                        } else {
+                            batch.Write(to_addr_key, to_tokens);
+                        }
+                    }
                 
                     // Restore holder count and transfer count (to batch)
                     auto token_info = GetTokenInfo(undo.token_id);

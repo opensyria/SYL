@@ -1,18 +1,26 @@
 # Checkpoint Policy & Procedures
 
 **Document:** OpenSY Chain Checkpoints  
-**Version:** 1.0  
-**Last Updated:** January 2025
+**Version:** 2.0  
+**Last Updated:** February 2025
 
 ---
 
 ## Overview
 
-Checkpoints are hard-coded block hashes that help nodes verify they are on the correct chain. They provide:
+Checkpoints are hard-coded height → block-hash entries in `src/kernel/chainparams.cpp`.
+When `AcceptBlockHeader()` receives a header whose height matches a checkpoint entry,
+it verifies the header hash matches.  A mismatch causes rejection with reason
+`checkpoint-mismatch` (`BlockValidationResult::BLOCK_CHECKPOINT`).
 
-1. **Security** - Prevent deep reorganization attacks
-2. **Performance** - Skip signature verification for blocks before checkpoint
-3. **Consistency** - Ensure all nodes agree on chain history
+Checkpoints **complement** (not replace) the modern security mechanisms already in place:
+
+| Mechanism | Purpose | Location |
+|-----------|---------|----------|
+| `m_checkpoints` | Reject headers that diverge at known heights | `CChainParams` |
+| `nMinimumChainWork` | Reject chains with less total PoW | `Consensus::Params` |
+| `defaultAssumeValid` | Skip script verification for known-good blocks | `Consensus::Params` |
+| `m_assumeutxo_data` | Snapshot-based fast sync | `CChainParams` |
 
 ---
 
@@ -21,28 +29,25 @@ Checkpoints are hard-coded block hashes that help nodes verify they are on the c
 ### Mainnet
 
 ```cpp
-// src/kernel/chainparams.cpp - CMainParams
-checkpointData = {
-    {
-        {0, uint256S("000000c4c94f54e5ae60a67df5c113dfbfd9ef872639e2359d15796f27920fd1")},
-        // Add checkpoints at major milestones
-    }
+// src/kernel/chainparams.cpp — CMainParams::m_checkpoints
+m_checkpoints = {
+    {      0, uint256{"000000c4c94f54e5ae60a67df5c113dfbfd9ef872639e2359d15796f27920fd1"}},
+    {  50000, uint256{"000000d308772cf89715e4386cf4581f4c16f4a1e102847074a21bb96745916b"}},
+    { 100000, uint256{"0000006319a52f1a332b32157b69e887691ffb1b914f1470e0768886c34a1aec"}},
+    { 150000, uint256{"0000006f37e730f314815973cbb2989c9e7fb60ae1c908e203681076f265a634"}},
+    { 200000, uint256{"00000050100b66de8aaa831b90f761d95ab11d0420103a31c9a90ac74655a560"}},
+    { 210000, uint256{"1e0eb2fa9f55e6818e9109bf6316486f2de8072dd96a682d133bc72f734da4e5"}},
 };
 ```
 
-| Height | Hash | Date | Notes |
-|--------|------|------|-------|
-| 0 | `000000c4...920fd1` | Dec 8, 2024 | Genesis Block |
-
-### Testnet
-
-```cpp
-checkpointData = {
-    {
-        {0, uint256S("<testnet_genesis_hash>")},
-    }
-};
-```
+| Height | Hash | Notes |
+|--------|------|-------|
+| 0 | `000000c4...920fd1` | Genesis block (Dec 8 2024) |
+| 50,000 | `000000d3...45916b` | Early-chain anchor |
+| 100,000 | `00000063...a1aec` | Mid-Phase-1 anchor |
+| 150,000 | `0000006f...a634` | Late-Phase-1 anchor |
+| 200,000 | `00000050...a560` | Pre-RandomX transition |
+| 210,000 | `1e0eb2fa...a4e5` | RandomX activation (Phase 2) |
 
 ---
 
@@ -90,11 +95,10 @@ Confirm the hash with:
 File: `src/kernel/chainparams.cpp`
 
 ```cpp
-checkpointData = {
-    {
-        {0, uint256S("000000c4c94f54e5ae60a67df5c113dfbfd9ef872639e2359d15796f27920fd1")},
-        {100000, uint256S("NEW_BLOCK_HASH_HERE")},
-    }
+m_checkpoints = {
+    // ... existing entries ...
+    { 100000, uint256{"0000006319a52f1a332b32157b69e887691ffb1b914f1470e0768886c34a1aec"}},
+    { NEW_HEIGHT, uint256{"NEW_BLOCK_HASH_HERE"}},
 };
 ```
 
@@ -147,29 +151,27 @@ If checkpoint is disputed:
 ### How Checkpoints Work
 
 ```cpp
-// In validation.cpp
-bool CheckBlock(const CBlock& block, ...)
-{
-    // If block height matches checkpoint, verify hash
-    if (checkpointData.contains(height)) {
-        if (block.GetHash() != checkpointData[height]) {
-            return false;  // Reject block
-        }
-    }
-    // ...
+// In validation.cpp — ChainstateManager::AcceptBlockHeader()
+const int nHeight = pindexPrev->nHeight + 1;
+const auto& checkpoints = GetParams().Checkpoints();
+auto it = checkpoints.find(nHeight);
+if (it != checkpoints.end() && hash != it->second) {
+    return state.Invalid(BlockValidationResult::BLOCK_CHECKPOINT,
+                         "checkpoint-mismatch");
 }
 ```
 
 ### Performance Impact
 
-- Blocks **before** last checkpoint: Skip signature verification (faster sync)
-- Blocks **at** checkpoint: Verify hash matches exactly
-- Blocks **after** checkpoint: Full verification
+- Blocks **at** a checkpoint height: header hash verified against the hardcoded value
+- Blocks at **all** heights: full PoW and contextual validation still applies
+- Script verification is separately optimised by `defaultAssumeValid`
 
 ### Storage Location
 
 Checkpoints are stored in:
-- `src/kernel/chainparams.cpp` (hard-coded)
+- `src/kernel/chainparams.cpp` → `CMainParams::m_checkpoints` (hard-coded)
+- Accessor: `CChainParams::Checkpoints()` (returns `const std::map<int, uint256>&`)
 - NOT configurable via command-line or config file
 
 ---
@@ -223,7 +225,11 @@ Verify current checkpoints against network:
 
 CHECKPOINTS=(
     "0:000000c4c94f54e5ae60a67df5c113dfbfd9ef872639e2359d15796f27920fd1"
-    # Add more as needed
+    "50000:000000d308772cf89715e4386cf4581f4c16f4a1e102847074a21bb96745916b"
+    "100000:0000006319a52f1a332b32157b69e887691ffb1b914f1470e0768886c34a1aec"
+    "150000:0000006f37e730f314815973cbb2989c9e7fb60ae1c908e203681076f265a634"
+    "200000:00000050100b66de8aaa831b90f761d95ab11d0420103a31c9a90ac74655a560"
+    "210000:1e0eb2fa9f55e6818e9109bf6316486f2de8072dd96a682d133bc72f734da4e5"
 )
 
 for cp in "${CHECKPOINTS[@]}"; do
@@ -248,6 +254,11 @@ done
 | Date | Height | Hash | Added By | Notes |
 |------|--------|------|----------|-------|
 | Dec 2024 | 0 | `000000c4...` | Genesis | Network launch |
+| Feb 2025 | 50,000 | `000000d3...` | Audit | Early-chain anchor |
+| Feb 2025 | 100,000 | `00000063...` | Audit | Mid-Phase-1 anchor |
+| Feb 2025 | 150,000 | `0000006f...` | Audit | Late-Phase-1 anchor |
+| Feb 2025 | 200,000 | `00000050...` | Audit | Pre-RandomX transition |
+| Feb 2025 | 210,000 | `1e0eb2fa...` | Audit | RandomX activation |
 
 ---
 

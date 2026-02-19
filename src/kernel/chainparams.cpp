@@ -378,6 +378,27 @@ public:
         // See doc/checkpoints.md for full checkpoint policy.
         // ─────────────────────────────────────────────────────────────────────────
 
+        // AUDIT FIX [ISSUE-015]: Hardcoded checkpoints at notable heights.
+        // A header whose height matches an entry must carry the expected hash;
+        // otherwise AcceptBlockHeader() rejects it, preventing long-range forks
+        // that diverge before these heights.
+        //
+        // Heights chosen:
+        //   0       — genesis block
+        //   50 000  — early-chain anchor
+        //  100 000  — mid-Phase-1 anchor
+        //  150 000  — late-Phase-1 anchor
+        //  200 000  — pre-RandomX transition anchor
+        //  210 000  — RandomX activation (Phase 2 boundary)
+        m_checkpoints = {
+            {      0, uint256{"000000c4c94f54e5ae60a67df5c113dfbfd9ef872639e2359d15796f27920fd1"}},
+            {  50000, uint256{"000000d308772cf89715e4386cf4581f4c16f4a1e102847074a21bb96745916b"}},
+            { 100000, uint256{"0000006319a52f1a332b32157b69e887691ffb1b914f1470e0768886c34a1aec"}},
+            { 150000, uint256{"0000006f37e730f314815973cbb2989c9e7fb60ae1c908e203681076f265a634"}},
+            { 200000, uint256{"00000050100b66de8aaa831b90f761d95ab11d0420103a31c9a90ac74655a560"}},
+            { 210000, uint256{"1e0eb2fa9f55e6818e9109bf6316486f2de8072dd96a682d133bc72f734da4e5"}},
+        };
+
 
         // Headers sync parameters - conservative values for new chain
         m_headers_sync_params = HeadersSyncParams{
@@ -891,9 +912,9 @@ public:
             {
                 // For use by test/functional/feature_assumeutxo.py
                 .height = 299,
-                .hash_serialized = AssumeutxoHash{uint256{"e2c222db5361eb6ae9cd3f36e1addb32514eb59e2a8cdc4d3cd1489b4fcb11e3"}},
+                .hash_serialized = AssumeutxoHash{uint256{"370e71925ac51720fce42e4a9bc31f03e889f6c5edad1b9534b1af865937b24e"}},
                 .m_chain_tx_count = 334,
-                .blockhash = uint256{"247f58c5696ad5e062a29ab74269a495aa25031bb1a359edd5969c3edcb02921"},
+                .blockhash = uint256{"38d310d68f4b134f60e97df10ee01cfd2167737cc7d73d5f362224f63a5e064d"},
             },
         };
 

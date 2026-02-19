@@ -2,7 +2,6 @@
 // Distributed under the MIT software license, see the accompanying
 // file COPYING or http://www.opensource.org/licenses/mit-license.php.
 
-#include <cmath>
 #include <core_io.h>
 #include <key_io.h>
 #include <primitives/transaction.h>
@@ -51,6 +50,7 @@ RPCHelpMan walletissuetoken()
         RPCResult{
             RPCResult::Type::OBJ, "", /*optional=*/false, "",
             {
+                {RPCResult::Type::STR, "warning", "Advisory about SRC-20 non-consensus nature"},
                 {RPCResult::Type::STR_HEX, "txid", "The transaction ID"},
                 {RPCResult::Type::STR_HEX, "token_id", "The token ID (will be available after confirmation)"},
                 {RPCResult::Type::STR, "ticker", "Token ticker"},
@@ -121,9 +121,16 @@ RPCHelpMan walletissuetoken()
                 throw JSONRPCError(RPC_WALLET_ERROR, util::ErrorString(result).original);
             }
 
-            // Commit the transaction
+            // Commit the transaction.
+            // Token issuance requires a high fee (MIN_TOKEN_ISSUANCE_FEE = 100 SYL),
+            // so temporarily raise the wallet's broadcast max-fee limit.
             const CTransactionRef& tx = result->tx;
-            pwallet->CommitTransaction(tx, {}, /*orderForm=*/{});
+            {
+                CAmount saved_max = pwallet->m_default_max_tx_fee;
+                pwallet->m_default_max_tx_fee = std::max(saved_max, result->fee + COIN);
+                pwallet->CommitTransaction(tx, {}, /*orderForm=*/{});
+                pwallet->m_default_max_tx_fee = saved_max;
+            }
 
             // Token ID is derived from the issuance transaction ID
             src20::TokenId token_id(tx->GetHash());
@@ -159,6 +166,7 @@ RPCHelpMan wallettransfertoken()
         RPCResult{
             RPCResult::Type::OBJ, "", /*optional=*/false, "",
             {
+                {RPCResult::Type::STR, "warning", "Advisory about SRC-20 non-consensus nature"},
                 {RPCResult::Type::STR_HEX, "txid", "Transaction ID"},
                 {RPCResult::Type::STR_HEX, "token_id", "Token ID"},
                 {RPCResult::Type::NUM, "amount", "Amount transferred"},
@@ -251,6 +259,7 @@ RPCHelpMan walletburntoken()
         RPCResult{
             RPCResult::Type::OBJ, "", /*optional=*/false, "",
             {
+                {RPCResult::Type::STR, "warning", "Advisory about SRC-20 non-consensus nature"},
                 {RPCResult::Type::STR_HEX, "txid", "Transaction ID"},
                 {RPCResult::Type::STR_HEX, "token_id", "Token ID"},
                 {RPCResult::Type::NUM, "amount", "Amount burned"},

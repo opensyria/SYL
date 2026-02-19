@@ -76,7 +76,8 @@ enum class BlockValidationResult : osck_BlockValidationResult {
     MISSING_PREV = osck_BlockValidationResult_MISSING_PREV,
     INVALID_PREV = osck_BlockValidationResult_INVALID_PREV,
     TIME_FUTURE = osck_BlockValidationResult_TIME_FUTURE,
-    HEADER_LOW_WORK = osck_BlockValidationResult_HEADER_LOW_WORK
+    HEADER_LOW_WORK = osck_BlockValidationResult_HEADER_LOW_WORK,
+    CHECKPOINT = osck_BlockValidationResult_CHECKPOINT
 };
 
 enum class ScriptVerifyStatus : osck_ScriptVerifyStatus {

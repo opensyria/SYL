@@ -279,9 +279,27 @@ util::Result<CreatedTransactionResult> WalletTokenManager::CreateIssuanceTransac
 
     CCoinControl coin_control;
     
+    // Token issuance requires a minimum fee of 100 SYL (enforced by mempool
+    // and block validation). Raise the max-fee safety limit accordingly.
+    static constexpr CAmount MIN_TOKEN_ISSUANCE_FEE = 100 * COIN; // 100 SYL
+    coin_control.m_max_tx_fee = MIN_TOKEN_ISSUANCE_FEE * 3; // Allow up to 300 SYL
+
     // Specify change position to be AFTER the issuer output (position 2)
     // This ensures the issuer address is at output 1 (first non-OP_RETURN)
-    return CreateTransaction(m_wallet, recipients, /*change_pos=*/2, coin_control, /*sign=*/true);
+    auto tx_result = CreateTransaction(m_wallet, recipients, /*change_pos=*/2, coin_control, /*sign=*/true);
+    if (!tx_result) return tx_result;
+
+    // If the normal feerate-based fee is below the minimum issuance fee,
+    // recompute with a higher feerate derived from the actual tx virtual size.
+    if (tx_result->fee < MIN_TOKEN_ISSUANCE_FEE) {
+        int64_t tx_vsize = GetVirtualTransactionSize(*tx_result->tx);
+        // Add small buffer (+10000 sat) to avoid rounding below the minimum
+        coin_control.m_feerate = CFeeRate(MIN_TOKEN_ISSUANCE_FEE + 10000, (int32_t)tx_vsize);
+        coin_control.fOverrideFeeRate = true;
+        return CreateTransaction(m_wallet, recipients, /*change_pos=*/2, coin_control, /*sign=*/true);
+    }
+
+    return tx_result;
 }
 
 util::Result<CreatedTransactionResult> WalletTokenManager::CreateTransferTransaction(
@@ -437,12 +455,14 @@ util::Result<CreatedTransactionResult> WalletTokenManager::CreateBurnTransaction
     CCoinControl coin_control;
     auto coins = AvailableCoins(m_wallet);
     bool found_token_coin = false;
+    CScript sender_script;
 
     for (const auto& coin : coins.All()) {
         if (token_holder_scripts.count(coin.txout.scriptPubKey) > 0) {
             // Pre-select this coin - it must be the first input so TokenDB
             // correctly identifies the burner
             coin_control.Select(coin.outpoint);
+            sender_script = coin.txout.scriptPubKey;
             found_token_coin = true;
             break;
         }
@@ -460,14 +480,24 @@ util::Result<CreatedTransactionResult> WalletTokenManager::CreateBurnTransaction
     CScript op_return_script = src20::BuildBurnScript(burn);
 
     // Create outputs
-    // For burn, the output order is simpler: OP_RETURN + change
     std::vector<CRecipient> recipients;
     
     // Output 0: OP_RETURN with burn data (use CNoDestination wrapper)
     recipients.push_back({CNoDestination{op_return_script}, 0, false});
+
+    // Output 1: Marker output back to burner's address (if tokens remain).
+    // This creates a UTXO at the holder address for future token operations.
+    unsigned int change_pos = 1;
+    if (balance->balance > amount) {
+        CTxDestination sender_dest;
+        if (!ExtractDestination(sender_script, sender_dest)) {
+            return util::Error{Untranslated("Could not extract sender destination")};
+        }
+        recipients.push_back({sender_dest, DUST_RELAY_TX_FEE, false});
+        change_pos = 2;
+    }
     
-    // Change goes at position 1 (after OP_RETURN)
-    return CreateTransaction(m_wallet, recipients, /*change_pos=*/1, coin_control, /*sign=*/true);
+    return CreateTransaction(m_wallet, recipients, change_pos, coin_control, /*sign=*/true);
 }
 
 CAmount WalletTokenManager::EstimateTokenTxFee(src20::TokenAction action) const

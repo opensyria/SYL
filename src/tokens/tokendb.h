@@ -284,7 +284,8 @@ public:
         const CScript& issuer_address,
         int height,
         int64_t time,
-        CDBBatch* external_batch = nullptr) EXCLUSIVE_LOCKS_REQUIRED(!m_cs);
+        CDBBatch* external_batch = nullptr,
+        BalanceOverlay* overlay = nullptr) EXCLUSIVE_LOCKS_REQUIRED(!m_cs);
 
     /**
      * Get token information by ID

@@ -51,8 +51,8 @@ OP_RETURN <PROTOCOL_ID> <VERSION> <ACTION> <DATA>
 | `0x01` | ISSUE | Create new token |
 | `0x02` | TRANSFER | Transfer tokens |
 | `0x03` | BURN | Destroy tokens permanently |
-| `0x04` | FREEZE | Freeze an address (issuer only) |
-| `0x05` | UNFREEZE | Unfreeze an address (issuer only) |
+| `0x04` | FREEZE | Freeze an address (issuer only) — **reserved, not yet implemented** |
+| `0x05` | UNFREEZE | Unfreeze an address (issuer only) — **reserved, not yet implemented** |
 
 ---
 
@@ -61,17 +61,22 @@ OP_RETURN <PROTOCOL_ID> <VERSION> <ACTION> <DATA>
 ### Payload Format
 
 ```
-<TICKER:4> <NAME_LEN:1> <NAME:1-32> <DECIMALS:1> <SUPPLY:8> <METADATA_HASH:32>
+<TICKER:4> <NAME:32> <DECIMALS:1> <SUPPLY:8> <METADATA_HASH:32>
 ```
+
+Total payload: **77 bytes** (fixed size).
 
 | Field | Size | Constraints |
 |-------|------|-------------|
 | TICKER | 4 bytes | ASCII A-Z0-9, null-padded |
-| NAME_LEN | 1 byte | 1-32 |
-| NAME | 1-32 bytes | UTF-8, printable characters |
+| NAME | 32 bytes | UTF-8, null-padded, 1-32 printable characters |
 | DECIMALS | 1 byte | 0-18 |
 | SUPPLY | 8 bytes | Little-endian uint64, > 0 |
 | METADATA_HASH | 32 bytes | SHA256 of off-chain metadata (optional, zero-filled if none) |
+
+> **Note:** There is no separate NAME_LEN field.  The NAME field is a fixed
+> 32-byte slot; unused trailing bytes are null (`0x00`).  The parser strips
+> trailing nulls to recover the variable-length string.
 
 ### Token ID Generation
 
@@ -89,22 +94,32 @@ This ensures:
 
 ### Validation Rules
 
-1. **Ticker**: 1-4 uppercase alphanumeric characters (minimum 1 character in code; tickers shorter than 3 characters are valid but discouraged)
+1. **Ticker**: 3-4 uppercase alphanumeric characters (`MIN_TICKER_LENGTH=3`, `MAX_TICKER_LENGTH=4`)
 2. **Name**: 1-32 printable characters, no leading/trailing/consecutive spaces
 3. **Decimals**: 0-18 (18 is maximum, matching Ethereum)
 4. **Supply**: Must be > 0
 5. **Uniqueness**: Ticker uniqueness is NOT enforced at consensus level (first-seen for verified status)
+6. **Operations per tx**: A single transaction may carry at most **4** SRC-20 operations (`MAX_OPS_PER_TX = 4` in `src/script/src20.cpp`)
+7. **Operations per block**: At most **100** token operations per block (`MAX_TOKENS_PER_BLOCK = 100`)
 
 ### Reserved Tickers
 
-The following tickers are reserved:
+The following tickers are reserved and cannot be issued as SRC-20 tokens.
+The canonical list lives in `src/script/src20.h` (`RESERVED_TICKERS`).
 
 | Ticker | Purpose |
 |--------|---------|
-| `SYL` | Native currency (cannot be issued as token) |
-| `ESYP` | Reserved for Electronic Syrian Pound stablecoin |
-| `USDT` | Reserved for bridged USDT |
-| `USDC` | Reserved for bridged USDC |
+| `SYL` | Native currency |
+| `OSYL` | OpenSYL variation |
+| `ESYP` | Electronic Syrian Pound stablecoin |
+| `SUSD` | Synthetic USD |
+| `SUST` | Synthetic USDT |
+| `BTC` | Prevent Bitcoin impersonation |
+| `ETH` | Prevent Ethereum impersonation |
+| `USDT` | Reserved for bridged Tether |
+| `USDC` | Reserved for bridged USD Coin |
+
+Additional tickers may be reserved at runtime via `AddReservedTicker()`.
 
 ### Example Transaction
 

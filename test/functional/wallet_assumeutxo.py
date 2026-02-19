@@ -118,7 +118,7 @@ class AssumeutxoTest(OpenSYTestFramework):
 
         assert_equal(
             dump_output['txoutset_hash'],
-            "e2c222db5361eb6ae9cd3f36e1addb32514eb59e2a8cdc4d3cd1489b4fcb11e3")
+            "370e71925ac51720fce42e4a9bc31f03e889f6c5edad1b9534b1af865937b24e")
         assert_equal(dump_output["nchaintx"], 334)
         assert_equal(n0.getblockchaininfo()["blocks"], SNAPSHOT_BASE_HEIGHT)
 

@@ -1377,7 +1377,8 @@ static util::Result<CreatedTransactionResult> CreateTransactionInternal(
         return util::Error{_("Transaction too large")};
     }
 
-    if (current_fee > wallet.m_default_max_tx_fee) {
+    const CAmount max_tx_fee = coin_control.m_max_tx_fee.value_or(wallet.m_default_max_tx_fee);
+    if (current_fee > max_tx_fee) {
         return util::Error{TransactionErrorString(TransactionError::MAX_FEE_EXCEEDED)};
     }
 

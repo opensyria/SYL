@@ -140,7 +140,10 @@ option(BUILD_KERNEL_LIB "Build experimental opensykernel library." ${BUILD_UTIL_
 option(BUILD_KERNEL_TEST "Build tests for the experimental opensykernel library." ${BUILD_KERNEL_LIB})
 
 option(ENABLE_SRC20_TOKENS "Enable SRC-20 token overlay indexing." ON)
-option(ENABLE_RANDOMX_POW "Enable RandomX ASIC-resistant proof-of-work." ON)
+# AUDIT FIX [ISSUE-011]: RandomX is mandatory for mainnet consensus.
+# This option is retained for build-system symmetry with ENABLE_SRC20_TOKENS
+# but must remain ON; setting it OFF will cause a build failure.
+option(ENABLE_RANDOMX_POW "Enable RandomX ASIC-resistant proof-of-work (mandatory)." ON)
 
 option(ENABLE_WALLET "Enable wallet." ON)
 if(ENABLE_WALLET)

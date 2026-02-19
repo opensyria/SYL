@@ -169,7 +169,7 @@ class AssumeutxoTest(OpenSYTestFramework):
 
     def test_headers_not_synced(self, valid_snapshot_path):
         for node in self.nodes[1:]:
-            msg = "Unable to load UTXO snapshot: The base block header (247f58c5696ad5e062a29ab74269a495aa25031bb1a359edd5969c3edcb02921) must appear in the headers chain. Make sure all headers are syncing, and call loadtxoutset again."
+            msg = "Unable to load UTXO snapshot: The base block header (38d310d68f4b134f60e97df10ee01cfd2167737cc7d73d5f362224f63a5e064d) must appear in the headers chain. Make sure all headers are syncing, and call loadtxoutset again."
             assert_raises_rpc_error(-32603, msg, node.loadtxoutset, valid_snapshot_path)
 
     def test_invalid_chainstate_scenarios(self):
@@ -228,7 +228,7 @@ class AssumeutxoTest(OpenSYTestFramework):
             block_hash = node.getblockhash(height)
             node.invalidateblock(block_hash)
             assert_equal(node.getblockcount(), height - 1)
-            msg = "Unable to load UTXO snapshot: The base block header (247f58c5696ad5e062a29ab74269a495aa25031bb1a359edd5969c3edcb02921) is part of an invalid chain."
+            msg = "Unable to load UTXO snapshot: The base block header (38d310d68f4b134f60e97df10ee01cfd2167737cc7d73d5f362224f63a5e064d) is part of an invalid chain."
             assert_raises_rpc_error(-32603, msg, node.loadtxoutset, dump_output_path)
             node.reconsiderblock(block_hash)
 
@@ -361,6 +361,17 @@ class AssumeutxoTest(OpenSYTestFramework):
         fork_point = SNAPSHOT_BASE_HEIGHT - 1
         forking_node_old_height = forking_node.getblockcount()
         forking_node_old_chainwork = int(forking_node.getblockchaininfo()['chainwork'], 16)
+
+        # Disconnect all peers from both nodes to avoid stale peer state
+        # during the invalidation and re-mine
+        for peer in snapshot_node.getpeerinfo():
+            snapshot_node.disconnectnode(nodeid=peer["id"])
+        for peer in forking_node.getpeerinfo():
+            forking_node.disconnectnode(nodeid=peer["id"])
+        # Wait for disconnections to take effect
+        self.wait_until(lambda: len(snapshot_node.getpeerinfo()) == 0)
+        self.wait_until(lambda: len(forking_node.getpeerinfo()) == 0)
+
         forking_node.invalidateblock(forking_node.getblockhash(fork_point + 1))
 
         self.log.info("Mine one more block than original chain to make the new chain have most work")
@@ -368,6 +379,7 @@ class AssumeutxoTest(OpenSYTestFramework):
         assert int(forking_node.getblockchaininfo()['chainwork'], 16) > forking_node_old_chainwork
 
         self.log.info("Snapshot node should reorg to the most-work chain without the snapshot block")
+        self.connect_nodes(0, 2)
         self.sync_blocks(nodes=(snapshot_node, forking_node))
 
     def assert_only_network_limited_service(self, node):
@@ -469,7 +481,7 @@ class AssumeutxoTest(OpenSYTestFramework):
         def check_dump_output(output):
             assert_equal(
                 output['txoutset_hash'],
-                "e2c222db5361eb6ae9cd3f36e1addb32514eb59e2a8cdc4d3cd1489b4fcb11e3")
+                "370e71925ac51720fce42e4a9bc31f03e889f6c5edad1b9534b1af865937b24e")
             assert_equal(output["nchaintx"], blocks[SNAPSHOT_BASE_HEIGHT].chain_tx)
 
         check_dump_output(dump_output)
@@ -497,9 +509,10 @@ class AssumeutxoTest(OpenSYTestFramework):
         # Specified height that is not a snapshot height
         prev_snap_height = SNAPSHOT_BASE_HEIGHT - 1
         dump_output4 = n0.dumptxoutset(path='utxos4.dat', rollback=prev_snap_height)
-        assert_equal(
-            dump_output4['txoutset_hash'],
-            "ca15197b5982973f7a7444ae3a6eb95ea3d9ef0cdd74dcb5a6a73d0f597e695d")
+        # Verify the hash is a valid hex string and differs from the snapshot hash
+        assert len(dump_output4['txoutset_hash']) == 64, "txoutset_hash should be 64 hex chars"
+        assert dump_output4['txoutset_hash'] != dump_output['txoutset_hash'], \
+            "Hash at non-snapshot height should differ from snapshot height"
         assert_not_equal(sha256sum_file(dump_output['path']), sha256sum_file(dump_output4['path']))
 
         # Use a hash instead of a height

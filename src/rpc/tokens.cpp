@@ -256,12 +256,12 @@ UniValue TokenInfoToJSON(const tokens::TokenInfo& info)
     // AUDIT FIX [M-R6]: Use integer arithmetic + string formatting instead of
     // double division, which loses precision for values > 2^53 (~9 * 10^15).
     // With MAX_MONEY = 2.1 * 10^18, double cannot represent all values exactly.
-    auto FormatWithDecimals = [](int64_t value, int decimals) -> std::string {
+    auto FormatWithDecimals = [](uint64_t value, int decimals) -> std::string {
         if (decimals <= 0) return std::to_string(value);
-        int64_t divisor = 1;
+        uint64_t divisor = 1;
         for (int i = 0; i < decimals; ++i) divisor *= 10;
-        int64_t whole = value / divisor;
-        int64_t frac = std::abs(value % divisor);
+        uint64_t whole = value / divisor;
+        uint64_t frac = value % divisor;
         // Format fractional part with leading zeros, then strip trailing zeros
         std::string frac_str = std::to_string(frac);
         while (static_cast<int>(frac_str.size()) < decimals) frac_str = "0" + frac_str;
@@ -293,12 +293,12 @@ UniValue TokenBalanceToJSON(const tokens::TokenBalance& balance, const tokens::T
         result.pushKV("decimals", info->decimals);
         
         // AUDIT FIX [M-R6]: Integer arithmetic for formatted balance (no float precision loss)
-        auto FormatBalance = [](int64_t value, int decimals) -> std::string {
+        auto FormatBalance = [](uint64_t value, int decimals) -> std::string {
             if (decimals <= 0) return std::to_string(value);
-            int64_t divisor = 1;
+            uint64_t divisor = 1;
             for (int i = 0; i < decimals; ++i) divisor *= 10;
-            int64_t whole = value / divisor;
-            int64_t frac = std::abs(value % divisor);
+            uint64_t whole = value / divisor;
+            uint64_t frac = value % divisor;
             std::string frac_str = std::to_string(frac);
             while (static_cast<int>(frac_str.size()) < decimals) frac_str = "0" + frac_str;
             size_t last_nonzero = frac_str.find_last_not_of('0');
@@ -730,6 +730,7 @@ static RPCHelpMan issuetoken()
         RPCResult{
             RPCResult::Type::OBJ, "", /*optional=*/false, "",
             {
+                {RPCResult::Type::STR, "warning", "Advisory about SRC-20 non-consensus nature"},
                 {RPCResult::Type::STR, "note", "Instructions for transaction creation"},
                 {RPCResult::Type::STR_HEX, "op_return_hex", "Hex-encoded OP_RETURN script"},
                 {RPCResult::Type::STR, "ticker", "Token ticker"},
@@ -808,6 +809,7 @@ static RPCHelpMan transfertoken()
         RPCResult{
             RPCResult::Type::OBJ, "", /*optional=*/false, "",
             {
+                {RPCResult::Type::STR, "warning", "Advisory about SRC-20 non-consensus nature"},
                 {RPCResult::Type::STR, "note", "Instructions for manual transaction construction"},
                 {RPCResult::Type::STR_HEX, "op_return_hex", "Hex-encoded OP_RETURN script"},
                 {RPCResult::Type::STR_HEX, "recipient_script_hex", "Hex-encoded recipient script"},
@@ -880,6 +882,7 @@ static RPCHelpMan burntoken()
         RPCResult{
             RPCResult::Type::OBJ, "", /*optional=*/false, "",
             {
+                {RPCResult::Type::STR, "warning", "Advisory about SRC-20 non-consensus nature"},
                 {RPCResult::Type::STR, "note", "Instructions for manual transaction construction"},
                 {RPCResult::Type::STR_HEX, "op_return_hex", "Hex-encoded OP_RETURN script"},
                 {RPCResult::Type::STR_HEX, "token_id", "Token ID"},

@@ -117,6 +117,8 @@ public:
     std::optional<uint32_t> m_locktime;
     //! Caps weight of resulting tx
     std::optional<int> m_max_tx_weight{std::nullopt};
+    //! Override the wallet's m_default_max_tx_fee if set (for token issuance etc.)
+    std::optional<CAmount> m_max_tx_fee{std::nullopt};
 
     CCoinControl();
 

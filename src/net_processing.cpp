@@ -165,8 +165,10 @@ static const unsigned int MAX_BLOCKS_TO_ANNOUNCE = 8;
 /** Minimum blocks required to signal NODE_NETWORK_LIMITED */
 // AUDIT FIX [P-01]: Increased from 288 to 1440 for 2-minute blocks (~48 hours).
 static const unsigned int NODE_NETWORK_LIMITED_MIN_BLOCKS = 1440;
-/** Window, in blocks, for connecting to NODE_NETWORK_LIMITED peers */
-static const unsigned int NODE_NETWORK_LIMITED_ALLOW_CONN_BLOCKS = 144;
+/** Window, in blocks, for connecting to NODE_NETWORK_LIMITED peers.
+ *  AUDIT FIX [ISSUE-007]: Scaled from 144 to 720 for 2-minute blocks
+ *  (720 blocks × 2 min ≈ 24 h, matching Bitcoin's 144 × 10 min). */
+static const unsigned int NODE_NETWORK_LIMITED_ALLOW_CONN_BLOCKS = 720;
 /** Average delay between local address broadcasts */
 static constexpr auto AVG_LOCAL_ADDRESS_BROADCAST_INTERVAL{24h};
 /** Average delay between peer address broadcasts */
@@ -1463,11 +1465,13 @@ void PeerManagerImpl::FindNextBlocksToDownload(const Peer& peer, unsigned int co
         return;
     }
 
-    // When we sync with AssumeUtxo and discover the snapshot is not in the peer's best chain, abort:
-    // We can't reorg to this chain due to missing undo data until the background sync has finished,
+    // When syncing with AssumeUtxo and the snapshot has not yet been validated,
+    // abort downloading blocks from peers that don't have the snapshot block in their best chain.
+    // We can't reorg to this chain due to missing undo data until validation completes,
     // so downloading blocks from it would be futile.
     const CBlockIndex* snap_base{m_chainman.GetSnapshotBaseBlock()};
-    if (snap_base && state->pindexBestKnownBlock->GetAncestor(snap_base->nHeight) != snap_base) {
+    if (snap_base && m_chainman.BackgroundSyncInProgress() &&
+        state->pindexBestKnownBlock->GetAncestor(snap_base->nHeight) != snap_base) {
         LogDebug(BCLog::NET, "Not downloading blocks from peer=%d, which doesn't have the snapshot block in its best chain.\n", peer.m_id);
         return;
     }

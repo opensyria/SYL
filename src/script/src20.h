@@ -330,7 +330,8 @@ namespace reserved {
     // FIX [L-09]: Removed entries with lowercase characters (eSYP, sUSD, sUST)
     // since ticker validation only allows uppercase A-Z and 0-9, making lowercase
     // reservations dead code. Also removed OPENSY (6 chars > MAX_TICKER_LENGTH=4).
-    static constexpr std::array<const char*, 8> RESERVED_TICKERS = {
+    // AUDIT FIX [ISSUE-006]: Added USDC to match spec and prevent bridged-stablecoin squatting.
+    static constexpr std::array<const char*, 9> RESERVED_TICKERS = {
         // Native coin and variations
         "SYL",   // Native coin (not a token, but reserved)
         "OSYL",  // OpenSYL variation
@@ -343,7 +344,8 @@ namespace reserved {
         // Prevent impersonation
         "BTC",   // Bitcoin
         "ETH",   // Ethereum
-        "USDT"   // Tether
+        "USDT",  // Tether
+        "USDC"   // USD Coin
     };
 
     /** Check if a ticker is reserved */

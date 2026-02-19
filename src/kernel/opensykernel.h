@@ -354,6 +354,7 @@ typedef uint32_t osck_BlockValidationResult;
 #define osck_BlockValidationResult_INVALID_PREV ((osck_BlockValidationResult)(6))    //!< A block this one builds on is invalid
 #define osck_BlockValidationResult_TIME_FUTURE ((osck_BlockValidationResult)(7))     //!< block timestamp was > 2 hours in the future (or our clock is bad)
 #define osck_BlockValidationResult_HEADER_LOW_WORK ((osck_BlockValidationResult)(8)) //!< the block header may be on a too-little-work chain
+#define osck_BlockValidationResult_CHECKPOINT ((osck_BlockValidationResult)(9))     //!< block hash does not match a hardcoded checkpoint
 
 /**
  * Holds the validation interface callbacks. The user data pointer may be used

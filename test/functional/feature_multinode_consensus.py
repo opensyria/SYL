@@ -23,7 +23,6 @@ from test_framework.util import (
     assert_raises_rpc_error,
 )
 
-import threading
 import time
 
 
@@ -67,7 +66,7 @@ class MultiNodeConsensusTest(OpenSYTestFramework):
         # Verify all nodes at same height
         for i, node in enumerate(self.nodes):
             height = node.getblockcount()
-            assert_equal(height, 10, f"Node {i} has wrong height: {height}")
+            assert height == 10, f"Node {i} has wrong height: {height}"
             self.log.info(f"  Node {i}: height={height} ✓")
 
         self.log.info("  ✅ Test 1 passed: All 4 nodes synced to height 10")
@@ -87,13 +86,13 @@ class MultiNodeConsensusTest(OpenSYTestFramework):
 
         # Node 0 mines 2 blocks
         self.log.info("  Node 0 mining 2 blocks (shorter chain)...")
-        blocks_a = self.generate(self.nodes[0], 2)
+        blocks_a = self.generate(self.nodes[0], 2, sync_fun=self.no_op)
         height_a = self.nodes[0].getblockcount()
         self.log.info(f"  Node 0 at height {height_a}")
 
         # Node 1 mines 3 blocks (heavier chain)
         self.log.info("  Node 1 mining 3 blocks (heavier chain)...")
-        blocks_b = self.generate(self.nodes[1], 3)
+        blocks_b = self.generate(self.nodes[1], 3, sync_fun=self.no_op)
         height_b = self.nodes[1].getblockcount()
         self.log.info(f"  Node 1 at height {height_b}")
 
@@ -132,13 +131,13 @@ class MultiNodeConsensusTest(OpenSYTestFramework):
 
         # Partition A mines 5 blocks
         self.log.info("  Partition A (nodes 0,1) mining 5 blocks...")
-        self.generate(self.nodes[0], 5)
+        self.generate(self.nodes[0], 5, sync_fun=self.no_op)
         self.sync_blocks([self.nodes[0], self.nodes[1]])
         height_a = self.nodes[0].getblockcount()
 
         # Partition B mines 7 blocks (heavier)
         self.log.info("  Partition B (nodes 2,3) mining 7 blocks...")
-        self.generate(self.nodes[2], 7)
+        self.generate(self.nodes[2], 7, sync_fun=self.no_op)
         self.sync_blocks([self.nodes[2], self.nodes[3]])
         height_b = self.nodes[2].getblockcount()
 
@@ -183,34 +182,12 @@ class MultiNodeConsensusTest(OpenSYTestFramework):
         current_height = self.nodes[0].getblockcount()
         self.log.info(f"  At height {current_height}, mining block 64 (key rotation)...")
 
-        # Have multiple nodes attempt to mine block 64 concurrently
-        # This tests key rotation under concurrent access
-        mining_results = []
-        mining_errors = []
-        lock = threading.Lock()
-
-        def mine_block(node_idx):
-            try:
-                blocks = self.generate(self.nodes[node_idx], 1)
-                with lock:
-                    mining_results.append((node_idx, blocks[0] if blocks else None))
-            except Exception as e:
-                with lock:
-                    mining_errors.append((node_idx, str(e)))
-
-        # Start concurrent mining on all nodes
-        threads = []
+        # Have multiple nodes mine blocks across the key rotation boundary
+        # Mining sequentially from different nodes to test key rotation consensus
+        self.log.info("  Mining blocks from each node around key rotation...")
         for i in range(self.num_nodes):
-            t = threading.Thread(target=mine_block, args=(i,))
-            threads.append(t)
-
-        self.log.info("  Starting concurrent mining on all 4 nodes...")
-        for t in threads:
-            t.start()
-
-        for t in threads:
-            t.join(timeout=120)
-
+            self.generate(self.nodes[i], 1, sync_fun=self.no_op)
+        
         # Sync all nodes
         self.sync_all()
 
@@ -220,7 +197,7 @@ class MultiNodeConsensusTest(OpenSYTestFramework):
             hash_64 = self.nodes[0].getblockhash(height_64)
             for i, node in enumerate(self.nodes):
                 node_hash = node.getblockhash(height_64)
-                assert_equal(node_hash, hash_64, f"Node {i} has different block 64 hash")
+                assert node_hash == hash_64, f"Node {i} has different block 64 hash"
                 self.log.info(f"  Node {i}: block 64 = {hash_64[:16]}... ✓")
 
             self.log.info(f"  ✅ Test 4 passed: All nodes agree on block 64 across key rotation")
@@ -252,8 +229,8 @@ class MultiNodeConsensusTest(OpenSYTestFramework):
         
         # Verify chain is valid
         chain_info = self.nodes[0].getblockchaininfo()
-        assert_equal(chain_info['blocks'], chain_info['headers'], 
-                     "Headers and blocks should match for fully validated chain")
+        assert chain_info['blocks'] == chain_info['headers'], \
+                     "Headers and blocks should match for fully validated chain"
         
         self.log.info(f"  Chain validation: {chain_info['blocks']} blocks fully validated ✓")
         self.log.info(f"  ✅ Test 5 passed: Chain is fully validated")

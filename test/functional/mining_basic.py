@@ -52,7 +52,7 @@ from test_framework.wallet import (
 
 DIFFICULTY_ADJUSTMENT_INTERVAL = 720  # Regtest: 1 day (86400s) / 2-min blocks = 720. Mainnet uses 10,080 (2 weeks).
 MAX_FUTURE_BLOCK_TIME = 2 * 3600
-MAX_TIMEWARP = 600
+MAX_TIMEWARP = 120  # OpenSY: 2-minute block interval (Bitcoin uses 600)
 VERSIONBITS_TOP_BITS = 0x20000000
 VERSIONBITS_DEPLOYMENT_TESTDUMMY_BIT = 28
 DEFAULT_BLOCK_MIN_TX_FEE = 1 # default `-blockmintxfee` setting [qirsh/kvB]
