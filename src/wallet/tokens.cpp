@@ -29,6 +29,14 @@ namespace wallet {
  */
 static std::string FormatTokenBalance(uint64_t value, uint8_t decimals)
 {
+    // AUDIT FIX [ISSUE-014]: Clamp decimals to 18 (protocol max) to prevent
+    // uint64_t overflow when computing divisor via repeated multiplication.
+    // SRC-20 caps decimals at MAX_DECIMALS (18), but defensive clamping here
+    // protects against corrupted DB records or future protocol changes.
+    if (decimals > 18) {
+        decimals = 18;
+    }
+    
     if (decimals == 0) {
         return std::to_string(value);
     }

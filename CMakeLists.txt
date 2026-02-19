@@ -139,7 +139,17 @@ option(BUILD_UTIL_CHAINSTATE "Build experimental opensy-chainstate executable." 
 option(BUILD_KERNEL_LIB "Build experimental opensykernel library." ${BUILD_UTIL_CHAINSTATE})
 option(BUILD_KERNEL_TEST "Build tests for the experimental opensykernel library." ${BUILD_KERNEL_LIB})
 
-option(ENABLE_SRC20_TOKENS "Enable SRC-20 token overlay indexing." ON)
+option(ENABLE_SRC20_TOKENS "Enable SRC-20 token overlay indexing (mandatory for OpenSY)." ON)
+# AUDIT FIX [ISSUE-001]: SRC-20 token code is tightly integrated into init.cpp,
+# validation, wallet, and RPCs without #ifdef guards.  Disabling this option
+# would cause compile failures.  Force it ON until conditional compilation
+# guards are added across the full codebase.
+if(NOT ENABLE_SRC20_TOKENS)
+  message(FATAL_ERROR
+    "ENABLE_SRC20_TOKENS=OFF is not supported. "
+    "The token subsystem is unconditionally referenced in init.cpp, "
+    "validation.cpp, and wallet code. Set -DENABLE_SRC20_TOKENS=ON or omit it.")
+endif()
 # AUDIT FIX [ISSUE-011]: RandomX is mandatory for mainnet consensus.
 # This option is retained for build-system symmetry with ENABLE_SRC20_TOKENS
 # but must remain ON; setting it OFF will cause a build failure.

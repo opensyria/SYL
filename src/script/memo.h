@@ -40,7 +40,11 @@ enum class MemoType : uint8_t {
     INVOICE = 0x02,       // Invoice reference
     RECEIPT = 0x03,       // Receipt/order ID
     METADATA = 0x04,      // Arbitrary key-value
-    ENCRYPTED = 0x10,     // Encrypted content
+    // AUDIT FIX [ISSUE-009]: Renamed from ENCRYPTED to TAGGED.
+    // The protocol provides NO cryptographic encryption; the old name was
+    // misleading and could give users a false sense of privacy.
+    // TAGGED marks application-specific opaque payloads.
+    TAGGED = 0x10,        // Application-tagged opaque payload (NOT encrypted)
 };
 
 /**
@@ -152,6 +156,46 @@ inline MemoScript CreateTypedMemoScript(const std::string& memo, MemoType type) 
         result.success = false;
         result.error = "Memo exceeds maximum length of " + std::to_string(MAX_MEMO_LENGTH) + " bytes";
         return result;
+    }
+    
+    // AUDIT FIX [ISSUE-010]: Validate UTF-8 encoding for TEXT, INVOICE, and
+    // RECEIPT memo types.  These are human-readable and displaying invalid
+    // UTF-8 could cause rendering issues or be used for homoglyph attacks.
+    if (type == MemoType::TEXT || type == MemoType::INVOICE || type == MemoType::RECEIPT) {
+        size_t i = 0;
+        while (i < memo.size()) {
+            uint8_t c = static_cast<uint8_t>(memo[i]);
+            size_t seq_len = 0;
+            if (c <= 0x7F) { seq_len = 1; }
+            else if ((c & 0xE0) == 0xC0) { seq_len = 2; }
+            else if ((c & 0xF0) == 0xE0) { seq_len = 3; }
+            else if ((c & 0xF8) == 0xF0) { seq_len = 4; }
+            else {
+                result.success = false;
+                result.error = "Memo contains invalid UTF-8 at byte " + std::to_string(i);
+                return result;
+            }
+            if (i + seq_len > memo.size()) {
+                result.success = false;
+                result.error = "Memo contains truncated UTF-8 sequence at byte " + std::to_string(i);
+                return result;
+            }
+            // Validate continuation bytes
+            for (size_t j = 1; j < seq_len; j++) {
+                if ((static_cast<uint8_t>(memo[i + j]) & 0xC0) != 0x80) {
+                    result.success = false;
+                    result.error = "Memo contains invalid UTF-8 continuation at byte " + std::to_string(i + j);
+                    return result;
+                }
+            }
+            // Reject overlong encodings
+            if (seq_len == 2 && c < 0xC2) {
+                result.success = false;
+                result.error = "Memo contains overlong UTF-8 encoding at byte " + std::to_string(i);
+                return result;
+            }
+            i += seq_len;
+        }
     }
     
     // Build data payload: protocol_id + version + type + memo

@@ -128,7 +128,7 @@ File: `src/kernel/chainparams.cpp`
 consensus.nArgon2ForkHeight = 500000;  // Example height
 consensus.fArgon2Emergency = true;
 consensus.nArgon2MemoryCost = 2097152;  // 2 GB (matches mainnet default / RandomX dataset)
-consensus.nArgon2TimeCost = 3;
+consensus.nArgon2TimeCost = 1;          // Matches code default (consensus/params.h)
 consensus.nArgon2Parallelism = 1;
 ```
 

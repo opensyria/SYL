@@ -17,7 +17,9 @@
 #include <univalue.h>
 #include <util/time.h>
 #include <validation.h>
-#include <wallet/wallet.h>
+// AUDIT FIX [ISSUE-015]: Removed stale #include <wallet/wallet.h>.
+// This is the node-level RPC file; wallet dependencies belong in
+// src/wallet/rpc/tokens.cpp only.
 
 #include <deque>
 #include <mutex>
@@ -635,12 +637,19 @@ static RPCHelpMan gettokenholders()
                 
                 obj.pushKV("balance", holder.balance);
                 
-                // Percentage with 2 decimal places via integer arithmetic.
-                // balance * 10000 could overflow int64_t for very large values,
-                // so we compute in two steps: whole % first, then fractional.
-                int64_t pct_whole = (info->total_supply > 0) ? (holder.balance / (info->total_supply / 100)) : 0;
-                int64_t remainder = (info->total_supply > 0) ? (holder.balance % (info->total_supply / 100)) : 0;
-                int64_t pct_frac = (info->total_supply > 0) ? (remainder * 100 / (info->total_supply / 100)) : 0;
+                // AUDIT FIX [ISSUE-007]: Safe percentage with 2 decimal places.
+                // Previous code divided by (total_supply / 100) which is 0 when
+                // total_supply < 100, causing a division-by-zero crash.
+                // New approach: (balance * 10000 / total_supply) gives basis points,
+                // then split into whole and fractional percent.
+                int64_t pct_whole = 0;
+                int64_t pct_frac = 0;
+                if (info->total_supply > 0) {
+                    // Use __int128 to avoid overflow for large balances
+                    __int128 bp = static_cast<__int128>(holder.balance) * 10000 / info->total_supply;
+                    pct_whole = static_cast<int64_t>(bp / 100);
+                    pct_frac = static_cast<int64_t>(bp % 100);
+                }
                 // Clamp to avoid display issues
                 if (pct_whole > 100) pct_whole = 100;
                 if (pct_frac < 0) pct_frac = 0;

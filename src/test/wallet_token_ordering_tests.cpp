@@ -298,12 +298,12 @@ BOOST_AUTO_TEST_CASE(recipient_output_above_dust)
     // Output 1: Recipient with dust amount
     std::vector<unsigned char> recipient_hash(20, 0xFF);
     tx.vout[1].scriptPubKey = CreateP2PKH(recipient_hash);
-    tx.vout[1].nValue = 1;  // 1 satoshi - below dust
+    tx.vout[1].nValue = 1;  // 1 qirsh - below dust
     
     // The value should be checked against dust threshold
     // Dust limit depends on relay fee, but 1 sat is definitely dust
     BOOST_CHECK_MESSAGE(tx.vout[1].nValue < 546, 
-        "1 satoshi should be below typical dust threshold");
+        "1 qirsh should be below typical dust threshold");
 }
 
 // =============================================================================

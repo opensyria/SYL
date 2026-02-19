@@ -10,6 +10,7 @@
 #include <script/src20.h>
 #include <tokens/tokendb.h>
 #include <univalue.h>
+#include <util/time.h>
 #include <wallet/rpc/util.h>
 #include <wallet/tokens.h>
 #include <wallet/wallet.h>
@@ -29,6 +30,21 @@ static void EnsureTokenDB()
     if (!tokens::g_tokendb || !tokens::g_tokendb->IsValid()) {
         throw JSONRPCError(RPC_DATABASE_ERROR, "Token database not available");
     }
+}
+
+// AUDIT FIX [ISSUE-016]: Simple rate limiter for wallet write RPCs.
+// Prevents rapid-fire token issuance/transfer/burn calls that could
+// flood the mempool or drain the wallet via fee spending.
+static constexpr int64_t WALLET_TOKEN_RPC_COOLDOWN_SECS = 1;
+static std::atomic<int64_t> g_last_wallet_token_rpc{0};
+static void EnforceWalletTokenRateLimit()
+{
+    int64_t now = GetTime();
+    int64_t last = g_last_wallet_token_rpc.load();
+    if (now - last < WALLET_TOKEN_RPC_COOLDOWN_SECS) {
+        throw JSONRPCError(RPC_IN_WARMUP, "Token wallet RPC rate limited. Try again shortly.");
+    }
+    g_last_wallet_token_rpc.store(now);
 }
 
 // RPC: walletissuetoken
@@ -71,6 +87,7 @@ RPCHelpMan walletissuetoken()
             if (!pwallet) return UniValue::VNULL;
 
             EnsureTokenDB();
+            EnforceWalletTokenRateLimit();
             EnsureWalletIsUnlocked(*pwallet);
 
             // Build issuance data
@@ -184,6 +201,7 @@ RPCHelpMan wallettransfertoken()
             if (!pwallet) return UniValue::VNULL;
 
             EnsureTokenDB();
+            EnforceWalletTokenRateLimit();
             EnsureWalletIsUnlocked(*pwallet);
 
             std::string token_id_hex = request.params[0].get_str();
@@ -276,6 +294,7 @@ RPCHelpMan walletburntoken()
             if (!pwallet) return UniValue::VNULL;
 
             EnsureTokenDB();
+            EnforceWalletTokenRateLimit();
             EnsureWalletIsUnlocked(*pwallet);
 
             std::string token_id_hex = request.params[0].get_str();

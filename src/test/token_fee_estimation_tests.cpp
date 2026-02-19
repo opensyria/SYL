@@ -263,7 +263,7 @@ BOOST_AUTO_TEST_CASE(minimum_fee_sufficient)
     // Minimum relay fee is typically 1 sat/vbyte
     CAmount min_fee = size * 1;
     
-    BOOST_TEST_MESSAGE("Minimum fee for relay: " << min_fee << " satoshis");
+    BOOST_TEST_MESSAGE("Minimum fee for relay: " << min_fee << " qirsh");
     
     // Should be reasonable
     BOOST_CHECK_GT(min_fee, 100);   // At least 100 sats

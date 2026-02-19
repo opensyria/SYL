@@ -649,6 +649,26 @@ bool TokenDB::TransferTokens(
     if (from_balance == amount) {
         // Sender will have zero balance - remove from holder index
         batch.Erase(from_holder_key);
+        
+        // AUDIT FIX [ISSUE-017]: Remove token from sender's addr_tokens set
+        // when their balance reaches zero.  Without this, the address retains
+        // a stale entry in its token list, showing tokens it no longer holds.
+        auto from_addr_key = AddrTokensKey(from);
+        std::set<src20::TokenId> from_tokens;
+        if (overlay) {
+            from_tokens = GetAddrTokensWithOverlay(*m_db, *overlay, from);
+        } else {
+            m_db->Read(from_addr_key, from_tokens);
+        }
+        from_tokens.erase(token_id);
+        if (from_tokens.empty()) {
+            batch.Erase(from_addr_key);
+        } else {
+            batch.Write(from_addr_key, from_tokens);
+        }
+        if (overlay) {
+            SetAddrTokensInOverlay(*overlay, from, from_tokens);
+        }
     }
     
     // Write recipient's new balance
@@ -816,6 +836,25 @@ bool TokenDB::BurnTokens(
         
         if (info.holder_count > 0) {
             info.holder_count--;
+        }
+        
+        // AUDIT FIX [ISSUE-017]: Remove token from burner's addr_tokens set
+        // when their balance reaches zero (mirrors TransferTokens fix).
+        auto from_addr_key = AddrTokensKey(from);
+        std::set<src20::TokenId> from_tokens;
+        if (overlay) {
+            from_tokens = GetAddrTokensWithOverlay(*m_db, *overlay, from);
+        } else {
+            m_db->Read(from_addr_key, from_tokens);
+        }
+        from_tokens.erase(token_id);
+        if (from_tokens.empty()) {
+            batch.Erase(from_addr_key);
+        } else {
+            batch.Write(from_addr_key, from_tokens);
+        }
+        if (overlay) {
+            SetAddrTokensInOverlay(*overlay, from, from_tokens);
         }
     }
     
@@ -1259,6 +1298,11 @@ int TokenDB::ProcessBlock(const CBlock& block, int height, const CCoinsViewCache
         uint16_t tx_op_index = 0;
 
         for (const auto& op : ops) {
+            // AUDIT FIX [ISSUE-012]: Check MAX_OPS inside the inner ops loop too.
+            // The outer per-tx check only fires between transactions; without
+            // this, a transaction with multiple ops could push ops_count past
+            // MAX_OPS within a single tx iteration.
+            if (static_cast<size_t>(ops_count) >= MAX_OPS) break;
             switch (op.action) {
                 case src20::TokenAction::ISSUE: {
                     const auto* issuance = op.GetIssuance();
@@ -1467,6 +1511,36 @@ bool TokenDB::DisconnectBlock(const CBlock& block, int height)
     CDBBatch batch(*m_db);
     int undo_count = 0;
     
+    // AUDIT FIX [ISSUE-003]: Deduplicate block_token_txs.
+    // ProcessBlock pushes the txid once per *operation*, so a tx with 3 ops
+    // appears 3 times.  The inner op_idx loop already handles multi-op txs,
+    // so duplicates only cause redundant passes and spurious warnings.
+    {
+        std::vector<uint256> deduped;
+        deduped.reserve(block_token_txs.size());
+        std::set<uint256> seen;
+        for (const auto& txid : block_token_txs) {
+            if (seen.insert(txid).second) {
+                deduped.push_back(txid);
+            }
+        }
+        block_token_txs = std::move(deduped);
+    }
+    
+    // AUDIT FIX [ISSUE-004]: In-memory overlay for TokenInfo during disconnect.
+    // Without this, multiple undo operations for the same token in one
+    // DisconnectBlock each call GetTokenInfo() from DB and overwrite each
+    // other's changes (e.g. transfer_count gets decremented only once instead
+    // of N times).
+    std::map<src20::TokenId, TokenInfo> disconnect_info_overlay;
+    
+    // Helper: get token info from overlay first, then DB
+    auto GetInfoForDisconnect = [&](const src20::TokenId& tid) -> std::optional<TokenInfo> {
+        auto it = disconnect_info_overlay.find(tid);
+        if (it != disconnect_info_overlay.end()) return it->second;
+        return GetTokenInfo(tid);
+    };
+    
     // Process transactions in reverse order to properly undo
     for (auto it = block_token_txs.rbegin(); it != block_token_txs.rend(); ++it) {
         const uint256& txid = *it;
@@ -1478,17 +1552,32 @@ bool TokenDB::DisconnectBlock(const CBlock& block, int height)
         // AUDIT FIX [ISSUE-009]: Tightened from 65535.  ParseTransactionSRC20()
         // caps each tx to 4 ops, so 8 is a generous safety upper bound.
         static constexpr uint16_t MAX_UNDO_OPS_PER_TX = 8;
+        
+        // AUDIT FIX [ISSUE-006]: Collect undo records first, then process in
+        // reverse op_idx order.  Operations were applied in ascending op_idx
+        // order during ProcessBlock, so undoing them requires descending order
+        // to avoid intermediate state corruption (e.g. restoring a balance
+        // before restoring the supply that depends on it).
+        std::vector<std::pair<uint16_t, TokenUndoRecord>> tx_undos;
         for (uint16_t op_idx = 0; op_idx < MAX_UNDO_OPS_PER_TX; op_idx++) {
             auto undo_key = UndoKey(height, txid, op_idx);
             TokenUndoRecord undo;
             if (!m_db->Read(undo_key, undo)) {
-                // No more undo records for this txid
-                if (op_idx == 0) {
-                    LogPrintf("Warning: No undo record for token tx %s at height %d\n",
-                             txid.ToString().substr(0, 16), height);
-                }
                 break;
             }
+            tx_undos.emplace_back(op_idx, std::move(undo));
+        }
+        
+        if (tx_undos.empty()) {
+            LogPrintf("Warning: No undo record for token tx %s at height %d\n",
+                     txid.ToString().substr(0, 16), height);
+            continue;  // next txid
+        }
+        
+        // Process in reverse order
+        for (auto rit = tx_undos.rbegin(); rit != tx_undos.rend(); ++rit) {
+            uint16_t op_idx = rit->first;
+            const TokenUndoRecord& undo = rit->second;
         
             // SECURITY FIX [L-05]: Fixed misleading indentation. The LogDebug, switch
             // statement, and undo record deletion below are all inside the inner
@@ -1540,6 +1629,15 @@ bool TokenDB::DisconnectBlock(const CBlock& block, int height)
                         }
                     }
                 
+                    // AUDIT FIX [ISSUE-011]: Delete the issuance's TransferRecord.
+                    // RegisterToken() writes a TransferRecord to record the issuance
+                    // in history.  Without this erase, stale issuance records remain
+                    // visible in token history after a reorg undoes the issuance.
+                    {
+                        auto issue_transfer_key = TransferKey(undo.token_id, height, txid, op_idx);
+                        batch.Erase(issue_transfer_key);
+                    }
+                
                     undo_count++;
                     break;
                 }
@@ -1578,7 +1676,9 @@ bool TokenDB::DisconnectBlock(const CBlock& block, int height)
                     }
                 
                     // Restore holder count and transfer count (to batch)
-                    auto token_info = GetTokenInfo(undo.token_id);
+                    // AUDIT FIX [ISSUE-004]: Use disconnect overlay instead of GetTokenInfo()
+                    // to prevent stale reads when multiple ops affect the same token.
+                    auto token_info = GetInfoForDisconnect(undo.token_id);
                     if (token_info) {
                         token_info->holder_count = undo.prev_holder_count;
                         // SECURITY: Safe underflow handling for transfer count
@@ -1590,6 +1690,7 @@ bool TokenDB::DisconnectBlock(const CBlock& block, int height)
                                       undo.token_id.ToString().substr(0, 16));
                         }
                         WriteTokenInfoToBatch(batch, *token_info);
+                        disconnect_info_overlay[undo.token_id] = *token_info;
                     }
                 
                     // AUDIT FIX [M-01]: Include op_index in TransferKey for correct deletion.
@@ -1616,11 +1717,23 @@ bool TokenDB::DisconnectBlock(const CBlock& block, int height)
                     // Restore burner's balance (to batch for atomicity)
                     WriteBalanceToBatch(batch, undo.from_address, undo.token_id, undo.prev_from_balance);
                 
-                    // Restore circulating supply (to batch for atomicity)
-                    auto token_info = GetTokenInfo(undo.token_id);
+                    // AUDIT FIX [ISSUE-005]: Restore holder_count from undo record.
+                    // If the burn set the burner's balance to zero, BurnTokens()
+                    // decremented holder_count and erased the holder key.  Reversing
+                    // the burn must restore both.
+                    if (undo.prev_from_balance > 0 && !undo.from_address.empty()) {
+                        // Re-add holder index entry (was erased if balance went to 0)
+                        batch.Write(TokenHoldersKey(undo.token_id, undo.from_address), true);
+                    }
+                
+                    // AUDIT FIX [ISSUE-004]: Use disconnect overlay instead of GetTokenInfo()
+                    auto token_info = GetInfoForDisconnect(undo.token_id);
                     if (token_info) {
                         token_info->circulating_supply = undo.prev_circulating_supply;
+                        // AUDIT FIX [ISSUE-005]: Restore holder_count from undo record
+                        token_info->holder_count = undo.prev_holder_count;
                         WriteTokenInfoToBatch(batch, *token_info);
+                        disconnect_info_overlay[undo.token_id] = *token_info;
                     }
                 
                     // AUDIT FIX [M-02]: Delete the burn's transfer record.
@@ -1649,8 +1762,9 @@ bool TokenDB::DisconnectBlock(const CBlock& block, int height)
             }
         
             // Delete the undo record
+            auto undo_key = UndoKey(height, txid, op_idx);
             batch.Erase(undo_key);
-        } // end op_index loop [C-02]
+        } // end reverse op_index loop [ISSUE-006]
     }
     
     // Remove block record

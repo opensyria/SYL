@@ -361,6 +361,12 @@ bool MempoolTokenState::AddTransaction(const CTransaction& tx, const CScript& se
     // FIX 4.1: Track per-transaction balance deltas for proper reversal
     TxBalanceDeltas tx_deltas;
 
+    // AUDIT FIX [ISSUE-013]: Collect pending tickers locally; only commit to
+    // m_pending_tickers after the entire loop succeeds.  Previously, if a
+    // multi-op tx had an ISSUE followed by a failing op, the ISSUE's ticker
+    // was left orphaned in m_pending_tickers after the early return false.
+    std::vector<std::string> local_pending_tickers;
+
     for (const auto& op : ops) {
         switch (op.action) {
             case src20::TokenAction::ISSUE: {
@@ -372,7 +378,7 @@ bool MempoolTokenState::AddTransaction(const CTransaction& tx, const CScript& se
                                  issuance->ticker.c_str());
                         return false;
                     }
-                    m_pending_tickers[issuance->ticker] = txid;
+                    local_pending_tickers.push_back(issuance->ticker);
                 }
                 break;
             }
@@ -437,6 +443,12 @@ bool MempoolTokenState::AddTransaction(const CTransaction& tx, const CScript& se
             default:
                 break;
         }
+    }
+
+    // AUDIT FIX [ISSUE-013]: Commit locally-collected tickers now that the
+    // entire op loop succeeded without early-return.
+    for (const auto& ticker : local_pending_tickers) {
+        m_pending_tickers[ticker] = txid;
     }
 
     m_tx_ops[txid] = ops;
