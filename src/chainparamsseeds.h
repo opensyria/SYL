@@ -26,16 +26,16 @@ static const uint8_t chainparams_seed_main[] = {
     0x0f, 0xb8, 0xb7, 0x42,       // 15.184.183.66
     0x25, 0xa1,                   // Port 9633 (big-endian: 0x25a1)
 
-    // node2.opensyria.net (AWS Virginia us-east-1) - 44.210.103.181:9633
+    // node2.opensyria.net (US) - 98.93.51.52:9633
     0x01,                         // BIP155 network ID for IPv4
     0x04,                         // COMPACTSIZE: address length = 4 bytes
-    0x2c, 0xd2, 0x67, 0xb5,       // 44.210.103.181
+    0x62, 0x5d, 0x33, 0x34,       // 98.93.51.52
     0x25, 0xa1,                   // Port 9633
 
-    // node3.opensyria.net (AWS Tokyo ap-northeast-1) - 52.195.232.51:9633
+    // node3.opensyria.net (AWS Tokyo ap-northeast-1) - 3.113.3.30:9633
     0x01,                         // BIP155 network ID for IPv4
     0x04,                         // COMPACTSIZE: address length = 4 bytes
-    0x34, 0xc3, 0xe8, 0x33,       // 52.195.232.51
+    0x03, 0x71, 0x03, 0x1e,       // 3.113.3.30
     0x25, 0xa1,                   // Port 9633
 
     // node4.opensyria.net (Oracle Cloud Riyadh me-riyadh-1) - 84.8.111.37:9633
