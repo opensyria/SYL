@@ -150,21 +150,50 @@ unsigned int CalculateNextWorkRequired(const CBlockIndex* pindexLast, int64_t nF
         // If the first block of the difficulty period was mined under a different
         // PoW algorithm (e.g., SHA256d block used as base for RandomX retarget),
         // the nBits would be incompatible — potentially 256x too hard — causing
-        // a chain stall. Fall back to pindexLast->nBits (correct algorithm) in
-        // this case. This fires at the first retarget after any PoW fork.
+        // a chain stall.
+        //
+        // SECURITY FIX [C-01b]: Additionally, when the epoch spans a PoW fork
+        // boundary, the timespan-based adjustment MUST be skipped entirely.
+        // RandomX's powLimitRandomX is a 240-bit number; multiplying it by
+        // nActualTimespan (up to 22 bits) produces a 262-bit product that
+        // OVERFLOWS arith_uint256 (256 bits), yielding a garbage target ~40x
+        // too hard. This would stall the chain at the first retarget after fork.
+        // Instead, reset to minimum difficulty — the next full-algorithm epoch
+        // will perform a proper timespan-based adjustment.
         if (params.GetPowAlgorithm(nHeightFirst) == params.GetPowAlgorithm(nextHeight)) {
             bnNew.SetCompact(pindexFirst->nBits);
         } else {
-            LogPrintf("PoW: Cross-algorithm retarget at height %d — using last block nBits instead of first block (algo mismatch: %s vs %s)\n",
+            LogPrintf("PoW: Cross-algorithm retarget at height %d — resetting to powLimit (algo mismatch: %s vs %s, skipping timespan adjustment to avoid arith_uint256 overflow)\n",
                       nextHeight, GetPowAlgorithmName(nHeightFirst, params), GetPowAlgorithmName(nextHeight, params));
-            bnNew.SetCompact(pindexLast->nBits);
+            return bnPowLimit.GetCompact();
         }
     } else {
         bnNew.SetCompact(pindexLast->nBits);
     }
 
-    bnNew *= nActualTimespan;
-    bnNew /= params.nPowTargetTimespan;
+    // SECURITY FIX [C-01c]: Overflow-safe difficulty adjustment for large targets.
+    //
+    // Bitcoin's SHA256d powLimit is ~2^208 (compact 0x1d00ffff). Multiplying by
+    // nActualTimespan (max ~2^22) gives ~2^230, safely within arith_uint256's
+    // 256-bit capacity.
+    //
+    // OpenSY's RandomX powLimitRandomX is ~2^240 (compact 0x1f00ffff). The same
+    // multiplication gives ~2^262, which OVERFLOWS arith_uint256 silently
+    // (operator*= discards the carry), producing a garbage target ~40x too hard.
+    //
+    // Fix: Divide by nPowTargetTimespan FIRST, then multiply by nActualTimespan.
+    // The quotient is at most ~2^240 / ~2^20 = ~2^220. Multiplied by uint32_t
+    // nActualTimespan (~2^22 max), the product is ~2^242 — within 256 bits.
+    // The remainder term adds precision lost by integer division.
+    {
+        // nActualTimespan is clamped to [T/4, 4T] above, always fits uint32_t
+        uint32_t ts = static_cast<uint32_t>(nActualTimespan);
+        uint32_t tgt = static_cast<uint32_t>(params.nPowTargetTimespan);
+        // Compute: bnNew = bnNew * ts / tgt via divide-first
+        arith_uint256 quotient = bnNew / arith_uint256(tgt);
+        arith_uint256 remainder = bnNew - quotient * tgt;
+        bnNew = quotient * ts + remainder * ts / arith_uint256(tgt);
+    }
 
     if (bnNew > bnPowLimit)
         bnNew = bnPowLimit;
@@ -189,21 +218,45 @@ bool PermittedDifficultyTransition(const Consensus::Params& params, int64_t heig
     }
 
     if (height % params.DifficultyAdjustmentInterval() == 0) {
+        // SECURITY FIX [C-01b]: At cross-algorithm retarget boundaries (e.g., the
+        // first retarget after the RandomX fork), CalculateNextWorkRequired returns
+        // powLimit directly. The new_nbits == powLimit transition must be accepted.
+        // The timespan-based range check below would OVERFLOW arith_uint256 for
+        // RandomX's 240-bit powLimit, producing garbage bounds. Skip the range
+        // check and accept powLimit as valid when old_nbits is also at powLimit.
+        const arith_uint256 pow_limit = UintToArith256(params.GetActivePowLimit(height));
+        arith_uint256 observed_new_target;
+        observed_new_target.SetCompact(new_nbits);
+
+        // If the new target is at or below powLimit, it's always acceptable at
+        // a cross-algorithm boundary. Check if old_nbits is at powLimit (meaning
+        // we're in a minimum-difficulty epoch, typical after a PoW fork).
+        arith_uint256 old_target;
+        old_target.SetCompact(old_nbits);
+        if (old_target == pow_limit && observed_new_target == pow_limit) {
+            return true;
+        }
+
         int64_t smallest_timespan = params.nPowTargetTimespan/4;
         int64_t largest_timespan = params.nPowTargetTimespan*4;
 
         // SECURITY FIX [H-05]: Use height-aware powLimit for the correct algorithm.
         // Previously used params.powLimit (SHA256d) unconditionally, which rejected
         // legitimate RandomX difficulty transitions (RandomX powLimit is 256x higher).
-        const arith_uint256 pow_limit = UintToArith256(params.GetActivePowLimit(height));
-        arith_uint256 observed_new_target;
-        observed_new_target.SetCompact(new_nbits);
+        //
+        // SECURITY FIX [C-01c]: Use overflow-safe divide-first multiplication.
+        // See CalculateNextWorkRequired for full explanation of the overflow issue.
 
-        // Calculate the largest difficulty value possible:
+        // Calculate the largest difficulty value possible (overflow-safe):
         arith_uint256 largest_difficulty_target;
         largest_difficulty_target.SetCompact(old_nbits);
-        largest_difficulty_target *= largest_timespan;
-        largest_difficulty_target /= params.nPowTargetTimespan;
+        {
+            uint32_t tgt = static_cast<uint32_t>(params.nPowTargetTimespan);
+            uint32_t ts = static_cast<uint32_t>(largest_timespan);
+            arith_uint256 q = largest_difficulty_target / arith_uint256(tgt);
+            arith_uint256 r = largest_difficulty_target - q * tgt;
+            largest_difficulty_target = q * ts + r * ts / arith_uint256(tgt);
+        }
 
         if (largest_difficulty_target > pow_limit) {
             largest_difficulty_target = pow_limit;
@@ -215,11 +268,16 @@ bool PermittedDifficultyTransition(const Consensus::Params& params, int64_t heig
         maximum_new_target.SetCompact(largest_difficulty_target.GetCompact());
         if (maximum_new_target < observed_new_target) return false;
 
-        // Calculate the smallest difficulty value possible:
+        // Calculate the smallest difficulty value possible (overflow-safe):
         arith_uint256 smallest_difficulty_target;
         smallest_difficulty_target.SetCompact(old_nbits);
-        smallest_difficulty_target *= smallest_timespan;
-        smallest_difficulty_target /= params.nPowTargetTimespan;
+        {
+            uint32_t tgt = static_cast<uint32_t>(params.nPowTargetTimespan);
+            uint32_t ts = static_cast<uint32_t>(smallest_timespan);
+            arith_uint256 q = smallest_difficulty_target / arith_uint256(tgt);
+            arith_uint256 r = smallest_difficulty_target - q * tgt;
+            smallest_difficulty_target = q * ts + r * ts / arith_uint256(tgt);
+        }
 
         if (smallest_difficulty_target > pow_limit) {
             smallest_difficulty_target = pow_limit;
