@@ -20,22 +20,22 @@
 
 // Mainnet seeds - Only include actually running nodes!
 static const uint8_t chainparams_seed_main[] = {
-    // node1.opensyria.net (AWS Bahrain me-south-1) - 15.184.183.66:9633
+    // node1.opensyria.net (AWS Bahrain me-south-1) - 15.184.134.119:9633 [Elastic IP]
     0x01,                         // BIP155 network ID for IPv4
     0x04,                         // COMPACTSIZE: address length = 4 bytes
-    0x0f, 0xb8, 0xb7, 0x42,       // 15.184.183.66
+    0x0f, 0xb8, 0x86, 0x77,       // 15.184.134.119
     0x25, 0xa1,                   // Port 9633 (big-endian: 0x25a1)
 
-    // node2.opensyria.net (US) - 98.93.51.52:9633
+    // node2.opensyria.net (AWS US us-east-1) - 13.219.175.17:9633 [Elastic IP]
     0x01,                         // BIP155 network ID for IPv4
     0x04,                         // COMPACTSIZE: address length = 4 bytes
-    0x62, 0x5d, 0x33, 0x34,       // 98.93.51.52
+    0x0d, 0xdb, 0xaf, 0x11,       // 13.219.175.17
     0x25, 0xa1,                   // Port 9633
 
-    // node3.opensyria.net (AWS Tokyo ap-northeast-1) - 3.113.3.30:9633
+    // node3.opensyria.net (AWS Tokyo ap-northeast-1) - 54.178.171.252:9633 [Elastic IP]
     0x01,                         // BIP155 network ID for IPv4
     0x04,                         // COMPACTSIZE: address length = 4 bytes
-    0x03, 0x71, 0x03, 0x1e,       // 3.113.3.30
+    0x36, 0xb2, 0xab, 0xfc,       // 54.178.171.252
     0x25, 0xa1,                   // Port 9633
 
     // node4.opensyria.net (Oracle Cloud Riyadh me-riyadh-1) - 84.8.111.37:9633
