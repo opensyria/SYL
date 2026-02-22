@@ -38,10 +38,10 @@ static const uint8_t chainparams_seed_main[] = {
     0x36, 0xb2, 0xab, 0xfc,       // 54.178.171.252
     0x25, 0xa1,                   // Port 9633
 
-    // node4.opensyria.net (Oracle Cloud Riyadh me-riyadh-1) - 84.8.111.37:9633
+    // node4.opensyria.net (Oracle Cloud Riyadh me-riyadh-1) - 145.241.153.149:9633
     0x01,                         // BIP155 network ID for IPv4
     0x04,                         // COMPACTSIZE: address length = 4 bytes
-    0x54, 0x08, 0x6f, 0x25,       // 84.8.111.37
+    0x91, 0xf1, 0x99, 0x95,       // 145.241.153.149
     0x25, 0xa1                    // Port 9633
 
     // ==========================================================================
