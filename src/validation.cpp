@@ -4315,21 +4315,20 @@ bool HasValidProofOfWork(const std::vector<CBlockHeader>& headers, const Consens
                 if (!bnTarget.has_value()) {
                     return false;
                 }
-                // SECURITY FIX [H-05]: Header Spam Rate Limiting (strengthened)
-                // For RandomX blocks, verify the claimed target requires meaningful work.
-                // Full RandomX hash validation happens later in ContextualCheckBlockHeader.
+                // For RandomX blocks, the DeriveTarget() call above already validates
+                // that nBits parses to a target within powLimitRandomX. This is
+                // sufficient anti-spam protection for header-first sync because:
+                //   1. Full RandomX PoW validation in ContextualCheckBlockHeader
+                //      prevents actual chain pollution
+                //   2. min_pow_checked flag gates header acceptance in AcceptBlockHeader
+                //   3. Memory bounded by max headers in flight per peer
                 //
-                // AUDIT FIX [H-03]: Tightened from >>2 (4x) to >>4 (16x).
-                // The original 4x reduction was insufficient — an attacker only
-                // needed to claim difficulty 4x the minimum to bypass this check,
-                // which is trivial to brute-force with SHA256d on the nBits field.
-                // 16x makes header spam 16x more expensive to fabricate.
-                arith_uint256 maxAllowedTarget = UintToArith256(consensusParams.powLimitRandomX);
-                if (!consensusParams.fPowAllowMinDifficultyBlocks) {
-                    // Mainnet: require at least 16x minimum work
-                    maxAllowedTarget >>= 4;
-                }
-                return *bnTarget <= maxAllowedTarget;
+                // NOTE: The previous >>4 (16x) tightening was REMOVED because it
+                // rejected legitimate headers at minimum RandomX difficulty, which
+                // occurs naturally when RandomX first activates at nRandomXForkHeight
+                // (difficulty resets to powLimitRandomX). This caused all peers to
+                // disconnect each other with "header with invalid proof of work".
+                return true;
             });
 }
 
