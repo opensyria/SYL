@@ -120,6 +120,7 @@
 #include <tokens/tokendb.h>
 #include <tokens/tokennotifications.h>
 #include <tokens/tokenvalidation.h>
+#include <undo.h>
 
 #include <algorithm>
 #include <cerrno>
@@ -400,9 +401,6 @@ void Shutdown(NodeContext& node)
     // Shutdown mempool token state
     tokens::ShutdownMempoolTokenState();
 
-    // Shutdown token database
-    tokens::ShutdownTokenDB();
-
     // Any future callbacks will be dropped. This should absolutely be safe - if
     // missing a callback results in an unrecoverable situation, unclean shutdown
     // would too. The only reason to do the above flushes is to let the wallet catch
@@ -418,6 +416,14 @@ void Shutdown(NodeContext& node)
             }
         }
     }
+
+    // AUDIT FIX [R13-01]: Shutdown token database AFTER ForceFlushStateToDisk.
+    // Previously ShutdownTokenDB() ran before the final cs_main-guarded flush,
+    // creating a race window where a ConnectBlock still in progress could
+    // dereference g_tokendb after it was destroyed.  By placing token DB
+    // shutdown after the flush (which takes cs_main, waiting for any
+    // in-flight ConnectBlock to finish), the race is eliminated.
+    tokens::ShutdownTokenDB();
 
     // If any -ipcbind clients are still connected, disconnect them now so they
     // do not block shutdown.
@@ -1031,6 +1037,14 @@ bool AppInitParameterInteraction(const ArgsManager& args)
         if (args.GetBoolArg("-reindex-chainstate", false)) {
             return InitError(_("Prune mode is incompatible with -reindex-chainstate. Use full -reindex instead."));
         }
+        // AUDIT FIX [R27-02]: Warn that pruning + token DB is risky.
+        // If a pruned node crashes and the token DB falls behind the chain tip,
+        // startup reconciliation needs ReadBlock/ReadBlockUndo for the missing
+        // blocks — but those may have been pruned. In that case, the node
+        // cannot start without a full -reindex (which re-downloads all blocks).
+        LogWarning("Pruning mode: if the node crashes, the token database may require "
+                   "a full -reindex (re-download of all blocks) to recover. "
+                   "Consider running without -prune for token-critical deployments.");
     }
 
     // If -forcednsseed is set to true, ensure -dnsseed has not been set to false
@@ -1925,8 +1939,16 @@ bool AppInitMain(NodeContext& node, interfaces::BlockAndHeaderTipInfo* tip_info)
     // ********************************************************* Step 8b: initialize token database
     {
         const fs::path token_db_path = args.GetDataDirNet() / "tokens";
-        LogInfo("Initializing token database at %s", fs::PathToString(token_db_path));
-        if (!tokens::InitTokenDB(token_db_path)) {
+        // CRITICAL FIX [R6-01]: Wipe token DB on -reindex or -reindex-chainstate.
+        // The block tree and chainstate DBs are wiped by do_reindex (set earlier),
+        // but the token DB was previously left intact.  When blocks replay from
+        // genesis against stale token data, ISSUE ops are silently rejected
+        // (ticker already exists) and TRANSFER/BURN ops read wrong balances,
+        // leaving the token database completely inconsistent.
+        const bool wipe_token_db = do_reindex || do_reindex_chainstate;
+        LogInfo("Initializing token database at %s%s", fs::PathToString(token_db_path),
+                wipe_token_db ? " (wiping for reindex)" : "");
+        if (!tokens::InitTokenDB(token_db_path, /*cache_size_mb=*/64, wipe_token_db)) {
             return InitError(_("Failed to initialize token database"));
         }
         
@@ -2107,6 +2129,143 @@ bool AppInitMain(NodeContext& node, interfaces::BlockAndHeaderTipInfo* tip_info)
     }
     LogInfo("nBestHeight = %d", chain_active_height);
     if (node.peerman) node.peerman->SetBestBlock(chain_active_height, std::chrono::seconds{best_block_time});
+
+    // AUDIT FIX [R13-02]: Detect stale token DB after unclean shutdown.
+    // AUDIT FIX [R23-01]: Reconcile token DB with the chain tip after startup.
+    // After crash-recovery replay (ReplayBlocks), the UTXO state is restored
+    // but token ProcessBlock is never called for the replayed range, leaving
+    // the token DB behind the chain tip.  Instead of just warning, we now
+    // walk the chain forward from the token DB's best block to the tip,
+    // calling ProcessBlock for each missing block to bring tokens up to date.
+    // This avoids requiring a full -reindex for the common crash scenario.
+    if (tokens::g_tokendb && tokens::g_tokendb->IsValid()) {
+        LOCK(chainman.GetMutex());
+        const CBlockIndex* tip = Assert(chainman.ActiveTip());
+        uint256 token_best = tokens::g_tokendb->GetBestBlock();
+
+        if (token_best.IsNull()) {
+            // Fresh database (first run or after wipe) — nothing to reconcile.
+            // ProcessBlock will be called for each new block going forward.
+            //
+            // AUDIT FIX [R27-03]: Warn if chain tip is well ahead of genesis.
+            // This catches the scenario where a reindex was aborted mid-way:
+            // the token DB was wiped but only partially rebuilt. Historical
+            // tokens may be missing. The operator should re-run -reindex.
+            if (tip->nHeight > 1) {
+                LogWarning("Token DB is empty but chain tip is at height %d. "
+                           "Historical tokens may be missing if a prior -reindex was interrupted. "
+                           "Consider running with -reindex to rebuild the full token database.",
+                           tip->nHeight);
+            }
+        } else if (token_best == tip->GetBlockHash()) {
+            // Token DB is in sync with chain tip — nothing to do.
+        } else {
+            // Token DB best block differs from chain tip.
+            // Find the token DB's best block in the block index.
+            const auto& block_index = chainman.BlockIndex();
+            auto it = block_index.find(token_best);
+
+            if (it == block_index.end()) {
+                // Token DB references a block not in our index (deep reorg or corruption).
+                // Cannot reconcile — must reindex.
+                // AUDIT FIX [R25-01]: Make this fatal instead of a warning.
+                return InitError(Untranslated(strprintf(
+                    "Token DB BestBlock (%s) not found in block index. "
+                    "Token database may be corrupt. "
+                    "Please restart with -reindex to rebuild the token database.",
+                    token_best.ToString().substr(0, 16))));
+            } else {
+                const CBlockIndex* token_tip = &it->second;
+
+                // Check that token_tip is an ancestor of the active chain tip.
+                const CBlockIndex* ancestor = tip->GetAncestor(token_tip->nHeight);
+
+                if (ancestor && ancestor->GetBlockHash() == token_best) {
+                    // Token DB is behind the chain tip on the SAME chain.
+                    // Walk forward and replay missing blocks.
+                    const int blocks_behind = tip->nHeight - token_tip->nHeight;
+                    LogPrintf("Token DB is %d blocks behind chain tip (token=%s at height %d, tip=%s at height %d). "
+                              "Replaying missing blocks...\n",
+                              blocks_behind,
+                              token_best.ToString().substr(0, 16),
+                              token_tip->nHeight,
+                              tip->GetBlockHash().ToString().substr(0, 16),
+                              tip->nHeight);
+
+                    int replayed = 0;
+                    bool replay_failed = false;
+                    for (int h = token_tip->nHeight + 1; h <= tip->nHeight; ++h) {
+                        const CBlockIndex* pindex = tip->GetAncestor(h);
+                        if (!pindex) {
+                            LogPrintf("ERROR: Token replay: cannot find block at height %d. Aborting replay.\n", h);
+                            replay_failed = true;
+                            break;
+                        }
+
+                        CBlock block;
+                        if (!chainman.m_blockman.ReadBlock(block, *pindex)) {
+                            LogPrintf("ERROR: Token replay: ReadBlock failed at height %d. Aborting replay.\n", h);
+                            replay_failed = true;
+                            break;
+                        }
+
+                        CBlockUndo blockundo;
+                        if (h > 0 && !chainman.m_blockman.ReadBlockUndo(blockundo, *pindex)) {
+                            LogPrintf("ERROR: Token replay: ReadBlockUndo failed at height %d. Aborting replay.\n", h);
+                            replay_failed = true;
+                            break;
+                        }
+
+                        try {
+                            tokens::g_tokendb->ProcessBlock(block, h, blockundo);
+                            ++replayed;
+                            if (replayed % 1000 == 0) {
+                                LogPrintf("Token replay: processed %d / %d blocks...\n", replayed, blocks_behind);
+                            }
+                        } catch (const std::exception& e) {
+                            LogPrintf("ERROR: Token replay: ProcessBlock failed at height %d: %s. Aborting replay.\n",
+                                      h, e.what());
+                            replay_failed = true;
+                            break;
+                        }
+                    }
+
+                    if (!replay_failed) {
+                        tokens::g_tokendb->Sync();
+                        LogPrintf("Token DB reconciliation complete: replayed %d blocks. "
+                                  "Token DB now at chain tip (height %d).\n",
+                                  replayed, tip->nHeight);
+                    } else {
+                        // AUDIT FIX [R25-01]: Reconciliation failure is FATAL.
+                        // Previously this was just a warning, allowing the node to run
+                        // with a partially-stale token DB. On pruned nodes the missing
+                        // block data means reconciliation can never succeed without a
+                        // full reindex. Even on non-pruned nodes, continuing with an
+                        // incomplete token DB produces incorrect RPC responses and
+                        // could silently skip token operations during the gap.
+                        return InitError(Untranslated(
+                            "Token DB reconciliation INCOMPLETE — the token database is behind "
+                            "the chain tip and could not be brought up to date. "
+                            "Please restart with -reindex to rebuild the token database."));
+                    }
+                } else {
+                    // AUDIT FIX [R25-02]: Token DB on a different fork is FATAL.
+                    // Previously this was just a warning, allowing the node to run
+                    // with token state from an abandoned fork. After a deep reorg,
+                    // the token DB may reference tickers/balances that don't exist
+                    // on the active chain. Cannot safely reconcile without
+                    // disconnecting the fork first, which requires undo data that
+                    // may not be available.
+                    return InitError(Untranslated(strprintf(
+                        "Token DB BestBlock (%s at height %d) is on a different fork "
+                        "than chain tip (%s at height %d). The token database is inconsistent. "
+                        "Please restart with -reindex to rebuild the token database.",
+                        token_best.ToString().substr(0, 16), token_tip->nHeight,
+                        tip->GetBlockHash().ToString().substr(0, 16), tip->nHeight)));
+                }
+            }
+        }
+    }
 
     // Map ports with NAT-PMP
     StartMapPort(args.GetBoolArg("-natpmp", DEFAULT_NATPMP));

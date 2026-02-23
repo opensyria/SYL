@@ -944,6 +944,9 @@ bool MemPoolAccept::PreChecks(ATMPArgs& args, Workspace& ws)
         
         // Check mempool-specific constraints (duplicate tickers, effective balance with pending ops)
         if (tokens::g_mempool_tokens) {
+            // AUDIT FIX [R14-F01]: Track issuance count within the tx so the fee
+            // scales linearly, matching the ProcessBlock behaviour.
+            int mempool_issue_count = 0;
             for (const auto& op : token_ops) {
                 if (op.action == src20::TokenAction::ISSUE) {
                     const auto* issuance = op.GetIssuance();
@@ -951,16 +954,28 @@ bool MemPoolAccept::PreChecks(ATMPArgs& args, Workspace& ws)
                         return state.Invalid(TxValidationResult::TX_MEMPOOL_POLICY, "token-ticker-pending",
                                              "Ticker already pending in mempool");
                     }
-                    // SECURITY FIX [L-11]: Enforce minimum issuance fee at mempool acceptance.
-                    // This was only checked during block processing (tokendb.cpp), allowing
-                    // under-fee issuance txs to waste relay bandwidth before being rejected.
-                    // MIN_TOKEN_ISSUANCE_FEE = 100 SYL (100 * COIN).
-                    static constexpr CAmount MIN_TOKEN_ISSUANCE_FEE = 100 * COIN;
-                    if (ws.m_base_fees < MIN_TOKEN_ISSUANCE_FEE) {
-                        return state.Invalid(TxValidationResult::TX_MEMPOOL_POLICY, "token-issuance-fee-too-low",
-                                             strprintf("Token issuance requires minimum fee of %d SYL, got %d",
-                                                       MIN_TOKEN_ISSUANCE_FEE / COIN, ws.m_base_fees / COIN));
+                    // AUDIT FIX [R24-01]: Reject multiple ISSUE ops in the same tx.
+                    // TokenId is derived from txid alone (no op_index), so only
+                    // the first ISSUE can ever succeed during ProcessBlock — the
+                    // second would be rejected as "Token ID already exists".
+                    // Rejecting here prevents the user from paying escalated fees
+                    // (mempool_issue_count+1 * MIN_TOKEN_ISSUANCE_FEE) for ops
+                    // that will silently fail at block processing time.
+                    if (mempool_issue_count >= 1) {
+                        return state.Invalid(TxValidationResult::TX_MEMPOOL_POLICY, "token-multi-issue-same-tx",
+                                             "Only one ISSUE operation per transaction is allowed "
+                                             "(token ID is derived from txid)");
                     }
+                    // SECURITY FIX [L-11]: Enforce minimum issuance fee at mempool acceptance.
+                    // AUDIT FIX [R14-F01]: Fee scales with issuance count in the tx.
+                    // AUDIT FIX [R18-01]: Uses shared constant from src20.h (was local duplicate).
+                    CAmount required_fee = src20::MIN_TOKEN_ISSUANCE_FEE * (mempool_issue_count + 1);
+                    if (ws.m_base_fees < required_fee) {
+                        return state.Invalid(TxValidationResult::TX_MEMPOOL_POLICY, "token-issuance-fee-too-low",
+                                             strprintf("Token issuance #%d requires minimum fee of %d SYL, got %d",
+                                                       mempool_issue_count + 1, required_fee / COIN, ws.m_base_fees / COIN));
+                    }
+                    mempool_issue_count++;
                 } else if (op.action == src20::TokenAction::TRANSFER) {
                     const auto* transfer = op.GetTransfer();
                     if (transfer && !tokens::g_mempool_tokens->CanTransfer(
@@ -1341,6 +1356,19 @@ void MemPoolAccept::FinalizeSubpackage(const ATMPArgs& args)
         );
         m_subpackage.m_replaced_transactions.push_back(it->GetSharedTx());
     }
+
+    // AUDIT FIX [R23-03]: Synchronously remove replaced transactions' token
+    // state BEFORE Apply() fires the async TransactionRemovedFromMempool signal.
+    // Without this, the replacement tx's AddTransaction() runs while the old
+    // tx's token state is still in the overlay (ticker reserved, balance debited),
+    // causing incorrect rejection of legitimate RBF replacements of token txs.
+    // RemoveTransaction is idempotent, so the later async callback is harmless.
+    if (tokens::g_mempool_tokens) {
+        for (const auto& replaced_tx : m_subpackage.m_replaced_transactions) {
+            tokens::g_mempool_tokens->RemoveTransaction(replaced_tx->GetHash().ToUint256());
+        }
+    }
+
     m_subpackage.m_changeset->Apply();
     m_subpackage.m_changeset.reset();
 }
@@ -1412,9 +1440,15 @@ bool MemPoolAccept::SubmitPackage(const ATMPArgs& args, std::vector<Workspace>& 
         // Add token transaction to mempool token state with correct sender
         // This must be done BEFORE the callback fires so the state is consistent
         if (ws.m_has_token_ops && tokens::g_mempool_tokens) {
-            tokens::g_mempool_tokens->AddTransaction(*ws.m_ptx, ws.m_token_sender);
-            LogDebug(BCLog::TOKEN, "Mempool: Added token tx %s to mempool state\n",
-                     ws.m_ptx->GetHash().ToString());
+            // AUDIT FIX [R9-02]: Log if AddTransaction fails (e.g. pending caps
+            // exceeded due to race between PreChecks and Finalize).
+            if (!tokens::g_mempool_tokens->AddTransaction(*ws.m_ptx, ws.m_token_sender)) {
+                LogDebug(BCLog::TOKEN, "Mempool: Failed to add token tx %s to pending state (caps exceeded)\n",
+                         ws.m_ptx->GetHash().ToString());
+            } else {
+                LogDebug(BCLog::TOKEN, "Mempool: Added token tx %s to mempool state\n",
+                         ws.m_ptx->GetHash().ToString());
+            }
         }
         
         if (!m_pool.m_opts.signals) continue;
@@ -1524,9 +1558,21 @@ MempoolAcceptResult MemPoolAccept::AcceptSingleTransactionInternal(const CTransa
     // Add token transaction to mempool token state with correct sender
     // This must be done BEFORE the callback fires so the state is consistent
     if (ws.m_has_token_ops && tokens::g_mempool_tokens) {
-        tokens::g_mempool_tokens->AddTransaction(*ws.m_ptx, ws.m_token_sender);
-        LogDebug(BCLog::TOKEN, "Mempool: Added token tx %s to mempool state\n",
-                 ws.m_ptx->GetHash().ToString());
+        // AUDIT FIX [R9-02]: Log if AddTransaction fails (e.g. pending caps
+        // exceeded due to race between PreChecks and Finalize).
+        // AUDIT FIX [R17-04]: If AddTransaction fails, the tx is already in
+        // the mempool but has NO token tracking.  This silent desync means
+        // subsequent txs can double-spend the same tokens in the mempool
+        // because CanTransfer doesn't see the untracked debit.  Log at
+        // warning level (not debug) so operators are alerted.
+        if (!tokens::g_mempool_tokens->AddTransaction(*ws.m_ptx, ws.m_token_sender)) {
+            LogPrintf("WARNING: Failed to add token tx %s to pending state. "
+                      "Mempool token tracking may be inconsistent until next block.\n",
+                      ws.m_ptx->GetHash().ToString());
+        } else {
+            LogDebug(BCLog::TOKEN, "Mempool: Added token tx %s to mempool state\n",
+                     ws.m_ptx->GetHash().ToString());
+        }
     }
 
     if (m_pool.m_opts.signals) {
@@ -2766,7 +2812,14 @@ bool Chainstate::ConnectBlock(const CBlock& block, BlockValidationState& state, 
     // Process SRC-20 token operations with access to spent outputs via blockundo
     // This must happen during block connection (not in BlockConnected callback)
     // because we need access to the spent UTXO data to identify senders
-    if (tokens::g_tokendb && tokens::g_tokendb->IsValid()) {
+    //
+    // AUDIT FIX [R23-02]: Only process tokens for the NORMAL chainstate.
+    // With assumeUTXO, the BACKGROUND chainstate validates historical blocks
+    // concurrently. If both chainstates write to the shared g_tokendb, token
+    // state becomes inconsistent (duplicate tickers, wrong balances, etc.).
+    // The BACKGROUND chainstate's purpose is UTXO validation only.
+    if (tokens::g_tokendb && tokens::g_tokendb->IsValid() &&
+        GetRole() != ChainstateRole::BACKGROUND) {
         // SECURITY FIX [M-04]: Consecutive failure counter for token processing.
         // Tracks repeated failures to alert operators of systemic issues.
         // AUDIT FIX [ISSUE-010]: Made atomic — ConnectBlock may run on
@@ -3118,15 +3171,29 @@ bool Chainstate::DisconnectTip(BlockValidationState& state, DisconnectedBlockTra
         // Token disconnect uses stored undo records to revert issuances,
         // transfers, and burns. If it fails, we log prominently but do not
         // abort block disconnection (tokens are non-consensus).
-        if (tokens::g_tokendb && tokens::g_tokendb->IsValid()) {
-            bool token_success = tokens::g_tokendb->DisconnectBlock(block, pindexDelete->nHeight);
-            if (!token_success) {
-                LogPrintf("ERROR: Token DisconnectBlock FAILED at height %d. "
+        //
+        // AUDIT FIX [R23-02]: Skip for BACKGROUND chainstate (assumeUTXO).
+        // AUDIT FIX [R28-01]: Wrap DisconnectBlock in try-catch to match
+        // the ProcessBlock error-handling pattern (see ConnectBlock above).
+        // Without this, a LevelDB error or bad_alloc during token disconnect
+        // propagates through DisconnectTip → ActivateBestChain, halting the
+        // node.  Tokens are non-consensus, so we log and continue.
+        if (tokens::g_tokendb && tokens::g_tokendb->IsValid() &&
+            GetRole() != ChainstateRole::BACKGROUND) {
+            try {
+                bool token_success = tokens::g_tokendb->DisconnectBlock(block, pindexDelete->nHeight);
+                if (!token_success) {
+                    LogPrintf("ERROR: Token DisconnectBlock FAILED at height %d. "
+                              "Token state may have DIVERGED. Consider -reindex.\n",
+                              pindexDelete->nHeight);
+                } else {
+                    LogDebug(BCLog::TOKEN, "DisconnectTip: reverted token operations at height %d\n",
+                             pindexDelete->nHeight);
+                }
+            } catch (const std::exception& e) {
+                LogPrintf("ERROR: Token DisconnectBlock THREW at height %d: %s. "
                           "Token state may have DIVERGED. Consider -reindex.\n",
-                          pindexDelete->nHeight);
-            } else {
-                LogDebug(BCLog::TOKEN, "DisconnectTip: reverted token operations at height %d\n",
-                         pindexDelete->nHeight);
+                          pindexDelete->nHeight, e.what());
             }
             // Clear mempool token state on reorg since pending state may be invalid
             if (tokens::g_mempool_tokens) {

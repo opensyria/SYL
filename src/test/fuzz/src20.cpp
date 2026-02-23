@@ -26,30 +26,36 @@ FUZZ_TARGET(src20_parse, .init = initialize_src20_fuzz)
 {
     FuzzedDataProvider fuzzed_data(buffer.data(), buffer.size());
 
-    // Build a potentially valid SRC-20 script from fuzzed input
-    CScript script;
-    
-    // Always start with OP_RETURN
-    script << OP_RETURN;
-    
+    // AUDIT FIX [R21-02]: Build a single contiguous data push after OP_RETURN.
+    // Previously each field (proto_id, version, action, payload) was pushed
+    // separately via <<, but GetOpReturnData() only reads the FIRST push,
+    // so the fuzz target never exercised any parsing logic beyond the initial
+    // size/prefix check — all ISSUE/TRANSFER/BURN branches were unreachable.
+    std::vector<uint8_t> data;
+
     // Sometimes use valid protocol ID, sometimes garbage
     if (fuzzed_data.ConsumeBool()) {
         // Valid protocol ID
-        std::vector<uint8_t> proto_id(src20::SRC20_PROTOCOL_ID.begin(), src20::SRC20_PROTOCOL_ID.end());
-        script << proto_id;
+        data.insert(data.end(), src20::SRC20_PROTOCOL_ID.begin(), src20::SRC20_PROTOCOL_ID.end());
     } else {
         // Random bytes as protocol ID
         const size_t id_len = fuzzed_data.ConsumeIntegralInRange<size_t>(0, 10);
-        script << fuzzed_data.ConsumeBytes<uint8_t>(id_len);
+        auto id_bytes = fuzzed_data.ConsumeBytes<uint8_t>(id_len);
+        data.insert(data.end(), id_bytes.begin(), id_bytes.end());
     }
     
-    // Add version and action
-    script << std::vector<uint8_t>{fuzzed_data.ConsumeIntegral<uint8_t>()};  // version
-    script << std::vector<uint8_t>{fuzzed_data.ConsumeIntegral<uint8_t>()};  // action
+    // Add version and action as part of the same contiguous push
+    data.push_back(fuzzed_data.ConsumeIntegral<uint8_t>());  // version
+    data.push_back(fuzzed_data.ConsumeIntegral<uint8_t>());  // action
     
     // Add remaining random payload
     const size_t payload_len = fuzzed_data.ConsumeIntegralInRange<size_t>(0, 256);
-    script << fuzzed_data.ConsumeBytes<uint8_t>(payload_len);
+    auto payload = fuzzed_data.ConsumeBytes<uint8_t>(payload_len);
+    data.insert(data.end(), payload.begin(), payload.end());
+
+    // Build script with single data push
+    CScript script;
+    script << OP_RETURN << data;
     
     // Test parsing - should not crash
     (void)src20::IsSRC20Script(script);
@@ -80,8 +86,9 @@ FUZZ_TARGET(src20_issuance_roundtrip, .init = initialize_src20_fuzz)
     // Generate valid-ish issuance data
     src20::TokenIssuance issuance;
     
-    // Ticker: 1-4 uppercase alphanumeric
-    const size_t ticker_len = fuzzed_data.ConsumeIntegralInRange<size_t>(1, src20::MAX_TICKER_LENGTH);
+    // Ticker: 3-4 uppercase alphanumeric (MIN_TICKER_LENGTH=3)
+    // AUDIT FIX [R18-03]: Use MIN_TICKER_LENGTH for valid ticker generation.
+    const size_t ticker_len = fuzzed_data.ConsumeIntegralInRange<size_t>(src20::MIN_TICKER_LENGTH, src20::MAX_TICKER_LENGTH);
     std::string ticker;
     for (size_t i = 0; i < ticker_len; ++i) {
         char c = fuzzed_data.ConsumeIntegralInRange<char>('A', 'Z');
@@ -209,27 +216,27 @@ FUZZ_TARGET(src20_malformed, .init = initialize_src20_fuzz)
             script << OP_RETURN << std::vector<uint8_t>{'S', 'R'};
             break;
         case 3:
-            // Valid prefix but truncated
+            // Valid prefix but truncated (single push of just "SRC20")
             script << OP_RETURN << std::vector<uint8_t>{'S', 'R', 'C', '2', '0'};
             break;
         case 4:
+            // AUDIT FIX [R21-03]: Build as single contiguous push so
+            // GetOpReturnData() returns all bytes.  Previously version was
+            // in a separate push that was never read, so this case was
+            // identical to case 3 (5-byte prefix only).
             // Valid prefix and version but no action
-            script << OP_RETURN 
-                   << std::vector<uint8_t>{'S', 'R', 'C', '2', '0'} 
-                   << std::vector<uint8_t>{src20::SRC20_VERSION};
+            script << OP_RETURN
+                   << std::vector<uint8_t>{'S', 'R', 'C', '2', '0', src20::SRC20_VERSION};
             break;
         case 5:
-            // Invalid version
-            script << OP_RETURN 
-                   << std::vector<uint8_t>{'S', 'R', 'C', '2', '0'} 
-                   << std::vector<uint8_t>{0xFF};
+            // AUDIT FIX [R21-03]: Same single-push fix for invalid version.
+            script << OP_RETURN
+                   << std::vector<uint8_t>{'S', 'R', 'C', '2', '0', 0xFF};
             break;
         case 6:
-            // Invalid action
-            script << OP_RETURN 
-                   << std::vector<uint8_t>{'S', 'R', 'C', '2', '0'} 
-                   << std::vector<uint8_t>{src20::SRC20_VERSION}
-                   << std::vector<uint8_t>{0xFF};  // Invalid action
+            // AUDIT FIX [R21-03]: Same single-push fix for invalid action.
+            script << OP_RETURN
+                   << std::vector<uint8_t>{'S', 'R', 'C', '2', '0', src20::SRC20_VERSION, 0xFF};
             break;
     }
     

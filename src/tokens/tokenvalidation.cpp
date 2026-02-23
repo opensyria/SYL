@@ -7,6 +7,7 @@
 #include <logging.h>
 #include <tinyformat.h>
 
+#include <algorithm>
 #include <limits>
 
 namespace tokens {
@@ -51,9 +52,12 @@ std::string TokenValidationResultToString(TokenValidationResult result)
 TokenValidation TokenValidator::ValidateIssuance(const src20::TokenIssuance& issuance) const
 {
     // Check ticker format
-    if (issuance.ticker.empty() || issuance.ticker.size() > src20::MAX_TICKER_LENGTH) {
+    // AUDIT FIX [R8-04]: Enforce MIN_TICKER_LENGTH here as defense-in-depth.
+    // The parsing layer (TokenIssuance::IsValid) already rejects < 3 chars,
+    // but this second gate prevents bypass if a crafted struct skips IsValid().
+    if (issuance.ticker.size() < src20::MIN_TICKER_LENGTH || issuance.ticker.size() > src20::MAX_TICKER_LENGTH) {
         return TokenValidation(TokenValidationResult::INVALID_TICKER,
-                              strprintf("Ticker must be 1-%d characters", src20::MAX_TICKER_LENGTH));
+                              strprintf("Ticker must be %d-%d characters", src20::MIN_TICKER_LENGTH, src20::MAX_TICKER_LENGTH));
     }
 
     for (char c : issuance.ticker) {
@@ -148,6 +152,15 @@ TokenValidation TokenValidator::ValidateIssuance(const src20::TokenIssuance& iss
     if (issuance.total_supply == 0) {
         return TokenValidation(TokenValidationResult::INVALID_AMOUNT,
                               "Supply must be greater than zero");
+    }
+
+    // AUDIT FIX [R18-04]: Defense-in-depth upper bound on total_supply.
+    // GetPendingBalanceDelta uses int64_t internally, so balances above INT64_MAX
+    // could cause loss of precision in the mempool overlay.  Reject issuances
+    // that could never be safely tracked through the full pipeline.
+    if (issuance.total_supply > static_cast<uint64_t>(std::numeric_limits<int64_t>::max())) {
+        return TokenValidation(TokenValidationResult::INVALID_AMOUNT,
+                              "Supply exceeds maximum representable amount");
     }
 
     return TokenValidation(TokenValidationResult::OK);
@@ -337,6 +350,18 @@ bool MempoolTokenState::AddTransaction(const CTransaction& tx, const CScript& se
         return true;  // No token operations, nothing to track
     }
 
+    const uint256 txid_check = tx.GetHash().ToUint256();
+
+    // DEFENSE-IN-DEPTH [R4-01]: Guard against duplicate AddTransaction calls.
+    // If the same txid is already tracked, the old deltas are orphaned in
+    // m_pending_balances and can never be reversed, causing permanent drift.
+    // This should not happen in the current code flow, but guard defensively.
+    if (m_tx_ops.count(txid_check)) {
+        LogDebug(BCLog::MEMPOOL, "Token tx %s already tracked in mempool state, skipping duplicate add\n",
+                 txid_check.ToString().substr(0, 16));
+        return true;
+    }
+
     // DoS protection checks (already holds lock, call internal versions)
     if (m_tx_ops.size() >= MAX_TOTAL_PENDING_OPS) {
         LogDebug(BCLog::MEMPOOL, "Token mempool full, rejecting tx\n");
@@ -383,9 +408,22 @@ bool MempoolTokenState::AddTransaction(const CTransaction& tx, const CScript& se
             case src20::TokenAction::ISSUE: {
                 const auto* issuance = op.GetIssuance();
                 if (issuance) {
-                    // Check if ticker is already pending
+                    // Check if ticker is already pending (from a different tx)
                     if (m_pending_tickers.count(issuance->ticker)) {
                         LogPrintf("Ticker %s already pending in mempool\n",
+                                 issuance->ticker.c_str());
+                        RevertTxDeltas();
+                        return false;
+                    }
+                    // AUDIT FIX [R20-01]: Also check local_pending_tickers for
+                    // intra-tx duplicate ISSUE ops. Without this, a single tx
+                    // with two ISSUE ops for the same ticker passes mempool
+                    // acceptance but only one succeeds at consensus, wasting
+                    // the user's issuance fee on the second.
+                    if (std::find(local_pending_tickers.begin(),
+                                  local_pending_tickers.end(),
+                                  issuance->ticker) != local_pending_tickers.end()) {
+                        LogPrintf("Ticker %s duplicated within same transaction\n",
                                  issuance->ticker.c_str());
                         RevertTxDeltas();
                         return false;
@@ -400,17 +438,23 @@ bool MempoolTokenState::AddTransaction(const CTransaction& tx, const CScript& se
                 if (transfer) {
                     // AUDIT FIX [L-08]: Check for int64_t overflow before modifying pending balances.
                     // transfer->amount is uint64_t; casting to int64_t could overflow if > INT64_MAX.
+                    // AUDIT FIX [R14-01]: Changed from `break` to `RevertTxDeltas(); return false`.
+                    // A `break` only exits the switch, letting the tx commit with partial ops
+                    // applied — diverging from consensus and inflating DoS counters.
                     if (transfer->amount > static_cast<uint64_t>(std::numeric_limits<int64_t>::max())) {
                         LogDebug(BCLog::MEMPOOL, "Token transfer amount exceeds int64_t range\n");
-                        break;
+                        RevertTxDeltas();
+                        return false;
                     }
                     int64_t signed_amount = static_cast<int64_t>(transfer->amount);
                     
                     // Debit sender (check underflow)
+                    // AUDIT FIX [R14-02]: Same fix — reject entire tx on underflow.
                     int64_t& sender_delta = m_pending_balances[sender][transfer->token_id];
                     if (sender_delta < std::numeric_limits<int64_t>::min() + signed_amount) {
                         LogDebug(BCLog::MEMPOOL, "Pending balance underflow for sender\n");
-                        break;
+                        RevertTxDeltas();
+                        return false;
                     }
                     sender_delta -= signed_amount;
                     tx_deltas.deltas[sender][transfer->token_id] -= signed_amount;
@@ -421,9 +465,16 @@ bool MempoolTokenState::AddTransaction(const CTransaction& tx, const CScript& se
                         int64_t& recip_delta = m_pending_balances[*recipient][transfer->token_id];
                         if (recip_delta > std::numeric_limits<int64_t>::max() - signed_amount) {
                             LogDebug(BCLog::MEMPOOL, "Pending balance overflow for recipient\n");
-                            // Undo sender debit
+                            // Undo sender debit in both m_pending_balances and tx_deltas
                             sender_delta += signed_amount;
-                            break;
+                            // SECURITY FIX [C-04]: Restore tx_deltas to prevent state drift.
+                            // Previously only sender_delta (m_pending_balances) was reversed,
+                            // but tx_deltas retained the stale entry, causing RemoveTransaction
+                            // to double-reverse the delta and inflate pending balance.
+                            tx_deltas.deltas[sender][transfer->token_id] += signed_amount;
+                            // AUDIT FIX [R14-01]: Reject entire tx instead of break.
+                            RevertTxDeltas();
+                            return false;
                         }
                         recip_delta += signed_amount;
                         tx_deltas.deltas[*recipient][transfer->token_id] += signed_amount;
@@ -435,16 +486,19 @@ bool MempoolTokenState::AddTransaction(const CTransaction& tx, const CScript& se
             case src20::TokenAction::BURN: {
                 const auto* burn = op.GetBurn();
                 if (burn) {
-                    // AUDIT FIX [L-08]: Overflow check for burn amount
+                    // AUDIT FIX [R14-01]: Overflow check — reject entire tx (not just break).
                     if (burn->amount > static_cast<uint64_t>(std::numeric_limits<int64_t>::max())) {
                         LogDebug(BCLog::MEMPOOL, "Token burn amount exceeds int64_t range\n");
-                        break;
+                        RevertTxDeltas();
+                        return false;
                     }
                     int64_t signed_amount = static_cast<int64_t>(burn->amount);
                     int64_t& sender_delta = m_pending_balances[sender][burn->token_id];
+                    // AUDIT FIX [R14-02]: Underflow check — reject entire tx.
                     if (sender_delta < std::numeric_limits<int64_t>::min() + signed_amount) {
                         LogDebug(BCLog::MEMPOOL, "Pending balance underflow for burn\n");
-                        break;
+                        RevertTxDeltas();
+                        return false;
                     }
                     sender_delta -= signed_amount;
                     tx_deltas.deltas[sender][burn->token_id] -= signed_amount;
@@ -570,9 +624,15 @@ uint64_t MempoolTokenState::GetEffectiveBalance(
     // AUDIT FIX [L-07]: Use branch-based arithmetic to avoid signed overflow UB
     // Previously, casting confirmed to int64_t could cause undefined behavior
     // if confirmed > INT64_MAX (~9.2 quintillion).
+    // AUDIT FIX [R17-01]: Guard against INT64_MIN before negation.
+    // `-pending` is UB when pending == INT64_MIN because the positive
+    // value (2^63) is not representable in int64_t.  Use the safe
+    // two's-complement conversion: -(pending + 1) + 1.
     if (pending < 0) {
         // Subtract absolute value of negative pending
-        uint64_t abs_pending = static_cast<uint64_t>(-pending);
+        uint64_t abs_pending = (pending == std::numeric_limits<int64_t>::min())
+            ? static_cast<uint64_t>(std::numeric_limits<int64_t>::max()) + 1
+            : static_cast<uint64_t>(-pending);
         return confirmed > abs_pending ? confirmed - abs_pending : 0;
     } else {
         // Add positive pending with overflow check
@@ -742,6 +802,12 @@ size_t ConsensusTokenValidator::CountTokenOperations(const CBlock& block)
 {
     size_t count = 0;
     for (const auto& tx : block.vtx) {
+        // AUDIT FIX [R26-03]: Skip coinbase transactions.
+        // Coinbase can contain arbitrary data including fake SRC-20 OP_RETURNs,
+        // but ProcessBlock skips coinbase entirely. Counting them here inflates
+        // the op count, allowing a miner to waste part of the block's token
+        // capacity by stuffing fake ops in their coinbase.
+        if (tx->IsCoinBase()) continue;
         count += src20::ParseTransactionSRC20(*tx).size();
     }
     return count;

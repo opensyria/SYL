@@ -90,6 +90,16 @@ static constexpr uint8_t SRC20_MAX_SUPPORTED_VERSION = 1;
 /** Maximum tokens allowed per block (spam prevention) */
 static constexpr size_t MAX_TOKENS_PER_BLOCK = 100;
 
+/** AUDIT FIX [R18-01]: Single source-of-truth for the minimum issuance fee.
+ *  Previously duplicated in tokendb.cpp, wallet/tokens.cpp, and validation.cpp
+ *  with divergence risk. Consolidate here so all consumers share one constant. */
+static constexpr CAmount MIN_TOKEN_ISSUANCE_FEE = 100 * COIN; // 100 SYL
+
+/** AUDIT FIX [R18-02]: Maximum SRC-20 operations per transaction.
+ *  Previously a local variable in ParseTransactionSRC20(); now in the header
+ *  so that tests and other callers can reference the authoritative limit. */
+static constexpr size_t MAX_OPS_PER_TX = 4;
+
 /** Protocol identifier in OP_RETURN */
 static constexpr std::array<uint8_t, 5> SRC20_PROTOCOL_ID = {'S', 'R', 'C', '2', '0'};
 
@@ -226,7 +236,31 @@ struct SRC20Operation {
 
     SRC20Operation() : action(TokenAction::INVALID) {}
 
-    bool IsValid() const { return action != TokenAction::INVALID; }
+    // AUDIT FIX [R16-M05]: Delegate to contained struct's IsValid() instead
+    // of only checking the action enum. Without this, a parsed SRC20Operation
+    // with action=ISSUE but invalid issuance data (e.g. overflowing supply)
+    // would pass the IsValid() gate.
+    // AUDIT FIX [R28-03]: Enforce action/data variant consistency.
+    // Previously, if action==ISSUE but data held a TokenTransfer (a
+    // programming error), GetIssuance() returned nullptr and the code
+    // fell through to validate the wrong type.  Now each branch checks
+    // that the action enum matches the variant alternative.
+    bool IsValid() const {
+        if (action == TokenAction::INVALID) return false;
+        if (action == TokenAction::ISSUE) {
+            auto* iss = GetIssuance();
+            return iss && iss->IsValid();
+        }
+        if (action == TokenAction::TRANSFER) {
+            auto* xfer = GetTransfer();
+            return xfer && xfer->IsValid();
+        }
+        if (action == TokenAction::BURN) {
+            auto* burn = GetBurn();
+            return burn && burn->IsValid();
+        }
+        return false;
+    }
     
     const TokenIssuance* GetIssuance() const {
         return std::holds_alternative<TokenIssuance>(data) ? 

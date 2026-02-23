@@ -153,7 +153,7 @@ cmake -DRANDOMX_MAX_CONTEXTS=16 ...
 
 ### Transaction Fees
 
-- Token transactions have slightly higher fees
+- Token issuance requires a **100 SYL** fee (`MIN_TOKEN_ISSUANCE_FEE`); transfers and burns use standard fees
 - Batch payouts to minimize fees
 - Consider SYL-denominated payouts
 

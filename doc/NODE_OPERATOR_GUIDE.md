@@ -207,6 +207,45 @@ For running a mining pool, see the [Mining Pool Guide](MINING_POOL_GUIDE.md).
 
 ---
 
+## SRC-20 Token System
+
+OpenSY includes a built-in SRC-20 token system that is **always enabled** — no
+configuration required.  Token indexing runs automatically during block processing.
+
+### What Operators Should Know
+
+- **Disk usage**: The token database at `<datadir>/tokens/` grows with token activity.
+  Expect ~1 GB per 1,000,000 transfers (see [token-indexing.md](token-indexing.md)).
+- **CPU overhead**: Token validation adds <50ms per block (at max 100 ops/block).
+- **Rebuilding**: If token data is corrupted, restart with `-reindex` to rebuild from blocks.
+- **Pruning warning**: Pruned nodes can validate the current UTXO set but cannot
+  rebuild the token index from scratch.  Consider running without pruning if token
+  data integrity is important.
+- **RPC rate limits**: Token RPCs are rate-limited (30 calls/min standard, 10/min heavy).
+  Public-facing nodes should additionally use a reverse proxy with rate limiting.
+
+### Key Token RPCs for Operators
+
+```bash
+# Check total token count
+opensy-cli gettokenstats
+
+# List recent tokens
+opensy-cli listtokens 10
+
+# Check token database size
+du -sh ~/.opensy/tokens/
+
+# Rebuild token database (if needed)
+# Requires stopping the node first, then:
+opensyd -reindex
+```
+
+For the full SRC-20 specification, see [src20-spec.md](src20-spec.md).
+For indexing and performance tuning, see [token-indexing.md](token-indexing.md).
+
+---
+
 ## Monitoring and Maintenance
 
 ### Key Metrics to Monitor

@@ -65,6 +65,13 @@ template<typename Stream> inline void ser_writedata32(Stream &s, uint32_t obj)
     obj = htole32_internal(obj);
     s.write(std::as_bytes(std::span{&obj, 1}));
 }
+// AUDIT FIX [R17-05]: Added ser_writedata16be / ser_readdata16be for
+// big-endian uint16 serialization used in LevelDB key ordering.
+template<typename Stream> inline void ser_writedata16be(Stream &s, uint16_t obj)
+{
+    obj = htobe16_internal(obj);
+    s.write(std::as_bytes(std::span{&obj, 1}));
+}
 template<typename Stream> inline void ser_writedata32be(Stream &s, uint32_t obj)
 {
     obj = htobe32_internal(obj);
@@ -86,6 +93,13 @@ template<typename Stream> inline uint16_t ser_readdata16(Stream &s)
     uint16_t obj;
     s.read(std::as_writable_bytes(std::span{&obj, 1}));
     return le16toh_internal(obj);
+}
+// AUDIT FIX [R17-05]: Big-endian uint16 deserialization.
+template<typename Stream> inline uint16_t ser_readdata16be(Stream &s)
+{
+    uint16_t obj;
+    s.read(std::as_writable_bytes(std::span{&obj, 1}));
+    return be16toh_internal(obj);
 }
 template<typename Stream> inline uint32_t ser_readdata32(Stream &s)
 {

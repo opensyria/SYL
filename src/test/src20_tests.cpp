@@ -260,9 +260,13 @@ BOOST_AUTO_TEST_CASE(issuance_supply_large_with_zero_decimals_valid)
     issuance.ticker = "TEST";
     issuance.name = "Test Token";
     issuance.decimals = 0;
-    // With 0 decimals, any supply up to UINT64_MAX is valid
+    // AUDIT FIX [R21-01]: Supply capped at INT64_MAX for all decimal values
+    // to prevent int64_t overflow in mempool pending-balance tracking.
     issuance.total_supply = UINT64_MAX;
+    BOOST_CHECK(!issuance.IsValid());  // Exceeds INT64_MAX
 
+    // INT64_MAX should be the maximum valid supply
+    issuance.total_supply = static_cast<uint64_t>(std::numeric_limits<int64_t>::max());
     BOOST_CHECK(issuance.IsValid());
 }
 
@@ -760,14 +764,14 @@ BOOST_AUTO_TEST_CASE(name_with_special_chars)
 
 BOOST_AUTO_TEST_CASE(name_with_unicode)
 {
-    // Unicode characters count as multiple bytes
+    // AUDIT FIX [R21-01]: Non-ASCII characters are now rejected by IsValid()
+    // to prevent XSS, display issues, and Unicode confusable attacks.
     src20::TokenIssuance issuance;
     issuance.ticker = "TEST";
-    issuance.name = "Test🚀";  // Unicode emoji
+    issuance.name = "Test🚀";  // Unicode emoji — rejected by character validation
     issuance.decimals = 8;
     issuance.total_supply = 1000;
-    // Depends on byte length, not character count
-    BOOST_CHECK(issuance.name.size() <= src20::MAX_NAME_LENGTH ? issuance.IsValid() : !issuance.IsValid());
+    BOOST_CHECK(!issuance.IsValid());
 }
 
 // =============================================================================
@@ -855,12 +859,17 @@ BOOST_AUTO_TEST_CASE(supply_boundary_max_safe_for_decimals)
 
 BOOST_AUTO_TEST_CASE(supply_boundary_max_safe_zero_decimals)
 {
-    // With 0 decimals, UINT64_MAX should be valid (no multiplication needed)
+    // AUDIT FIX [R21-01]: Supply capped at INT64_MAX for all decimal values.
+    // UINT64_MAX now correctly rejected even with 0 decimals.
     src20::TokenIssuance issuance;
     issuance.ticker = "TEST";
     issuance.name = "Test";
     issuance.decimals = 0;
     issuance.total_supply = UINT64_MAX;
+    BOOST_CHECK(!issuance.IsValid());
+
+    // INT64_MAX is the valid upper bound
+    issuance.total_supply = static_cast<uint64_t>(std::numeric_limits<int64_t>::max());
     BOOST_CHECK(issuance.IsValid());
 }
 
@@ -874,8 +883,15 @@ BOOST_AUTO_TEST_CASE(transfer_amount_one)
 BOOST_AUTO_TEST_CASE(transfer_amount_max_uint64)
 {
     src20::TokenId id(uint256::ONE);
-    src20::TokenTransfer transfer(id, UINT64_MAX);  // Maximum amount
-    BOOST_CHECK(transfer.IsValid());
+    // AUDIT FIX [R28-02]: UINT64_MAX now exceeds the INT64_MAX cap
+    src20::TokenTransfer transfer(id, UINT64_MAX);
+    BOOST_CHECK(!transfer.IsValid());
+    // INT64_MAX should still be valid
+    src20::TokenTransfer transfer_ok(id, static_cast<uint64_t>(std::numeric_limits<int64_t>::max()));
+    BOOST_CHECK(transfer_ok.IsValid());
+    // INT64_MAX + 1 should be invalid
+    src20::TokenTransfer transfer_over(id, static_cast<uint64_t>(std::numeric_limits<int64_t>::max()) + 1);
+    BOOST_CHECK(!transfer_over.IsValid());
 }
 
 BOOST_AUTO_TEST_CASE(burn_amount_one)
@@ -888,8 +904,15 @@ BOOST_AUTO_TEST_CASE(burn_amount_one)
 BOOST_AUTO_TEST_CASE(burn_amount_max_uint64)
 {
     src20::TokenId id(uint256::ONE);
-    src20::TokenBurn burn(id, UINT64_MAX);  // Maximum amount
-    BOOST_CHECK(burn.IsValid());
+    // AUDIT FIX [R28-02]: UINT64_MAX now exceeds the INT64_MAX cap
+    src20::TokenBurn burn(id, UINT64_MAX);
+    BOOST_CHECK(!burn.IsValid());
+    // INT64_MAX should still be valid
+    src20::TokenBurn burn_ok(id, static_cast<uint64_t>(std::numeric_limits<int64_t>::max()));
+    BOOST_CHECK(burn_ok.IsValid());
+    // INT64_MAX + 1 should be invalid
+    src20::TokenBurn burn_over(id, static_cast<uint64_t>(std::numeric_limits<int64_t>::max()) + 1);
+    BOOST_CHECK(!burn_over.IsValid());
 }
 
 // =============================================================================
@@ -1325,14 +1348,18 @@ BOOST_AUTO_TEST_CASE(reserved_ticker_similar_but_not_reserved)
 
 BOOST_AUTO_TEST_CASE(reserved_ticker_runtime_extension)
 {
+    // AUDIT FIX [R22-FIX-02]: Use a valid 4-char uppercase ticker.
+    // Previously used "NEWTICKER" (9 chars) which is now rejected by
+    // AddReservedTicker's format validation.
+    
     // Verify a ticker is not reserved initially
-    BOOST_CHECK(!src20::reserved::IsReservedTicker("NEWTICKER"));
+    BOOST_CHECK(!src20::reserved::IsReservedTicker("XNEW"));
     
     // Add it at runtime
-    src20::reserved::AddReservedTicker("NEWTICKER");
+    src20::reserved::AddReservedTicker("XNEW");
     
     // Now it should be reserved
-    BOOST_CHECK(src20::reserved::IsReservedTicker("NEWTICKER"));
+    BOOST_CHECK(src20::reserved::IsReservedTicker("XNEW"));
     
     // Verify GetReservedTickers includes both static and runtime tickers
     auto all_tickers = src20::reserved::GetReservedTickers();
@@ -1340,10 +1367,18 @@ BOOST_AUTO_TEST_CASE(reserved_ticker_runtime_extension)
     bool found_runtime = false;
     for (const auto& t : all_tickers) {
         if (t == "SYL") found_static = true;
-        if (t == "NEWTICKER") found_runtime = true;
+        if (t == "XNEW") found_runtime = true;
     }
     BOOST_CHECK(found_static);
     BOOST_CHECK(found_runtime);
+
+    // Verify invalid formats are rejected
+    src20::reserved::AddReservedTicker("toolong_ticker");  // Too long — ignored
+    BOOST_CHECK(!src20::reserved::IsReservedTicker("toolong_ticker"));
+    src20::reserved::AddReservedTicker("ab");  // Too short — ignored
+    BOOST_CHECK(!src20::reserved::IsReservedTicker("ab"));
+    src20::reserved::AddReservedTicker("lo");  // Lowercase — ignored
+    BOOST_CHECK(!src20::reserved::IsReservedTicker("lo"));
 }
 
 // =============================================================================
@@ -1373,12 +1408,13 @@ BOOST_AUTO_TEST_CASE(roundtrip_issuance_min_values)
 
 BOOST_AUTO_TEST_CASE(roundtrip_issuance_max_values)
 {
-    // Test maximum valid values (that don't overflow display calculations)
+    // AUDIT FIX [R21-01]: Max valid supply is now INT64_MAX (not UINT64_MAX)
+    // because IsValid() enforces INT64_MAX cap for all decimal values.
     src20::TokenIssuance original;
     original.ticker = "ZZZZ";
     original.name = std::string(32, 'Z');
-    original.decimals = 0;  // With 0 decimals, max supply is valid
-    original.total_supply = UINT64_MAX;
+    original.decimals = 0;
+    original.total_supply = static_cast<uint64_t>(std::numeric_limits<int64_t>::max());
     
     CScript script = src20::BuildIssuanceScript(original);
     auto parsed = src20::ParseSRC20Script(script);
@@ -1415,8 +1451,11 @@ BOOST_AUTO_TEST_CASE(roundtrip_issuance_max_decimals_safe_supply)
 
 BOOST_AUTO_TEST_CASE(roundtrip_transfer_max_amount)
 {
+    // AUDIT FIX [R28-02]: Use INT64_MAX (the new valid cap) instead of
+    // UINT64_MAX for the round-trip test.  UINT64_MAX is now rejected by
+    // IsValid() and ParseSRC20Script returns nullopt for invalid ops.
     src20::TokenId id(uint256::ONE);
-    src20::TokenTransfer original(id, UINT64_MAX);
+    src20::TokenTransfer original(id, static_cast<uint64_t>(std::numeric_limits<int64_t>::max()));
     
     CScript script = src20::BuildTransferScript(original);
     auto parsed = src20::ParseSRC20Script(script);
@@ -1430,8 +1469,10 @@ BOOST_AUTO_TEST_CASE(roundtrip_transfer_max_amount)
 
 BOOST_AUTO_TEST_CASE(roundtrip_burn_max_amount)
 {
+    // AUDIT FIX [R28-02]: Use INT64_MAX (the new valid cap) instead of
+    // UINT64_MAX for the round-trip test.
     src20::TokenId id(uint256::ONE);
-    src20::TokenBurn original(id, UINT64_MAX);
+    src20::TokenBurn original(id, static_cast<uint64_t>(std::numeric_limits<int64_t>::max()));
     
     CScript script = src20::BuildBurnScript(original);
     auto parsed = src20::ParseSRC20Script(script);

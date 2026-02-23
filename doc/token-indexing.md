@@ -53,11 +53,22 @@ opensyd -reindex
 ~/.opensy/
 ├── blocks/          # Block data
 ├── chainstate/      # UTXO set
-└── tokens/          # Token index (if enabled)
-    ├── tokens.ldb   # Token metadata
-    ├── balances.ldb # Address balances
-    └── history.ldb  # Transfer history
+└── tokens/          # Token index (always enabled, single LevelDB)
 ```
+
+All token data (metadata, balances, history, undo records) is stored in a **single LevelDB instance** at `<datadir>/tokens/`, differentiated by key prefixes:
+
+| Prefix | Byte | Purpose |
+|--------|------|---------|
+| `T` | Token registry | Token metadata by ID |
+| `t` | Ticker index | Token ID lookup by ticker |
+| `B` | Balance | Per-address token balances |
+| `A` | Address tokens | Set of token IDs per address |
+| `H` | History | Transfer history records |
+| `X` | Stats | Aggregate token statistics |
+| `U` | Undo | Block-level undo data for reorgs |
+| `b` | Best block | Last processed block hash |
+| `Z` | DB version | Schema version marker |
 
 ---
 
@@ -100,10 +111,13 @@ Token operations are validated during block connection:
 | Limit | Value | Rationale |
 |-------|-------|-----------|
 | Max tokens/block | 100 | Prevent spam |
+| Max ops/tx | 4 | Prevent payload spam |
+| Min ticker length | 3 chars | Prevent squatting |
 | Max ticker length | 4 chars | Compact storage |
 | Max name length | 32 chars | Reasonable display |
 | Max decimals | 18 | Matches Ethereum |
-| Max supply | 2^64-1 | uint64 limit |
+| Max supply | 2^63-1 (INT64_MAX) | Safe signed arithmetic |
+| Min issuance fee | 100 SYL | Prevent token spam |
 
 ### Practical Limits
 
@@ -184,14 +198,13 @@ opensy-cli getmemoryinfo | jq '.locked'
 
 ### Current Version
 
-1. **No address index** - Must query by token ID, not address
-2. **No pruning** - Token history grows indefinitely
-3. **Single-threaded validation** - Token ops processed sequentially
-4. **No SPV token proofs** - Full node required for token state
+1. **No pruning** - Token history grows indefinitely
+2. **Single-threaded validation** - Token ops processed sequentially
+3. **No SPV token proofs** - Full node required for token state
 
 ### Future Improvements (Roadmap)
 
-- [ ] Address-based token queries
+- [x] Address-based token queries (implemented via `ADDR_TOKENS` prefix)
 - [ ] Token history pruning
 - [ ] Parallel token validation
 - [ ] Light client token proofs
@@ -267,7 +280,7 @@ Hardware: 8-core CPU, 32GB RAM, NVMe SSD
 | gettokeninfo | 10,000 | - | <1ms |
 | gettokenbalance | 10,000 | 100,000 | <5ms |
 | listtokens (100) | 10,000 | - | <10ms |
-| getaddresstokens | 10,000 | 100,000 | <50ms |
+| gettokenholders | 10,000 | 100,000 | <50ms |
 
 ### Block Validation Time
 

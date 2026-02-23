@@ -179,8 +179,15 @@ void CheckRPCRateLimit(const JSONRPCRequest& request, const std::string& endpoin
         // Authenticated user - use username
         peer_id = request.authUser;
     } else if (!request.peerAddr.empty()) {
-        // Unauthenticated - use peer IP address for tracking
+        // Unauthenticated - use peer IP address for tracking.
+        // AUDIT FIX [R8-03]: Strip the ephemeral source port so each IP
+        // shares one rate-limit bucket instead of getting a fresh bucket
+        // per TCP connection (ToStringAddrPort returns "ip:port").
         peer_id = request.peerAddr;
+        auto colon = peer_id.rfind(':');
+        if (colon != std::string::npos) {
+            peer_id = peer_id.substr(0, colon);
+        }
     } else {
         // Fallback for local/internal calls - use generic ID
         // (local calls are trusted so rate limiting is less critical)
@@ -332,13 +339,20 @@ UniValue TransferRecordToJSON(const tokens::TokenTransferRecord& record)
     result.pushKV("height", record.height);
     result.pushKV("time", record.time);
     
-    // Convert scripts to addresses if possible
+    // AUDIT FIX [R27-01]: Always emit "from" and "to" keys to match the
+    // RPCResult contract. Previously, non-standard scripts (multisig, bare
+    // script, empty script from a burn op) caused these keys to be silently
+    // omitted, breaking downstream JSON parsers.
     CTxDestination from_dest, to_dest;
     if (ExtractDestination(record.from_address, from_dest)) {
         result.pushKV("from", EncodeDestination(from_dest));
+    } else {
+        result.pushKV("from", record.from_address.empty() ? "unknown" : HexStr(record.from_address));
     }
     if (ExtractDestination(record.to_address, to_dest)) {
         result.pushKV("to", EncodeDestination(to_dest));
+    } else {
+        result.pushKV("to", record.to_address.empty() ? "unknown" : HexStr(record.to_address));
     }
     
     return result;
@@ -424,8 +438,27 @@ static RPCHelpMan gettokenbyname()
         {
             {"ticker", RPCArg::Type::STR, RPCArg::Optional::NO, "The token ticker (e.g., 'TEST')"},
         },
+        // AUDIT FIX [R27-04]: Populate RPCResult field descriptors.
+        // Previously this was empty {}, causing broken help output and
+        // framework self-check failures.
         RPCResult{
-            RPCResult::Type::OBJ, "", /*optional=*/false, "", {}  // Same as gettokeninfo
+            RPCResult::Type::OBJ, "", /*optional=*/false, "",
+            {
+                {RPCResult::Type::STR_HEX, "token_id", "Token identifier"},
+                {RPCResult::Type::STR, "ticker", "Token ticker symbol"},
+                {RPCResult::Type::STR, "name", "Token name"},
+                {RPCResult::Type::NUM, "decimals", "Decimal places"},
+                {RPCResult::Type::NUM, "total_supply", "Total supply in smallest units"},
+                {RPCResult::Type::NUM, "circulating_supply", "Circulating supply"},
+                {RPCResult::Type::STR_HEX, "metadata_hash", "Metadata hash"},
+                {RPCResult::Type::STR_HEX, "issuance_txid", "Issuance transaction ID"},
+                {RPCResult::Type::NUM, "issuance_height", "Block height of issuance"},
+                {RPCResult::Type::NUM, "issuance_time", "Unix timestamp of issuance"},
+                {RPCResult::Type::NUM, "holder_count", "Number of holders"},
+                {RPCResult::Type::NUM, "transfer_count", "Number of transfers"},
+                {RPCResult::Type::STR, "total_supply_formatted", "Human-readable total supply"},
+                {RPCResult::Type::STR, "circulating_supply_formatted", "Human-readable circulating supply"},
+            }
         },
         RPCExamples{
             HelpExampleCli("gettokenbyname", "\"TEST\"")
@@ -437,7 +470,26 @@ static RPCHelpMan gettokenbyname()
             CheckRPCRateLimit(request, "gettokenbyname");
 
             std::string ticker = request.params[0].get_str();
-            
+
+            // AUDIT FIX [R8-02]: Reject oversized ticker before DB lookup to
+            // prevent multi-megabyte strings reaching the database layer.
+            // AUDIT FIX [R19-05]: Also reject undersized and non-uppercase tickers
+            // to fail fast on obviously invalid input.
+            if (ticker.size() < src20::MIN_TICKER_LENGTH || ticker.size() > src20::MAX_TICKER_LENGTH) {
+                throw JSONRPCError(RPC_INVALID_PARAMETER,
+                    strprintf("Ticker must be %d-%d characters", src20::MIN_TICKER_LENGTH, src20::MAX_TICKER_LENGTH));
+            }
+            // AUDIT FIX [R22-04]: Validate ticker characters (A-Z, 0-9 only)
+            // to match IsValid() rules and fail fast on obviously invalid input.
+            // Previously the comment claimed non-uppercase rejection but only
+            // length was checked; non-alphanumeric tickers reached the DB layer.
+            for (unsigned char c : ticker) {
+                if (!((c >= 'A' && c <= 'Z') || (c >= '0' && c <= '9'))) {
+                    throw JSONRPCError(RPC_INVALID_PARAMETER,
+                        "Ticker must contain only uppercase letters (A-Z) and digits (0-9)");
+                }
+            }
+
             auto info = tokens::g_tokendb->GetTokenByTicker(ticker);
             if (!info) {
                 throw JSONRPCError(RPC_INVALID_ADDRESS_OR_KEY, "Token not found");
@@ -507,10 +559,12 @@ static RPCHelpMan gettokenbalance()
                 result.push_back(TokenBalanceToJSON(tb, info ? &*info : nullptr));
             } else {
                 // All tokens for address
-                auto balances = tokens::g_tokendb->GetAddressBalances(address);
-                for (const auto& balance : balances) {
-                    auto info = tokens::g_tokendb->GetTokenInfo(balance.token_id);
-                    result.push_back(TokenBalanceToJSON(balance, info ? &*info : nullptr));
+                // AUDIT FIX [R8-01 + R11-02]: Pass cap directly to GetAddressBalances
+                // to avoid unbounded DB reads when an address holds many tokens.
+                auto balances = tokens::g_tokendb->GetAddressBalances(address, RPC_MAX_COUNT);
+                for (size_t idx = 0; idx < balances.size(); ++idx) {
+                    auto info = tokens::g_tokendb->GetTokenInfo(balances[idx].token_id);
+                    result.push_back(TokenBalanceToJSON(balances[idx], info ? &*info : nullptr));
                 }
             }
 
@@ -565,6 +619,12 @@ static RPCHelpMan listtokens()
             std::optional<src20::TokenId> start;
             if (!request.params[1].isNull()) {
                 start = src20::TokenId::FromHex(request.params[1].get_str());
+                // AUDIT FIX [R19-01]: Reject invalid hex rather than silently
+                // falling back to page 1, which can cause infinite re-fetch loops
+                // in paginating clients.
+                if (!start) {
+                    throw JSONRPCError(RPC_INVALID_PARAMETER, "Invalid start token ID");
+                }
             }
 
             auto tokens = tokens::g_tokendb->ListTokens(start, count);
@@ -596,7 +656,10 @@ static RPCHelpMan gettokenholders()
                     {
                         {RPCResult::Type::STR, "address", "Holder address"},
                         {RPCResult::Type::NUM, "balance", "Token balance"},
-                        {RPCResult::Type::NUM, "percentage", "Percentage of total supply"},
+                        // AUDIT FIX [R22-FIX-01]: Changed from NUM to STR.
+                        // Percentage is pushed as a fixed-decimal string ("50.25")
+                        // to avoid floating-point precision issues.
+                        {RPCResult::Type::STR, "percentage", "Percentage of total supply (e.g. \"50.25\")"},
                     }
                 }
             }
@@ -660,7 +723,10 @@ static RPCHelpMan gettokenholders()
                     pct_frac = static_cast<int64_t>(frac_bp.GetLow64());
                 }
                 // Clamp to avoid display issues
-                if (pct_whole > 100) pct_whole = 100;
+                // AUDIT FIX [R15-06]: When pct_whole is clamped to 100, also zero
+                // pct_frac.  Previously a holder with balance > total_supply (possible
+                // during a transient reorg window) could display "100.47%".
+                if (pct_whole > 100) { pct_whole = 100; pct_frac = 0; }
                 if (pct_frac < 0) pct_frac = 0;
                 char pct_buf[16];
                 std::snprintf(pct_buf, sizeof(pct_buf), "%d.%02d",
@@ -690,12 +756,13 @@ static RPCHelpMan gettokenhistory()
             {
                 {RPCResult::Type::OBJ, "", /*optional=*/false, "",
                     {
+                        {RPCResult::Type::STR_HEX, "token_id", "Token ID"},
                         {RPCResult::Type::STR_HEX, "txid", "Transaction ID"},
-                        {RPCResult::Type::STR, "from", "Sender address"},
-                        {RPCResult::Type::STR, "to", "Recipient address"},
                         {RPCResult::Type::NUM, "amount", "Amount transferred"},
                         {RPCResult::Type::NUM, "height", "Block height"},
                         {RPCResult::Type::NUM, "time", "Block time"},
+                        {RPCResult::Type::STR, "from", "Sender address"},
+                        {RPCResult::Type::STR, "to", "Recipient address"},
                     }
                 }
             }
@@ -739,7 +806,7 @@ static RPCHelpMan issuetoken()
         "NOTE: For automatic transaction creation and broadcasting, use 'walletissuetoken' instead. "
         "Use createrawtransaction with this output for manual transaction construction.",
         {
-            {"ticker", RPCArg::Type::STR, RPCArg::Optional::NO, "Token ticker (1-4 uppercase chars)"},
+            {"ticker", RPCArg::Type::STR, RPCArg::Optional::NO, "Token ticker (3-4 uppercase chars)"},
             {"name", RPCArg::Type::STR, RPCArg::Optional::NO, "Token name (max 32 chars)"},
             {"decimals", RPCArg::Type::NUM, RPCArg::Optional::NO, "Decimal places (0-18)"},
             {"supply", RPCArg::Type::NUM, RPCArg::Optional::NO, "Total supply (in smallest units)"},
@@ -992,7 +1059,17 @@ static RPCHelpMan decodesrc20()
             RPCResult::Type::OBJ, "", /*optional=*/false, "",
             {
                 {RPCResult::Type::STR, "action", "ISSUE, TRANSFER, or BURN"},
-                {RPCResult::Type::OBJ, "data", /*optional=*/false, "Decoded operation data", {}}
+                {RPCResult::Type::OBJ, "data", /*optional=*/false, "Decoded operation data",
+                    {
+                        {RPCResult::Type::STR, "ticker", /*optional=*/true, "Token ticker (ISSUE only)"},
+                        {RPCResult::Type::STR, "name", /*optional=*/true, "Token name (ISSUE only)"},
+                        {RPCResult::Type::NUM, "decimals", /*optional=*/true, "Decimal places (ISSUE only)"},
+                        {RPCResult::Type::NUM, "total_supply", /*optional=*/true, "Total supply (ISSUE only)"},
+                        {RPCResult::Type::STR_HEX, "metadata_hash", /*optional=*/true, "Metadata hash (ISSUE only)"},
+                        {RPCResult::Type::STR_HEX, "token_id", /*optional=*/true, "Token ID (TRANSFER/BURN only)"},
+                        {RPCResult::Type::NUM, "amount", /*optional=*/true, "Amount (TRANSFER/BURN only)"},
+                    }
+                }
             }
         },
         RPCExamples{
@@ -1004,8 +1081,21 @@ static RPCHelpMan decodesrc20()
             CheckRPCRateLimit(request, "decodesrc20");
 
             std::string hex = request.params[0].get_str();
-            std::vector<unsigned char> script_data = ParseHex(hex);
-            CScript script(script_data.begin(), script_data.end());
+            // AUDIT FIX [R19-02]: Cap hex input length before ParseHex allocation.
+            // SRC-20 scripts are < 200 bytes; anything larger is not a valid script
+            // and would only waste memory + CPU on parsing.
+            static constexpr size_t MAX_DECODE_HEX_LENGTH = 2048;
+            if (hex.size() > MAX_DECODE_HEX_LENGTH) {
+                throw JSONRPCError(RPC_INVALID_PARAMETER, "Hex input too long");
+            }
+            // AUDIT FIX [R22-05]: Use TryParseHex to detect malformed hex
+            // early with a clear error, instead of ParseHex which silently
+            // returns an empty vector on invalid input.
+            auto script_data = TryParseHex<unsigned char>(hex);
+            if (!script_data) {
+                throw JSONRPCError(RPC_INVALID_PARAMETER, "Invalid hex string");
+            }
+            CScript script(script_data->begin(), script_data->end());
 
             if (!src20::IsSRC20Script(script)) {
                 throw JSONRPCError(RPC_INVALID_PARAMETER, "Not a valid SRC-20 script");

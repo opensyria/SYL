@@ -221,8 +221,8 @@ class SRC20RPCTest(OpenSYTestFramework):
         # gettokeninfo with empty string
         assert_raises_rpc_error(-8, None, node.gettokeninfo, "")
         
-        # gettokenbyname with empty string - returns -5 (not found) since empty ticker doesn't exist
-        assert_raises_rpc_error(-5, None, node.gettokenbyname, "")
+        # gettokenbyname with empty string - returns -8 (invalid params) since empty ticker fails length validation
+        assert_raises_rpc_error(-8, None, node.gettokenbyname, "")
         
         # gettokenbalance with invalid address
         assert_raises_rpc_error(-5, None, node.gettokenbalance, "not_an_address")

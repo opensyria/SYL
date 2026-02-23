@@ -95,11 +95,11 @@ This ensures:
 ### Validation Rules
 
 1. **Ticker**: 3-4 uppercase alphanumeric characters (`MIN_TICKER_LENGTH=3`, `MAX_TICKER_LENGTH=4`)
-2. **Name**: 1-32 printable characters, no leading/trailing/consecutive spaces
+2. **Name**: 1-32 characters from `A-Z a-z 0-9 space - . ( )`, no leading/trailing/consecutive spaces
 3. **Decimals**: 0-18 (18 is maximum, matching Ethereum)
-4. **Supply**: Must be > 0
+4. **Supply**: Must be > 0 and ≤ INT64_MAX (9,223,372,036,854,775,807)
 5. **Uniqueness**: Ticker uniqueness is NOT enforced at consensus level (first-seen for verified status)
-6. **Operations per tx**: A single transaction may carry at most **4** SRC-20 operations (`MAX_OPS_PER_TX = 4` in `src/script/src20.cpp`)
+6. **Operations per tx**: A single transaction may carry at most **4** SRC-20 operations (`MAX_OPS_PER_TX = 4` in `src/script/src20.h`)
 7. **Operations per block**: At most **100** token operations per block (`MAX_TOKENS_PER_BLOCK = 100`)
 
 ### Reserved Tickers
@@ -240,40 +240,73 @@ On blockchain reorganization:
 
 ## RPC Interface
 
-### Token Information
+### Token Information (Node RPCs)
 
 ```bash
-# Get token details
+# Get token details by ID
 opensy-cli gettokeninfo <token_id>
 
-# List all tokens
-opensy-cli listtokens [count] [skip]
+# Get token details by ticker/name
+opensy-cli gettokenbyname <ticker>
 
-# Get token by ticker (first match)
-opensy-cli gettokenbyticker <ticker>
+# List all tokens (cursor-based pagination)
+opensy-cli listtokens [count] [start_token_id]
+
+# Get token holder list
+opensy-cli gettokenholders <token_id> [count] [min_balance]
+
+# Get token transfer history
+opensy-cli gettokenhistory <token_id> [start_height] [count]
+
+# Get aggregate token statistics
+opensy-cli gettokenstats
+
+# Decode a raw SRC-20 OP_RETURN script
+opensy-cli decodesrc20 <hexstring>
+
+# List reserved tickers
+opensy-cli getreservedtickers
 ```
 
-### Balance Queries
+### Balance Queries (Node RPCs)
 
 ```bash
-# Get address token balance
-opensy-cli gettokenbalance <address> <token_id>
-
-# List all token balances for address
-opensy-cli getaddresstokens <address>
+# Get token balance for an address
+opensy-cli gettokenbalance <address> [token_id]
 ```
 
-### Token Operations
+### Token Script Construction (Node RPCs)
 
 ```bash
-# Issue new token
+# Build issuance OP_RETURN data
 opensy-cli issuetoken <ticker> <name> <supply> <decimals> [metadata_hash]
 
-# Transfer tokens
+# Build transfer OP_RETURN data
 opensy-cli transfertoken <token_id> <to_address> <amount>
 
-# Burn tokens
+# Build burn OP_RETURN data
 opensy-cli burntoken <token_id> <amount>
+```
+
+### Wallet RPCs
+
+These RPCs create, sign, and broadcast token transactions in one step:
+
+```bash
+# Issue a new token (requires 100 SYL issuance fee)
+opensy-cli walletissuetoken <ticker> <name> <decimals> <supply> [metadata_hash]
+
+# Transfer tokens from wallet
+opensy-cli wallettransfertoken <token_id> <to_address> <amount>
+
+# Burn tokens from wallet
+opensy-cli walletburntoken <token_id> <amount>
+
+# List all token balances in loaded wallet
+opensy-cli gettokenbalances
+
+# Get token transaction history for loaded wallet
+opensy-cli gettokentxhistory [count]
 ```
 
 ---
@@ -294,10 +327,10 @@ Blocks exceeding this limit are invalid.
 
 Token operations require standard transaction fees. No additional "gas" fees apply.
 
-Recommended minimums:
-- ISSUE: 0.001 SYL (higher for priority)
-- TRANSFER: 0.0001 SYL
-- BURN: 0.0001 SYL
+Fee requirements:
+- **ISSUE**: Minimum **100 SYL** (`MIN_TOKEN_ISSUANCE_FEE = 100 * COIN`) — this is the anti-spam issuance fee, not a miner fee
+- **TRANSFER**: Standard transaction fee (typically < 0.001 SYL)
+- **BURN**: Standard transaction fee (typically < 0.001 SYL)
 
 ---
 
@@ -314,8 +347,30 @@ The issuing address retains special privileges:
 ### Spam Prevention
 
 1. Block token limit (100 ops/block)
-2. Standard transaction fees
-3. Minimum output values (dust threshold)
+2. Max 4 operations per transaction (`MAX_OPS_PER_TX`)
+3. 100 SYL issuance fee (`MIN_TOKEN_ISSUANCE_FEE`)
+4. Standard transaction fees for transfers/burns
+5. Minimum output values (dust threshold)
+
+### Mempool DoS Protection
+
+The mempool enforces additional rate limits to prevent token-specific denial of service:
+
+| Limit | Value | Description |
+|-------|-------|-------------|
+| `MAX_PENDING_OPS_PER_ADDRESS` | 10 | Max unconfirmed ops per address |
+| `MAX_PENDING_ISSUANCES` | 100 | Max unconfirmed issuances globally |
+| `MAX_TOTAL_PENDING_OPS` | 1000 | Max total unconfirmed token ops |
+| `RATE_LIMIT_WINDOW_SECONDS` | 600 | Sliding window for rate limiting |
+| `MAX_OPS_PER_ADDRESS_PER_WINDOW` | 50 | Max ops per address per 10-min window |
+
+### RPC Rate Limiting
+
+Token RPCs are rate-limited to prevent query abuse:
+
+- **Standard RPCs** (gettokeninfo, etc.): 30 calls/minute
+- **Heavy RPCs** (listtokens, gettokenhistory): 10 calls/minute
+- **Wallet RPCs**: 1-second cooldown between operations (bypassed in regtest)
 
 ### Replay Protection
 
@@ -329,11 +384,18 @@ Token operations are tied to specific UTXOs, preventing replay attacks across tr
 
 | File | Description |
 |------|-------------|
-| `src/script/src20.h` | Protocol constants and structures |
-| `src/script/src20.cpp` | Script parsing and building |
-| `src/tokens/tokenvalidation.cpp` | Validation logic |
-| `src/tokens/tokendb.cpp` | Database operations |
-| `src/rpc/tokens.cpp` | RPC interface |
+| `src/script/src20.h` | Protocol constants, type definitions, and structures |
+| `src/script/src20.cpp` | Script parsing, building, and validation |
+| `src/tokens/tokenvalidation.h` | Validation result types & mempool state |
+| `src/tokens/tokenvalidation.cpp` | Block/mempool validation logic |
+| `src/tokens/tokendb.h` | Database key prefixes & API surface |
+| `src/tokens/tokendb.cpp` | LevelDB database operations |
+| `src/tokens/tokennotifications.h` | Token event notification interface |
+| `src/tokens/tokennotifications.cpp` | Token event notification dispatch |
+| `src/rpc/tokens.cpp` | Node-level RPC interface (12 RPCs) |
+| `src/wallet/rpc/tokens.cpp` | Wallet-level RPC interface (5 RPCs) |
+| `src/wallet/tokens.h` | Wallet token helper declarations |
+| `src/wallet/tokens.cpp` | Wallet token transaction construction |
 
 ### Testing
 
@@ -341,10 +403,27 @@ Token operations are tied to specific UTXOs, preventing replay attacks across tr
 # Unit tests
 ./build/bin/test_opensy -t src20_tests
 ./build/bin/test_opensy -t token_validation_tests
+./build/bin/test_opensy -t token_db_tests
 
-# Functional tests
+# Core functional tests
 python3 test/functional/feature_src20_tokens.py
 python3 test/functional/rpc_src20.py
+python3 test/functional/wallet_tokens.py
+python3 test/functional/feature_token_comprehensive.py
+
+# Stress & reliability tests
+python3 test/functional/feature_token_reorg.py
+python3 test/functional/feature_token_stress_reorg.py
+python3 test/functional/feature_token_crash.py
+python3 test/functional/feature_token_mempool_limit.py
+python3 test/functional/feature_token_concurrent.py
+python3 test/functional/feature_token_consecutive.py
+
+# Boundary & recovery tests
+python3 test/functional/feature_token_boundary.py
+python3 test/functional/feature_token_error_recovery.py
+python3 test/functional/feature_token_reindex.py
+python3 test/functional/feature_token_multinode.py
 ```
 
 ---
@@ -365,6 +444,7 @@ python3 test/functional/rpc_src20.py
 | `INVALID_AMOUNT` | Bad amount | Amount is zero or invalid |
 | `MISSING_RECIPIENT` | No recipient | Transfer has no valid recipient |
 | `BLOCK_TOKEN_LIMIT` | Limit exceeded | Too many token ops in block |
+| `INTERNAL_ERROR` | Internal error | Unexpected database or processing error |
 
 ---
 
@@ -372,14 +452,19 @@ python3 test/functional/rpc_src20.py
 
 ```cpp
 // Protocol
-static constexpr std::string_view SRC20_PROTOCOL_ID = "SRC20";
+static constexpr std::array<uint8_t, 5> SRC20_PROTOCOL_ID = {'S', 'R', 'C', '2', '0'};
 static constexpr uint8_t SRC20_VERSION = 0x01;
+static constexpr uint8_t SRC20_MIN_SUPPORTED_VERSION = 1;
+static constexpr uint8_t SRC20_MAX_SUPPORTED_VERSION = 1;
 
 // Limits
+static constexpr size_t MIN_TICKER_LENGTH = 3;
 static constexpr size_t MAX_TICKER_LENGTH = 4;
 static constexpr size_t MAX_NAME_LENGTH = 32;
 static constexpr uint8_t MAX_DECIMALS = 18;
+static constexpr size_t MAX_OPS_PER_TX = 4;
 static constexpr size_t MAX_TOKENS_PER_BLOCK = 100;
+static constexpr CAmount MIN_TOKEN_ISSUANCE_FEE = 100 * COIN;  // 100 SYL
 
 // Token ID
 static constexpr size_t TOKEN_ID_SIZE = 32;  // 256 bits (full txid)

@@ -311,7 +311,7 @@ opensy-cli getpeerinfo | jq '.[].subver'
 # Check wallet
 opensy-cli getwalletinfo
 
-# Check token index (if enabled)
+# Check token index (always enabled)
 opensy-cli listtokens
 ```
 

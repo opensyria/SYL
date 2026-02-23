@@ -10,6 +10,7 @@
 #include <script/script.h>
 #include <script/src20.h>
 #include <tokens/tokendb.h>
+#include <util/overflow.h>
 #include <util/translation.h>
 #include <wallet/coincontrol.h>
 #include <wallet/spend.h>
@@ -104,7 +105,12 @@ std::vector<WalletTokenBalance> WalletTokenManager::GetTokenBalances() const
         for (const auto& tb : addr_balances) {
             auto& balance = balances_map[tb.token_id];
             balance.token_id = tb.token_id;
-            balance.balance += tb.balance;
+            // DEFENSE-IN-DEPTH: Use CheckedAdd to prevent uint64_t overflow
+            // when aggregating balances across many wallet addresses.
+            // In practice this cannot overflow (wallet balance ≤ total_supply ≤ UINT64_MAX),
+            // but guard defensively.
+            auto sum = CheckedAdd(balance.balance, tb.balance);
+            balance.balance = sum.value_or(std::numeric_limits<uint64_t>::max());
             
             // Get token info if not already fetched
             if (balance.ticker.empty()) {
@@ -173,7 +179,10 @@ std::optional<WalletTokenBalance> WalletTokenManager::GetTokenBalance(
     }
 
     for (const auto& script : wallet_scripts) {
-        result.balance += tokens::g_tokendb->GetBalance(script, token_id);
+        // DEFENSE-IN-DEPTH: Use CheckedAdd to prevent uint64_t overflow
+        auto partial = tokens::g_tokendb->GetBalance(script, token_id);
+        auto sum = CheckedAdd(result.balance, partial);
+        result.balance = sum.value_or(std::numeric_limits<uint64_t>::max());
     }
 
     // SECURITY FIX [L-09]: Use integer arithmetic for formatting
@@ -247,6 +256,24 @@ std::vector<WalletTokenTx> WalletTokenManager::GetTokenHistory(
         }
     }
 
+    // AUDIT FIX [R20-03]: Deduplicate intra-wallet transfers. When both
+    // from_address and to_address belong to this wallet, GetAddressHistory
+    // returns the same TransferRecord for both addresses, causing duplicates.
+    // Keep the incoming copy (which is more useful for display) and drop the
+    // outgoing duplicate, identified by matching (txid, token_id).
+    {
+        std::set<std::pair<uint256, src20::TokenId>> seen;
+        std::vector<WalletTokenTx> deduped;
+        deduped.reserve(result.size());
+        for (auto& tx : result) {
+            auto key = std::make_pair(tx.txid, tx.token_id);
+            if (seen.insert(key).second) {
+                deduped.push_back(std::move(tx));
+            }
+        }
+        result = std::move(deduped);
+    }
+
     // Sort by time descending
     std::sort(result.begin(), result.end(), [](const auto& a, const auto& b) {
         return a.time > b.time;
@@ -289,8 +316,8 @@ util::Result<CreatedTransactionResult> WalletTokenManager::CreateIssuanceTransac
     
     // Token issuance requires a minimum fee of 100 SYL (enforced by mempool
     // and block validation). Raise the max-fee safety limit accordingly.
-    static constexpr CAmount MIN_TOKEN_ISSUANCE_FEE = 100 * COIN; // 100 SYL
-    coin_control.m_max_tx_fee = MIN_TOKEN_ISSUANCE_FEE * 3; // Allow up to 300 SYL
+    // AUDIT FIX [R18-01]: Uses shared constant from src20.h (was local duplicate).
+    coin_control.m_max_tx_fee = src20::MIN_TOKEN_ISSUANCE_FEE * 3; // Allow up to 300 SYL
 
     // Specify change position to be AFTER the issuer output (position 2)
     // This ensures the issuer address is at output 1 (first non-OP_RETURN)
@@ -299,12 +326,21 @@ util::Result<CreatedTransactionResult> WalletTokenManager::CreateIssuanceTransac
 
     // If the normal feerate-based fee is below the minimum issuance fee,
     // recompute with a higher feerate derived from the actual tx virtual size.
-    if (tx_result->fee < MIN_TOKEN_ISSUANCE_FEE) {
+    if (tx_result->fee < src20::MIN_TOKEN_ISSUANCE_FEE) {
         int64_t tx_vsize = GetVirtualTransactionSize(*tx_result->tx);
-        // Add small buffer (+10000 sat) to avoid rounding below the minimum
-        coin_control.m_feerate = CFeeRate(MIN_TOKEN_ISSUANCE_FEE + 10000, (int32_t)tx_vsize);
+        // AUDIT FIX [R15-04]: Use a 1 SYL buffer instead of 10000 sat.
+        // Previously 10000 sat was too small: if the second CreateTransaction call
+        // selected different UTXOs yielding a slightly smaller vsize, the fee could
+        // drop below the minimum (e.g., 99.695 SYL), causing rejection.
+        // 1 SYL (100,000,000 sat) provides ample margin.
+        coin_control.m_feerate = CFeeRate(src20::MIN_TOKEN_ISSUANCE_FEE + 1 * COIN, (int32_t)tx_vsize);
         coin_control.fOverrideFeeRate = true;
-        return CreateTransaction(m_wallet, recipients, /*change_pos=*/2, coin_control, /*sign=*/true);
+        auto retry_result = CreateTransaction(m_wallet, recipients, /*change_pos=*/2, coin_control, /*sign=*/true);
+        // AUDIT FIX [R15-04]: Verify the retry actually meets the minimum fee.
+        if (retry_result && retry_result->fee < src20::MIN_TOKEN_ISSUANCE_FEE) {
+            return util::Error{Untranslated("Could not construct transaction meeting minimum issuance fee")};
+        }
+        return retry_result;
     }
 
     return tx_result;
@@ -320,14 +356,27 @@ util::Result<CreatedTransactionResult> WalletTokenManager::CreateTransferTransac
         return util::Error{Untranslated("Token database not available")};
     }
 
-    // Check balance
+    // AUDIT FIX [R15-01]: Hold cs_wallet across both the balance check and
+    // UTXO selection to prevent a TOCTOU race.  Previously the lock was released
+    // between GetTokenBalance() and the coin-selection loop, so a block arriving
+    // in the gap could change balances, causing the tx to be built against stale
+    // state (wasting the SYL fee when ProcessBlock rejects the transfer).
+    LOCK(m_wallet.cs_wallet);
+
+    // AUDIT FIX [R20-02]: Reject zero-amount transfer early.  Without this,
+    // an amount=0 call passes the balance check, constructs a valid-looking
+    // OP_RETURN tx, broadcasts it, yet gets silently rejected by
+    // TransferTokens (amount==0 check), wasting the user's SYL mining fee.
+    if (amount == 0) {
+        return util::Error{Untranslated("Transfer amount must be greater than zero")};
+    }
+
+    // Check balance (under lock)
     auto balance = GetTokenBalance(token_id);
     if (!balance || balance->balance < amount) {
         return util::Error{Untranslated("Insufficient token balance")};
     }
 
-    LOCK(m_wallet.cs_wallet);
-    
     // CRITICAL: For a valid token transfer, we must spend a UTXO from an address
     // that actually holds the tokens. The TokenDB determines the sender from the
     // scriptPubKey of the first input's spent UTXO.
@@ -357,6 +406,13 @@ util::Result<CreatedTransactionResult> WalletTokenManager::CreateTransferTransac
     }
 
     // Get available coins and find one from a token holder address
+    // SECURITY FIX [R3-01]: Select a UTXO from an address whose per-address
+    // token balance is sufficient for the transfer amount.  Previously the
+    // code picked the first UTXO from ANY token-holding address, even if that
+    // address held fewer tokens than the requested amount.  ProcessBlock
+    // derives the sender from vin[0]'s spent output; if that address has
+    // insufficient balance the transfer is silently rejected at consensus,
+    // burning the user's SYL fee with no token movement.
     CCoinControl coin_control;
     auto coins = AvailableCoins(m_wallet);
     
@@ -365,17 +421,21 @@ util::Result<CreatedTransactionResult> WalletTokenManager::CreateTransferTransac
 
     for (const auto& coin : coins.All()) {
         if (token_holder_scripts.count(coin.txout.scriptPubKey) > 0) {
-            // Pre-select this coin - it must be the first input so TokenDB
-            // correctly identifies the sender
-            coin_control.Select(coin.outpoint);
-            sender_script = coin.txout.scriptPubKey;  // Remember sender address
-            found_token_coin = true;
-            break;
+            uint64_t addr_balance = tokens::g_tokendb->GetBalance(coin.txout.scriptPubKey, token_id);
+            if (addr_balance >= amount) {
+                // Pre-select this coin - it must be the first input so TokenDB
+                // correctly identifies the sender
+                coin_control.Select(coin.outpoint);
+                sender_script = coin.txout.scriptPubKey;  // Remember sender address
+                found_token_coin = true;
+                break;
+            }
         }
     }
 
     if (!found_token_coin) {
-        return util::Error{Untranslated("No spendable UTXO found for token holder address")};
+        return util::Error{Untranslated("No single wallet address holds enough tokens for this transfer. "
+                                         "Tokens are split across multiple addresses.")};
     }
 
     // Allow additional coins if needed for fees, but the selected coin
@@ -425,13 +485,20 @@ util::Result<CreatedTransactionResult> WalletTokenManager::CreateBurnTransaction
         return util::Error{Untranslated("Token database not available")};
     }
 
-    // Check balance
+    // AUDIT FIX [R15-01]: Hold cs_wallet across balance check + coin selection
+    // to eliminate the TOCTOU race (same fix as CreateTransferTransaction).
+    LOCK(m_wallet.cs_wallet);
+
+    // AUDIT FIX [R20-02]: Reject zero-amount burn early (same rationale as transfer).
+    if (amount == 0) {
+        return util::Error{Untranslated("Burn amount must be greater than zero")};
+    }
+
+    // Check balance (under lock)
     auto balance = GetTokenBalance(token_id);
     if (!balance || balance->balance < amount) {
         return util::Error{Untranslated("Insufficient token balance for burn")};
     }
-
-    LOCK(m_wallet.cs_wallet);
 
     // CRITICAL: For a valid token burn, we must spend a UTXO from an address
     // that actually holds the tokens. The TokenDB determines the burner from the
@@ -460,6 +527,9 @@ util::Result<CreatedTransactionResult> WalletTokenManager::CreateBurnTransaction
     }
 
     // Get available coins and find one from a token holder address
+    // SECURITY FIX [R3-01]: Same fix as CreateTransferTransaction — ensure
+    // the selected UTXO's address has sufficient per-address balance for the
+    // burn amount, not just sufficient aggregate wallet balance.
     CCoinControl coin_control;
     auto coins = AvailableCoins(m_wallet);
     bool found_token_coin = false;
@@ -467,17 +537,21 @@ util::Result<CreatedTransactionResult> WalletTokenManager::CreateBurnTransaction
 
     for (const auto& coin : coins.All()) {
         if (token_holder_scripts.count(coin.txout.scriptPubKey) > 0) {
-            // Pre-select this coin - it must be the first input so TokenDB
-            // correctly identifies the burner
-            coin_control.Select(coin.outpoint);
-            sender_script = coin.txout.scriptPubKey;
-            found_token_coin = true;
-            break;
+            uint64_t addr_balance = tokens::g_tokendb->GetBalance(coin.txout.scriptPubKey, token_id);
+            if (addr_balance >= amount) {
+                // Pre-select this coin - it must be the first input so TokenDB
+                // correctly identifies the burner
+                coin_control.Select(coin.outpoint);
+                sender_script = coin.txout.scriptPubKey;
+                found_token_coin = true;
+                break;
+            }
         }
     }
 
     if (!found_token_coin) {
-        return util::Error{Untranslated("No spendable UTXO found for token holder address")};
+        return util::Error{Untranslated("No single wallet address holds enough tokens for this burn. "
+                                         "Tokens are split across multiple addresses.")};
     }
 
     // Allow additional coins if needed for fees
@@ -555,11 +629,25 @@ std::vector<CTxDestination> WalletTokenManager::GetTokenAddresses(
 
     LOCK(m_wallet.cs_wallet);
 
+    // AUDIT FIX [R15-03]: Also iterate ScriptPubKeyMans to catch keypool/change
+    // addresses not yet in m_address_book (matching GetTokenBalance/GetTokenBalances).
+    std::set<CScript> wallet_scripts;
     for (const auto& [dest, label] : m_wallet.m_address_book) {
-        CScript script = GetScriptForDestination(dest);
-        uint64_t balance = tokens::g_tokendb->GetBalance(script, token_id);
-        if (balance > 0) {
-            result.push_back(dest);
+        wallet_scripts.insert(GetScriptForDestination(dest));
+    }
+    for (const auto& spk_man : m_wallet.GetAllScriptPubKeyMans()) {
+        for (const auto& script : spk_man->GetScriptPubKeys()) {
+            wallet_scripts.insert(script);
+        }
+    }
+
+    for (const auto& script : wallet_scripts) {
+        uint64_t bal = tokens::g_tokendb->GetBalance(script, token_id);
+        if (bal > 0) {
+            CTxDestination dest;
+            if (ExtractDestination(script, dest)) {
+                result.push_back(dest);
+            }
         }
     }
 

@@ -204,6 +204,12 @@ private:
     std::unique_ptr<CDBWrapper> m_db;
     mutable Mutex m_cs;
 
+    // AUDIT FIX [R13-03]: Mutex protecting lazy count initialization.
+    // Without this, a concurrent GetTokenCount scan and ProcessBlock increment
+    // can race: ProcessBlock skips fetch_add (not yet initialized) while the
+    // scan reads stale snapshot data, resulting in permanent undercount.
+    mutable Mutex m_count_cs;
+
     // AUDIT FIX M-04: Cached token count to avoid full DB scan on each GetTokenCount() call
     mutable std::atomic<uint64_t> m_token_count_cache{0};
     mutable std::atomic<bool> m_token_count_initialized{false};
@@ -326,9 +332,12 @@ public:
     uint64_t GetBalance(const CScript& address, const src20::TokenId& token_id) const;
 
     /**
-     * Get all token balances for an address
+     * Get token balances for an address
+     * 
+     * @param address Address to query
+     * @param max_results Maximum number of results (0 = unlimited)
      */
-    std::vector<TokenBalance> GetAddressBalances(const CScript& address) const;
+    std::vector<TokenBalance> GetAddressBalances(const CScript& address, size_t max_results = 0) const;
 
     /**
      * Get all holders of a token
@@ -428,11 +437,19 @@ public:
      * Process a block for token operations (legacy version without undo data)
      * Note: This version cannot determine sender addresses for transfers/burns
      * 
+     * AUDIT FIX [R24-02]: Marked deprecated. This overload is no longer called
+     * in production (ConnectBlock and startup reconciliation both use the
+     * CBlockUndo overload). It accesses coins AFTER ConnectBlock has spent
+     * them, so sender identification would fail if accidentally called during
+     * normal block processing.
+     *
      * @param block The block to process
      * @param height Block height
      * @param view Coins view for looking up spent UTXOs (optional, for backwards compatibility)
      * @return Number of token operations processed
+     * @deprecated Use the CBlockUndo overload instead
      */
+    [[deprecated("Use the CBlockUndo overload — this version cannot identify senders correctly after ConnectBlock")]]
     int ProcessBlock(const CBlock& block, int height, const CCoinsViewCache* view = nullptr) EXCLUSIVE_LOCKS_REQUIRED(!m_cs);
 
     /**
@@ -489,9 +506,10 @@ extern std::unique_ptr<TokenDB> g_tokendb;
  * 
  * @param path Path to data directory
  * @param cache_size_mb Cache size in megabytes
+ * @param wipe If true, destroy and recreate the database (e.g. on -reindex)
  * @return true if successful
  */
-bool InitTokenDB(const fs::path& path, size_t cache_size_mb = 64);
+bool InitTokenDB(const fs::path& path, size_t cache_size_mb = 64, bool wipe = false);
 
 /**
  * Shutdown and cleanup the global token database

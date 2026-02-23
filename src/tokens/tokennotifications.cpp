@@ -129,17 +129,25 @@ void TokenValidationInterface::TransactionRemovedFromMempool(
         return;
     }
     
-    // Check if this is a token transaction before doing any work
-    auto ops = src20::ParseTransactionSRC20(*tx);
-    if (ops.empty()) {
-        return;  // Not a token transaction
+    // AUDIT FIX [R12-03]: Wrap in try-catch to prevent an exception from
+    // crashing the validation background thread.  An unhandled exception here
+    // would halt all subsequent CValidationInterface callbacks.
+    try {
+        // Check if this is a token transaction before doing any work
+        auto ops = src20::ParseTransactionSRC20(*tx);
+        if (ops.empty()) {
+            return;  // Not a token transaction
+        }
+        
+        // Remove from mempool token state (reverses pending balance changes, frees ticker)
+        g_mempool_tokens->RemoveTransaction(tx->GetHash().ToUint256());
+        
+        LogDebug(BCLog::TOKEN, "TransactionRemovedFromMempool: cleaned up token tx %s (reason: %s)\n",
+                 tx->GetHash().ToString(), RemovalReasonToString(reason));
+    } catch (const std::exception& e) {
+        LogPrintf("ERROR: TransactionRemovedFromMempool token cleanup failed for %s: %s\n",
+                  tx->GetHash().ToString(), e.what());
     }
-    
-    // Remove from mempool token state (reverses pending balance changes, frees ticker)
-    g_mempool_tokens->RemoveTransaction(tx->GetHash().ToUint256());
-    
-    LogDebug(BCLog::TOKEN, "TransactionRemovedFromMempool: cleaned up token tx %s (reason: %s)\n",
-             tx->GetHash().ToString(), RemovalReasonToString(reason));
 }
 
 bool InitTokenValidationInterface(ValidationSignals& validation_signals)

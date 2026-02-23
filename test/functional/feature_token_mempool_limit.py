@@ -52,7 +52,7 @@ class TokenMempoolLimitTest(OpenSYTestFramework):
         # Test 1: Issue a token
         self.log.info("Test 1: Issue token")
         try:
-            token_id = wallet.walletissuetoken("MEMP", "Mempool Test Token", 1000000, 8)
+            token_id = wallet.walletissuetoken("MEMP", "Mempool Test Token", 8, 1000000)
             self.generate(self.nodes[0], 1)
             self.log.info(f"  Issued token: {token_id}")
         except Exception as e:

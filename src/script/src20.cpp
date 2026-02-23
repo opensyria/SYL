@@ -11,6 +11,7 @@
 #include <tinyformat.h>
 
 #include <algorithm>
+#include <limits>
 #include <set>
 
 namespace src20 {
@@ -68,6 +69,37 @@ bool TokenIssuance::IsValid() const
         return false;
     }
 
+    // AUDIT FIX [R21-01]: Validate name characters at the IsValid() level
+    // (defense-in-depth).  Previously only the mempool validator
+    // (ValidateIssuance) enforced character restrictions, so a miner could
+    // insert XSS-prone or control-character names via block processing which
+    // only calls IsValid().  Allowed: A-Z a-z 0-9 space hyphen period parens.
+    for (size_t i = 0; i < name.size(); ++i) {
+        unsigned char c = static_cast<unsigned char>(name[i]);
+        // Reject control characters (0x00-0x1F, 0x7F) and non-ASCII (>= 0x80)
+        if (c < 0x20 || c == 0x7F || c >= 0x80) {
+            return false;
+        }
+        bool valid =
+            (c >= 'A' && c <= 'Z') ||
+            (c >= 'a' && c <= 'z') ||
+            (c >= '0' && c <= '9') ||
+            c == ' ' || c == '-' || c == '.' ||
+            c == '(' || c == ')';
+        if (!valid) {
+            return false;
+        }
+    }
+
+    // Reject names that are only whitespace, have leading/trailing spaces,
+    // or contain consecutive spaces (can confuse users/UIs).
+    if (name.front() == ' ' || name.back() == ' ') {
+        return false;
+    }
+    if (name.find("  ") != std::string::npos) {
+        return false;
+    }
+
     // Decimals must be 0-18
     if (decimals > MAX_DECIMALS) {
         return false;
@@ -75,6 +107,15 @@ bool TokenIssuance::IsValid() const
 
     // Supply must be non-zero
     if (total_supply == 0) {
+        return false;
+    }
+
+    // AUDIT FIX [R21-01]: Enforce INT64_MAX supply cap for ALL decimal values.
+    // The mempool overlay (MempoolTokenState) uses int64_t deltas internally,
+    // so supplies above INT64_MAX cause silent overflow in pending-balance
+    // tracking.  Previously only decimals>0 had a cap; decimals==0 allowed
+    // up to UINT64_MAX, which a miner could exploit to corrupt mempool state.
+    if (total_supply > static_cast<uint64_t>(std::numeric_limits<int64_t>::max())) {
         return false;
     }
 
@@ -111,7 +152,14 @@ std::string TokenIssuance::ToString() const
 
 bool TokenTransfer::IsValid() const
 {
-    return !token_id.IsNull() && amount > 0;
+    // AUDIT FIX [R28-02]: Cap amount at INT64_MAX to match the issuance
+    // supply limit.  The mempool overlay uses int64_t deltas internally,
+    // so amounts above INT64_MAX would silently overflow pending-balance
+    // tracking.  Downstream validators (tokenvalidation.cpp) also check
+    // this, but defense-in-depth demands the canonical IsValid() gate
+    // rejects them.
+    return !token_id.IsNull() && amount > 0 &&
+           amount <= static_cast<uint64_t>(std::numeric_limits<int64_t>::max());
 }
 
 std::string TokenTransfer::ToString() const
@@ -122,7 +170,9 @@ std::string TokenTransfer::ToString() const
 
 bool TokenBurn::IsValid() const
 {
-    return !token_id.IsNull() && amount > 0;
+    // AUDIT FIX [R28-02]: Same INT64_MAX cap as TokenTransfer (see above).
+    return !token_id.IsNull() && amount > 0 &&
+           amount <= static_cast<uint64_t>(std::numeric_limits<int64_t>::max());
 }
 
 std::string TokenBurn::ToString() const
@@ -217,11 +267,14 @@ std::optional<SRC20Operation> ParseSRC20Script(const CScript& script)
             TokenIssuance issuance;
             
             // Read ticker (4 bytes, null-padded)
+            // AUDIT FIX [R16-M01]: Stop at first null byte instead of stripping all nulls.
+            // Previously "A\0BC" and "ABC\0" both decoded to "ABC", creating
+            // ticker collision classes where different wire encodings map to the
+            // same string. Now "A\0BC" decodes to "A" (stop at first null).
             size_t ticker_end = offset + MAX_TICKER_LENGTH;
             for (size_t i = offset; i < ticker_end && i < data.size(); ++i) {
-                if (data[i] != 0) {
-                    issuance.ticker += static_cast<char>(data[i]);
-                }
+                if (data[i] == 0) break;
+                issuance.ticker += static_cast<char>(data[i]);
             }
             offset = ticker_end;
 
@@ -230,11 +283,11 @@ std::optional<SRC20Operation> ParseSRC20Script(const CScript& script)
             }
 
             // Read name (32 bytes, null-padded)
+            // AUDIT FIX [R16-M01]: Stop at first null byte (same rationale as ticker).
             size_t name_end = offset + MAX_NAME_LENGTH;
             for (size_t i = offset; i < name_end && i < data.size(); ++i) {
-                if (data[i] != 0) {
-                    issuance.name += static_cast<char>(data[i]);
-                }
+                if (data[i] == 0) break;
+                issuance.name += static_cast<char>(data[i]);
             }
             offset = name_end;
 
@@ -435,7 +488,7 @@ std::vector<SRC20Operation> ParseTransactionSRC20(const CTransaction& tx)
     // AUDIT FIX [H-05]: Limit the number of SRC-20 operations per transaction.
     // Without this, a single transaction with hundreds of OP_RETURN outputs
     // could consume the entire block's token budget and cause O(n) DB lookups.
-    static constexpr size_t MAX_OPS_PER_TX = 4;
+    // AUDIT FIX [R18-02]: Now uses the shared constant from the header.
 
     for (const auto& vout : tx.vout) {
         if (ops.size() >= MAX_OPS_PER_TX) break;
@@ -492,7 +545,15 @@ std::optional<CScript> GetTransferChange(const CTransaction& tx)
     }
     
     // Third output is change
-    return tx.vout[2].scriptPubKey;
+    // AUDIT FIX [R16-M03]: Validate change output is spendable, matching
+    // the GetTransferRecipient validation. Without this, tokens could be
+    // credited to an OP_RETURN or empty script via the change output,
+    // silently destroying the sender's remaining token balance.
+    const CScript& change = tx.vout[2].scriptPubKey;
+    if (change.empty() || change.IsUnspendable()) {
+        return std::nullopt;
+    }
+    return change;
 }
 
 namespace reserved {
@@ -519,9 +580,27 @@ bool IsReservedTicker(const std::string& ticker)
 
 void AddReservedTicker(const std::string& ticker)
 {
+    // AUDIT FIX [R22-FIX-02]: Validate ticker format before inserting.
+    // Accepting arbitrary strings (lowercase, empty, overlength) wastes memory
+    // and creates entries that can never match a valid token ticker.
+    if (ticker.size() < MIN_TICKER_LENGTH || ticker.size() > MAX_TICKER_LENGTH) {
+        LogPrintf("WARNING: AddReservedTicker ignored invalid ticker '%s' (wrong length)\n", ticker);
+        return;
+    }
+    for (unsigned char c : ticker) {
+        if (!((c >= 'A' && c <= 'Z') || (c >= '0' && c <= '9'))) {
+            LogPrintf("WARNING: AddReservedTicker ignored invalid ticker '%s' (bad characters)\n", ticker);
+            return;
+        }
+    }
+
     LOCK(g_reserved_mutex);
-    g_runtime_reserved_tickers.insert(ticker);
-    LogPrintf("Reserved ticker added at runtime: %s\n", ticker);
+    auto [it, inserted] = g_runtime_reserved_tickers.insert(ticker);
+    if (inserted) {
+        LogPrintf("Reserved ticker added at runtime: %s\n", ticker);
+    } else {
+        LogDebug(BCLog::TOKEN, "AddReservedTicker: ticker '%s' was already reserved\n", ticker);
+    }
 }
 
 std::vector<std::string> GetReservedTickers()
@@ -569,7 +648,16 @@ TokenIssuance CreateSUSDT()
     issuance.ticker = "SUST";
     issuance.name = "Synthetic USDT";
     issuance.decimals = 6;  // Same as USDT
-    issuance.total_supply = 1000000000ULL * 1000000;  // 1 billion with 6 decimals
+    // AUDIT FIX [R16-C01]: Reduced supply to pass IsValid() overflow check.
+    // Previously 10^15 exceeded max_safe_supply (UINT64_MAX / 10^6 ≈ 1.8×10^13).
+    // New value: 1 billion SUST = 10^9 * 10^6 = 10^15 smallest units → STILL fails.
+    // Correct: 1 billion SUST in display units = 10^9 tokens. But total_supply is
+    // already in smallest units, so set to 10^9 (1 billion smallest units = 1000 SUST).
+    // For 1 billion display-unit SUST, we'd need total_supply = 10^15, which overflows.
+    // Settle on 10 billion display-unit SUST → total_supply = 10^10 * 10^6 = 10^16 → still too big.
+    // Max safe: 18,446,744,073,709 smallest units ≈ 18.4 million display SUST.
+    // Use 10 million display SUST = 10^7 * 10^6 = 10^13 smallest units (within limit).
+    issuance.total_supply = 10000000ULL * 1000000;  // 10 million SUST with 6 decimals
     issuance.metadata_hash.SetNull();  // To be set on actual issuance
     return issuance;
 }

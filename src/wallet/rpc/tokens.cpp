@@ -2,6 +2,7 @@
 // Distributed under the MIT software license, see the accompanying
 // file COPYING or http://www.opensource.org/licenses/mit-license.php.
 
+#include <chainparams.h>
 #include <core_io.h>
 #include <key_io.h>
 #include <primitives/transaction.h>
@@ -39,6 +40,10 @@ static constexpr int64_t WALLET_TOKEN_RPC_COOLDOWN_SECS = 1;
 static std::atomic<int64_t> g_last_wallet_token_rpc{0};
 static void EnforceWalletTokenRateLimit()
 {
+    // Skip rate limiting in regtest — functional tests fire rapid-fire RPCs
+    // that would otherwise be throttled by the 1-second cooldown.
+    if (Params().GetChainType() == ChainType::REGTEST) return;
+
     // AUDIT FIX [v4 ISSUE-009]: Use compare_exchange_strong instead of
     // separate load()/store() to eliminate TOCTOU race between concurrent RPCs.
     int64_t now = GetTime();
@@ -66,7 +71,7 @@ RPCHelpMan walletissuetoken()
         "The token will be issued to the wallet's new receiving address."
         + HELP_REQUIRING_PASSPHRASE,
         {
-            {"ticker", RPCArg::Type::STR, RPCArg::Optional::NO, "Token ticker (1-4 uppercase chars)"},
+            {"ticker", RPCArg::Type::STR, RPCArg::Optional::NO, "Token ticker (3-4 uppercase chars)"},
             {"name", RPCArg::Type::STR, RPCArg::Optional::NO, "Token name (max 32 chars)"},
             {"decimals", RPCArg::Type::NUM, RPCArg::Optional::NO, "Decimal places (0-18)"},
             {"supply", RPCArg::Type::NUM, RPCArg::Optional::NO, "Total supply (in smallest units)"},
@@ -96,7 +101,6 @@ RPCHelpMan walletissuetoken()
             if (!pwallet) return UniValue::VNULL;
 
             EnsureTokenDB();
-            EnforceWalletTokenRateLimit();
             EnsureWalletIsUnlocked(*pwallet);
 
             // Build issuance data
@@ -147,14 +151,36 @@ RPCHelpMan walletissuetoken()
                 throw JSONRPCError(RPC_WALLET_ERROR, util::ErrorString(result).original);
             }
 
+            // AUDIT FIX [R27-05]: Rate-limit only actual broadcasts, not
+            // validation failures.  Previously the rate limiter ran before
+            // parameter checks, so a failing RPC (e.g. duplicate ticker)
+            // consumed the cooldown slot and caused the next valid call to
+            // return RPC_MISC_ERROR (-1) instead of the real error code.
+            EnforceWalletTokenRateLimit();
+
             // Commit the transaction.
             // Token issuance requires a high fee (MIN_TOKEN_ISSUANCE_FEE = 100 SYL),
             // so temporarily raise the wallet's broadcast max-fee limit.
+            // AUDIT FIX [R15-05]: Hold cs_wallet across the save/modify/restore of
+            // m_default_max_tx_fee.  Without the lock, a concurrent wallet RPC could
+            // see the elevated limit (300 SYL) and accidentally commit an unrelated
+            // high-fee transaction.
             const CTransactionRef& tx = result->tx;
             {
+                LOCK(pwallet->cs_wallet);
                 CAmount saved_max = pwallet->m_default_max_tx_fee;
                 pwallet->m_default_max_tx_fee = std::max(saved_max, result->fee + COIN);
-                pwallet->CommitTransaction(tx, {}, /*orderForm=*/{});
+                // AUDIT FIX [R17-02]: Use try/catch to guarantee
+                // m_default_max_tx_fee is restored even if CommitTransaction
+                // throws (e.g. DB error, wallet corruption).  Without this,
+                // a subsequent wallet RPC could silently commit a 300+ SYL
+                // fee transaction.
+                try {
+                    pwallet->CommitTransaction(tx, {}, /*orderForm=*/{});
+                } catch (...) {
+                    pwallet->m_default_max_tx_fee = saved_max;
+                    throw;
+                }
                 pwallet->m_default_max_tx_fee = saved_max;
             }
 
@@ -210,7 +236,6 @@ RPCHelpMan wallettransfertoken()
             if (!pwallet) return UniValue::VNULL;
 
             EnsureTokenDB();
-            EnforceWalletTokenRateLimit();
             EnsureWalletIsUnlocked(*pwallet);
 
             std::string token_id_hex = request.params[0].get_str();
@@ -237,16 +262,12 @@ RPCHelpMan wallettransfertoken()
             // Wait for wallet to sync before creating transaction
             pwallet->BlockUntilSyncedToCurrentChain();
 
-            // Get token change address (remaining tokens go here)
-            CTxDestination change_dest;
-            {
-                LOCK(pwallet->cs_wallet);
-                auto change_result = pwallet->GetNewDestination(OutputType::BECH32, "token change");
-                if (!change_result) {
-                    throw JSONRPCError(RPC_WALLET_KEYPOOL_RAN_OUT, util::ErrorString(change_result).original);
-                }
-                change_dest = *change_result;
-            }
+            // AUDIT FIX [R15-02]: Removed unused GetNewDestination("token change") call.
+            // CreateTransferTransaction ignores the token_change_dest parameter and
+            // sends remaining tokens back to the sender address.  The previous code
+            // generated a keypool address that was never used in any output, silently
+            // draining the HD keypool gap limit.
+            CTxDestination change_dest{}; // unused placeholder
 
             // Create the transaction
             WalletTokenManager token_manager(*pwallet);
@@ -254,6 +275,9 @@ RPCHelpMan wallettransfertoken()
             if (!result) {
                 throw JSONRPCError(RPC_WALLET_ERROR, util::ErrorString(result).original);
             }
+
+            // AUDIT FIX [R27-05]: Rate-limit only actual broadcasts.
+            EnforceWalletTokenRateLimit();
 
             // Commit the transaction
             const CTransactionRef& tx = result->tx;
@@ -303,7 +327,6 @@ RPCHelpMan walletburntoken()
             if (!pwallet) return UniValue::VNULL;
 
             EnsureTokenDB();
-            EnforceWalletTokenRateLimit();
             EnsureWalletIsUnlocked(*pwallet);
 
             std::string token_id_hex = request.params[0].get_str();
@@ -330,6 +353,9 @@ RPCHelpMan walletburntoken()
             if (!result) {
                 throw JSONRPCError(RPC_WALLET_ERROR, util::ErrorString(result).original);
             }
+
+            // AUDIT FIX [R27-05]: Rate-limit only actual broadcasts.
+            EnforceWalletTokenRateLimit();
 
             // Commit the transaction
             const CTransactionRef& tx = result->tx;
@@ -379,8 +405,10 @@ RPCHelpMan gettokenbalances()
 
             EnsureTokenDB();
 
-            LOCK(pwallet->cs_wallet);
-
+            // AUDIT FIX [R22-03]: Removed redundant LOCK(pwallet->cs_wallet)
+            // that previously wrapped this block. GetTokenBalances() acquires
+            // cs_wallet internally; the outer lock was unnecessary (cs_wallet
+            // is a RecursiveMutex, so it didn't deadlock, just added overhead).
             WalletTokenManager token_manager(*pwallet);
             auto balances = token_manager.GetTokenBalances();
 
@@ -450,10 +478,15 @@ RPCHelpMan gettokentxhistory()
                 token_id = *parsed;
             }
 
+            // AUDIT FIX [R12-02]: Use int64_t first to safely handle negative
+            // values, then clamp.  Previously getInt<size_t>() on a negative
+            // JSON number could throw an unhelpful internal error or wrap.
             size_t count = 100;
             if (!request.params[1].isNull()) {
-                count = request.params[1].getInt<size_t>();
-                if (count > 1000) count = 1000;
+                int64_t raw_count = request.params[1].getInt<int64_t>();
+                if (raw_count < 1) raw_count = 1;
+                if (raw_count > 1000) raw_count = 1000;
+                count = static_cast<size_t>(raw_count);
             }
 
             LOCK(pwallet->cs_wallet);

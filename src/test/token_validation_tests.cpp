@@ -819,14 +819,18 @@ BOOST_AUTO_TEST_CASE(issuance_max_supply_max_decimals)
 
     BOOST_CHECK(!issuance.IsValid());  // Should fail due to L-02 overflow prevention
 
-    // But max supply with 0 decimals should pass
+    // AUDIT FIX [R21-01]: INT64_MAX is now the cap for all decimal values.
+    // UINT64_MAX with 0 decimals is no longer valid.
     src20::TokenIssuance safe_issuance;
     safe_issuance.ticker = "SAFE";
     safe_issuance.name = "Safe Maximum";
     safe_issuance.decimals = 0;
     safe_issuance.total_supply = UINT64_MAX;
+    BOOST_CHECK(!safe_issuance.IsValid());  // Exceeds INT64_MAX
 
-    BOOST_CHECK(safe_issuance.IsValid());  // No overflow risk with 0 decimals
+    // INT64_MAX should pass
+    safe_issuance.total_supply = static_cast<uint64_t>(std::numeric_limits<int64_t>::max());
+    BOOST_CHECK(safe_issuance.IsValid());
 }
 
 // =============================================================================
@@ -839,39 +843,41 @@ BOOST_AUTO_TEST_CASE(token_name_whitespace_validation)
     // Note: Whitespace validation is in TokenValidator, not TokenIssuance::IsValid()
     // The struct validation is basic; full validation happens in TokenValidator
 
-    // Leading space - basic struct allows it, but full validator should reject
+    // AUDIT FIX [R21-01]: IsValid() now enforces name character and whitespace
+    // rules (previously only ValidateIssuance did).  All whitespace-problematic
+    // names are now rejected at the struct level.
+
+    // Leading space - now rejected by IsValid()
     src20::TokenIssuance leading;
     leading.ticker = "TST1";
     leading.name = " LeadingSpace";
     leading.decimals = 8;
     leading.total_supply = 1000000;
-    // Basic struct validation passes (name is valid length)
-    BOOST_CHECK(leading.IsValid());
-    // Full validator would reject - tested in functional tests
+    BOOST_CHECK(!leading.IsValid());
 
-    // Trailing space
+    // Trailing space - now rejected by IsValid()
     src20::TokenIssuance trailing;
     trailing.ticker = "TST2";
     trailing.name = "TrailingSpace ";
     trailing.decimals = 8;
     trailing.total_supply = 1000000;
-    BOOST_CHECK(trailing.IsValid());  // Basic validation passes
+    BOOST_CHECK(!trailing.IsValid());
 
-    // Consecutive spaces
+    // Consecutive spaces - now rejected by IsValid()
     src20::TokenIssuance consecutive;
     consecutive.ticker = "TST3";
     consecutive.name = "Two  Spaces";
     consecutive.decimals = 8;
     consecutive.total_supply = 1000000;
-    BOOST_CHECK(consecutive.IsValid());  // Basic validation passes
+    BOOST_CHECK(!consecutive.IsValid());
 
-    // Only whitespace - empty after trim, but struct allows it
+    // Only whitespace - now rejected by IsValid()
     src20::TokenIssuance whitespace_only;
     whitespace_only.ticker = "TST4";
     whitespace_only.name = "   ";
     whitespace_only.decimals = 8;
     whitespace_only.total_supply = 1000000;
-    BOOST_CHECK(whitespace_only.IsValid());  // Basic validation passes (non-empty name)
+    BOOST_CHECK(!whitespace_only.IsValid());
 
     // Valid name with single spaces should pass everywhere
     src20::TokenIssuance good;
@@ -1066,24 +1072,34 @@ BOOST_AUTO_TEST_CASE(supply_near_max_operations)
 
 BOOST_AUTO_TEST_CASE(transfer_amount_max)
 {
-    // Test: Transfer amount at max value
+    // Test: Transfer amount at INT64_MAX is valid; UINT64_MAX exceeds cap
+    // AUDIT FIX [R28-02]: IsValid() now caps at INT64_MAX
     
     src20::TokenTransfer max_transfer;
     max_transfer.token_id = src20::TokenId(uint256::ONE);
-    max_transfer.amount = UINT64_MAX;
-    
+    max_transfer.amount = static_cast<uint64_t>(std::numeric_limits<int64_t>::max());
     BOOST_CHECK(max_transfer.IsValid());
+
+    src20::TokenTransfer over_transfer;
+    over_transfer.token_id = src20::TokenId(uint256::ONE);
+    over_transfer.amount = UINT64_MAX;
+    BOOST_CHECK(!over_transfer.IsValid());
 }
 
 BOOST_AUTO_TEST_CASE(burn_amount_max)
 {
-    // Test: Burn amount at max value
+    // Test: Burn amount at INT64_MAX is valid; UINT64_MAX exceeds cap
+    // AUDIT FIX [R28-02]: IsValid() now caps at INT64_MAX
     
     src20::TokenBurn max_burn;
     max_burn.token_id = src20::TokenId(uint256::ONE);
-    max_burn.amount = UINT64_MAX;
-    
+    max_burn.amount = static_cast<uint64_t>(std::numeric_limits<int64_t>::max());
     BOOST_CHECK(max_burn.IsValid());
+
+    src20::TokenBurn over_burn;
+    over_burn.token_id = src20::TokenId(uint256::ONE);
+    over_burn.amount = UINT64_MAX;
+    BOOST_CHECK(!over_burn.IsValid());
 }
 
 // =============================================================================
