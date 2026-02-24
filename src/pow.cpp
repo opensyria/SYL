@@ -289,6 +289,19 @@ bool PermittedDifficultyTransition(const Consensus::Params& params, int64_t heig
         minimum_new_target.SetCompact(smallest_difficulty_target.GetCompact());
         if (minimum_new_target > observed_new_target) return false;
     } else if (old_nbits != new_nbits) {
+        // PHASE 1 MIN-DIFFICULTY MINING COMPATIBILITY
+        //
+        // The Phase 1 bootstrap chain (blocks 0–209,999) was mined with minimum
+        // difficulty to accelerate initial supply distribution. This means nBits
+        // can change at non-retarget boundaries (e.g., block 44,321 resets to
+        // powLimit mid-epoch) and retarget boundaries compute different values
+        // than the DAA would predict. Both are legitimate on the live chain.
+        //
+        // Phase 2 (RandomX, blocks 210,000+) uses standard DAA rules and must
+        // enforce strict nBits consistency between retarget boundaries.
+        if (!params.IsRandomXActive(height)) {
+            return true;
+        }
         return false;
     }
     return true;

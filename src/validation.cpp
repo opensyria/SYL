@@ -4462,8 +4462,22 @@ static bool ContextualCheckBlockHeader(const CBlockHeader& block, BlockValidatio
     // Check proof of work (can be skipped for template validation)
     const Consensus::Params& consensusParams = chainman.GetConsensus();
     if (check_pow) {
-        if (block.nBits != GetNextWorkRequired(pindexPrev, &block, consensusParams))
-            return state.Invalid(BlockValidationResult::BLOCK_INVALID_HEADER, "bad-diffbits", "incorrect proof of work");
+        unsigned int expected_nbits = GetNextWorkRequired(pindexPrev, &block, consensusParams);
+        if (block.nBits != expected_nbits) {
+            // PHASE 1 MIN-DIFFICULTY MINING COMPATIBILITY
+            //
+            // The Phase 1 bootstrap chain (blocks 0–209,999) was mined at minimum
+            // difficulty to accelerate initial supply distribution. The DAA-computed
+            // nBits won't match the actual (min-difficulty) nBits in those blocks.
+            // Phase 2 (RandomX) enforces strict DAA compliance.
+            //
+            // PoW hash validity is still checked below against the block's own nBits,
+            // ensuring blocks met at least their declared difficulty target.
+            if (consensusParams.IsRandomXActive(nHeight)) {
+                return state.Invalid(BlockValidationResult::BLOCK_INVALID_HEADER, "bad-diffbits", "incorrect proof of work");
+            }
+            LogDebug(BCLog::VALIDATION, "Phase 1 block %d: nBits %08x differs from DAA-computed %08x (min-difficulty mining)\n", nHeight, block.nBits, expected_nbits);
+        }
 
         // Verify proof-of-work using the appropriate algorithm based on height
         // Post-fork: Use RandomX algorithm
