@@ -305,8 +305,11 @@ bool PermittedDifficultyTransition(const Consensus::Params& params, int64_t heig
         // than the DAA would predict. Both are legitimate on the live chain.
         //
         // Phase 2 (RandomX, blocks 210,000+) uses standard DAA rules and must
-        // enforce strict nBits consistency between retarget boundaries.
-        if (!params.IsRandomXActive(height)) {
+        // enforce strict nBits consistency between retarget boundaries,
+        // EXCEPT during the genesis bootstrap phase where relaxed difficulty
+        // was used (blocks up to nBootstrapEndHeight).
+        bool isBootstrap = params.nBootstrapEndHeight >= 0 && height <= params.nBootstrapEndHeight;
+        if (!params.IsRandomXActive(height) || isBootstrap) {
             return true;
         }
         return false;

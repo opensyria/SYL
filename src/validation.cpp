@@ -4374,6 +4374,11 @@ bool HasValidProofOfWork(const std::vector<CBlockHeader>& headers, const Consens
                 // claims sufficient work to rate-limit header spam attacks.
                 // Full RandomX hash validation happens in ContextualCheckBlockHeader.
                 auto bnTarget = DeriveTarget(header.nBits, consensusParams.powLimitRandomX);
+                // If RandomX target derivation fails, the header may be from
+                // the bootstrap phase where nBits uses the relaxed powLimitBootstrap.
+                if (!bnTarget.has_value() && !consensusParams.powLimitBootstrap.IsNull()) {
+                    bnTarget = DeriveTarget(header.nBits, consensusParams.powLimitBootstrap);
+                }
                 if (!bnTarget.has_value()) {
                     return false;
                 }
@@ -4468,10 +4473,15 @@ static bool ContextualCheckBlockHeader(const CBlockHeader& block, BlockValidatio
             //
             // PoW hash validity is still checked below against the block's own nBits,
             // ensuring blocks met at least their declared difficulty target.
-            if (consensusParams.IsRandomXActive(nHeight)) {
+            // Allow nBits mismatch during the genesis bootstrap phase
+            // (blocks 0 through nBootstrapEndHeight) where relaxed difficulty
+            // was used. PoW hash validity is still checked below.
+            bool isBootstrap = consensusParams.nBootstrapEndHeight >= 0 && nHeight <= consensusParams.nBootstrapEndHeight;
+            if (consensusParams.IsRandomXActive(nHeight) && !isBootstrap) {
                 return state.Invalid(BlockValidationResult::BLOCK_INVALID_HEADER, "bad-diffbits", "incorrect proof of work");
             }
-            LogDebug(BCLog::VALIDATION, "Phase 1 block %d: nBits %08x differs from DAA-computed %08x (min-difficulty mining)\n", nHeight, block.nBits, expected_nbits);
+            LogDebug(BCLog::VALIDATION, "%s block %d: nBits %08x differs from DAA-computed %08x (min-difficulty mining)\n",
+                     isBootstrap ? "Bootstrap" : "Phase 1", nHeight, block.nBits, expected_nbits);
         }
 
         // Verify proof-of-work using the appropriate algorithm based on height
