@@ -28,7 +28,6 @@ fixes applied:
 - **H-1 (DNS Seeds):** All 3 seeds controlled by single entity. Needs community-operated seeds on independent domains.
 - **H-2 (Token State):** SRC-20 is non-consensus; state can diverge between node versions. Roadmap documented in `doc/src20-spec.md`. Phase 2 (deterministic validation) is the next step.
 - **M-4 (xpub/xprv):** Extended key prefixes match Bitcoin — documented as intentional trade-off for hardware wallet compatibility.
-- **PGP Key:** Generate and publish a real PGP key at `opensyria.net/security` before public launch.
 
 ## Commit Status Legend
 - ✅ **APPLIED** - Cherry-picked into OpenSY

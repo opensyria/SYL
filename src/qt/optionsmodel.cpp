@@ -68,7 +68,7 @@ static void UpdateRwSetting(interfaces::Node& node, OptionsModel::OptionID optio
         // because OpenSY 22.x releases try to read these specific settings as
         // strings in addOverriddenOption() calls at startup, triggering
         // uncaught exceptions in UniValue::get_str(). These errors were fixed
-        // in later releases by https://github.com/opensyria/OpenSY/pull/24498.
+        // in later releases by https://github.com/opensyria/SYL/pull/24498.
         // If new numeric settings are added, they can be written as numbers
         // instead of strings, because opensy 22.x will not try to read these.
         node.updateRwSetting(SettingName(option) + suffix, value.getValStr());
@@ -729,7 +729,7 @@ void OptionsModel::checkAndMigrate()
     if (settingsVersion < CLIENT_VERSION)
     {
         // -dbcache was bumped from 100 to 300 in 0.13
-        // see https://github.com/opensyria/OpenSY/pull/8273
+        // see https://github.com/opensyria/SYL/pull/8273
         // force people to upgrade to the new value if they are using 100MB
         if (settingsVersion < 130000 && settings.contains("nDatabaseCache") && settings.value("nDatabaseCache").toLongLong() == 100)
             settings.setValue("nDatabaseCache", (qint64)(DEFAULT_DB_CACHE >> 20));

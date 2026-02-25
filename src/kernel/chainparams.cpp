@@ -132,16 +132,16 @@ public:
         // This prevents attackers from creating fake chains with less total work
         // Attackers would need to redo all PoW from genesis to create an alternate chain
         //
-        // Updated at block 210,020 (Feb 15, 2026) - Phase 1 bootstrap complete
+        // Updated at block 210,520 (Feb 25, 2026) - Bootstrap phase complete
         // Get current value: opensy-cli getblockheader $(opensy-cli getblockhash <height>) | grep chainwork
-        consensus.nMinimumChainWork = uint256{"00000000000000000000000000000000000000000000000000000832b5fc1a94"};
+        consensus.nMinimumChainWork = uint256{"0000000000000000000000000000000000000000000000000000000001116da5"};
         
         // AssumeValid - enables faster sync by skipping signature validation for known-good blocks
         // Nodes will skip script validation for blocks up to this point (significant sync speedup)
         //
-        // Updated at block 210,020 (Feb 15, 2026) - Phase 1 bootstrap complete
+        // Updated at block 210,520 (Feb 25, 2026) - Bootstrap phase complete
         // This block has been manually verified by maintainers
-        consensus.defaultAssumeValid = uint256{"12583482c57315765930eddddac184253ca6fd851f6260034a6779d60ea74eda"};
+        consensus.defaultAssumeValid = uint256{"848f815abc1c4ce30a5ef72ce7414b5db22758d5d3c13e67d425a43ca3de1f6c"}; // block 210,520
 
         // ═══════════════════════════════════════════════════════════════════════
         // TWO-PHASE PROOF-OF-WORK STRATEGY
@@ -162,9 +162,13 @@ public:
         //   2. ASIC-resistant mining accessible to all
         // ═══════════════════════════════════════════════════════════════════════
         consensus.nRandomXForkHeight = 210000;  // 10% of supply, then switch to RandomX
-        // RandomX difficulty limit - allows organic growth with natural difficulty adjustment
-        // Starting easy enough for single-miner bootstrap, adjusts as hashrate grows
+        // RandomX difficulty limit — allows organic growth with natural difficulty adjustment
         consensus.powLimitRandomX = uint256{"0000ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff"};
+
+        // Genesis bootstrap phase: blocks 0–210,520 were mined at relaxed difficulty
+        // to rapidly establish the chain. This is a permanent consensus rule.
+        consensus.nBootstrapEndHeight = 210520;
+        consensus.powLimitBootstrap = uint256{"7fffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff"};
 
         // Argon2id emergency fallback - DORMANT by default (-1 = never active)
         // This is activated only via hard fork if RandomX is ever cryptographically broken
@@ -234,7 +238,7 @@ public:
         //        vps.yourdomain.com      A     YOUR_SERVER_IP
         //   3. Run seeder: ./dnsseed -h seedN.yourdomain.com -ns vps.yourdomain.com -m you@email.com -p 9633
         //   4. Verify: nslookup seedN.yourdomain.com (should return node IPs)
-        //   5. Apply for inclusion: Open issue at github.com/opensyria/opensy/issues
+        //   5. Apply for inclusion: Open issue at github.com/opensyria/SYL/issues
         //      Include: hostname, region, uptime proof, contact info
         //
         // Review Process:
@@ -288,7 +292,7 @@ public:
         // vSeeds.emplace_back("seed.community3.example");   // 📋 RESERVED - Community Operator #3
         //
         // Current community seed applications:
-        // - None yet! Be the first: github.com/opensyria/opensy/issues/new
+        // - None yet! Be the first: github.com/opensyria/SYL/issues/new
         // ─────────────────────────────────────────────────────────────────────────
 
         base58Prefixes[PUBKEY_ADDRESS] = std::vector<unsigned char>(1,35); // Addresses start with 'F' (Freedom)
@@ -338,13 +342,9 @@ public:
         // 1. Run: opensy-cli dumptxoutset /tmp/utxo.dat rollback '{"rollback": <HEIGHT>}'
         // 2. Use txoutset_hash and nchaintx from the output
         // 3. Add entry below
-        m_assumeutxo_data = {
-            {
-                .height = 210'000,
-                .hash_serialized = AssumeutxoHash{uint256{"9c567f013818ce786087e4297c9665eedc4bf907a620fec423b687c5c5856cbd"}},
-                .m_chain_tx_count = 210002,
-            },
-        };
+        // AssumeUTXO — no snapshots published yet.
+        // To generate: opensy-cli dumptxoutset /path/to/utxo.dat rollback '{"rollback": <HEIGHT>}'
+        m_assumeutxo_data = {};
 
         // Chain transaction data - for sync time estimation
         //
@@ -355,11 +355,11 @@ public:
         // Run: opensy-cli getchaintxstats
         // Update nTime = result.time, tx_count = result.txcount, dTxRate = result.txrate
         //
-        // Last updated: 2026-02-15 at block 210,020 (Phase 1 bootstrap complete)
+        // Last updated: 2026-02-25 at block 210,520 (Bootstrap phase complete)
         chainTxData = ChainTxData{
-            .nTime    = 1771219255,  // 2026-02-15
-            .tx_count = 210022,      // Total transactions at block 210,020
-            .dTxRate  = 0.4007,      // ~1 tx per 2.5 seconds (coinbase every block)
+            .nTime    = 1772037293,   // Block 210,520 timestamp
+            .tx_count = 210521,       // Total transactions at block 210,520
+            .dTxRate  = 0.0083,       // ~1 tx per 2 min target
         };
 
         // ─────────────────────────────────────────────────────────────────────────
@@ -372,8 +372,8 @@ public:
         //   3. AssumeUTXO snapshots — enables verified fast sync
         //   4. chainTxData — sync time estimation
         //
-        // nMinimumChainWork is set to 0x0832b5fc1a94 (verified 2026-02-18).
-        // UPDATE PERIODICALLY: Run the command below and update line ~136:
+        // nMinimumChainWork — see consensus.nMinimumChainWork above for current value.
+        // UPDATE PERIODICALLY: Run the command below and update the nMinimumChainWork line:
         //   opensy-cli getblockheader $(opensy-cli getbestblockhash) | jq .chainwork
         //
         // See doc/checkpoints.md for full checkpoint policy.
@@ -391,13 +391,13 @@ public:
         //  150 000  — late-Phase-1 anchor
         //  200 000  — pre-RandomX transition anchor
         //  210 000  — RandomX activation (Phase 2 boundary)
+        // Checkpoints at notable heights — headers must match or be rejected
         m_checkpoints = {
             {      0, uint256{"000000c4c94f54e5ae60a67df5c113dfbfd9ef872639e2359d15796f27920fd1"}},
-            {  50000, uint256{"000000d308772cf89715e4386cf4581f4c16f4a1e102847074a21bb96745916b"}},
-            { 100000, uint256{"0000006319a52f1a332b32157b69e887691ffb1b914f1470e0768886c34a1aec"}},
-            { 150000, uint256{"0000006f37e730f314815973cbb2989c9e7fb60ae1c908e203681076f265a634"}},
-            { 200000, uint256{"00000050100b66de8aaa831b90f761d95ab11d0420103a31c9a90ac74655a560"}},
-            { 210000, uint256{"1e0eb2fa9f55e6818e9109bf6316486f2de8072dd96a682d133bc72f734da4e5"}},
+            { 100000, uint256{"0c6077bcb2938ac4dc3e108d315d05a1a1a974ec6afee7afb0ea1e7d6d263660"}},
+            { 200000, uint256{"684f85d0d98e5f4958e76327556366ed53bd99e911da2c49c421497a7c3550cc"}},
+            { 209999, uint256{"5e03eb522de5d4346a88cf269a09fd97682991574c47adebebfabafa9d270e65"}},
+            { 210000, uint256{"1659160bc8b3a2ddef969e43d3f58a87254516cd10e34e00a0a8f42e31fdda34"}},
         };
 
 
@@ -461,6 +461,10 @@ public:
         // RandomX from block 1 for testing (mainnet forks at 210,000)
         consensus.nRandomXForkHeight = 1;
         consensus.powLimitRandomX = uint256{"00ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff"};
+
+        // No bootstrap phase for testnet
+        consensus.nBootstrapEndHeight = -1;
+        consensus.powLimitBootstrap = uint256{};
 
         // Argon2id emergency fallback - DORMANT by default for testnet
         consensus.nArgon2EmergencyHeight = -1;
@@ -571,6 +575,10 @@ public:
         // RandomX from block 1 for testing (mainnet forks at 210,000)
         consensus.nRandomXForkHeight = 1;
         consensus.powLimitRandomX = uint256{"00ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff"};
+
+        // No bootstrap phase for testnet4
+        consensus.nBootstrapEndHeight = -1;
+        consensus.powLimitBootstrap = uint256{};
 
         // Argon2id emergency fallback - DORMANT by default for testnet4
         consensus.nArgon2EmergencyHeight = -1;
@@ -733,6 +741,10 @@ public:
         consensus.nRandomXForkHeight = options.randomx_fork_height.value_or(1);
         consensus.powLimitRandomX = uint256{"00ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff"};
 
+        // No bootstrap phase for signet
+        consensus.nBootstrapEndHeight = -1;
+        consensus.powLimitBootstrap = uint256{};
+
         // Argon2id emergency fallback - DORMANT by default for signet
         consensus.nArgon2EmergencyHeight = -1;
         consensus.powLimitArgon2 = uint256{"00ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff"};
@@ -824,6 +836,10 @@ public:
             consensus.nRandomXKeyBlockInterval = *opts.randomx_key_interval;
         }
         consensus.powLimitRandomX = uint256{"7fffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff"};
+
+        // No bootstrap phase for regtest
+        consensus.nBootstrapEndHeight = -1;
+        consensus.powLimitBootstrap = uint256{};
 
         // Argon2id emergency fallback - disabled by default (-1 = never)
         // Use -argon2emergencyheight=<n> for testing emergency fallback

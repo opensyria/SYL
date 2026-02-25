@@ -3,29 +3,6 @@
 // Distributed under the MIT software license, see the accompanying
 // file COPYING or http://www.opensource.org/licenses/mit-license.php.
 
-// =============================================================================
-// TODO [INFRASTRUCTURE - HIGH PRIORITY]: Network Monitoring & Block Explorer
-// =============================================================================
-//
-// BLOCK EXPLORER (Required for user adoption):
-// - Deploy a public block explorer at explore.opensyria.net
-// - Recommended: mempool/mempool (modern UI) or btc-rpc-explorer (lightweight)
-// - Users need to view transactions, blocks, addresses, and network stats
-//
-// NETWORK HEALTH DASHBOARD (Required for security):
-// - Real-time hashrate monitoring with historical charts
-// - Block time tracking (target: 2 minutes, alert if avg >3min or <1min)
-// - Node count and geographic distribution map
-// - Mempool size and fee estimates
-// - Recommended: Grafana + Prometheus with bitcoin-prometheus-exporter
-//
-// SHA256d SECURITY MONITORING (Critical - shared hashrate with Bitcoin):
-// - Alert system for sudden hashrate spikes (>2x in 1 hour = potential attack)
-// - Deep reorg notifications (>6 blocks) sent to exchanges and stakeholders
-// - Mining pool diversity tracking
-// - Regular security audits during first year of operation
-// =============================================================================
-
 #include <opensy-build-config.h> // IWYU pragma: keep
 
 #include <init.h>

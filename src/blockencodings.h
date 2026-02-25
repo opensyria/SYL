@@ -82,7 +82,7 @@ struct PrefilledTransaction {
 typedef enum ReadStatus_t
 {
     READ_STATUS_OK,
-    READ_STATUS_INVALID, // Invalid object, peer is sending bogus crap
+    READ_STATUS_INVALID, // Invalid object, peer is sending malformed data
     READ_STATUS_FAILED, // Failed to process object
 } ReadStatus;
 

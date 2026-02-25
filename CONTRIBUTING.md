@@ -180,7 +180,6 @@ git config --global format.signoff true
 
 - **Website**: https://opensyria.net
 - **GitHub**: https://github.com/opensyria/SYL
-- **Discord**: [Coming Soon]
 - **Twitter/X**: @OpenSYcrypto
 
 ## ❓ Questions?

@@ -184,7 +184,7 @@ public:
     /**
      * Whether this object is a privacy network.
      * TODO: consider adding IsCJDNS() here when more peers adopt CJDNS, see:
-     * https://github.com/opensyria/OpenSY/pull/27411#issuecomment-1497176155
+     * https://github.com/opensyria/SYL/pull/27411#issuecomment-1497176155
      */
     [[nodiscard]] bool IsPrivacyNet() const { return IsTor() || IsI2P(); }
 

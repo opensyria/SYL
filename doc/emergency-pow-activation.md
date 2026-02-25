@@ -13,8 +13,8 @@ OpenSY uses a three-phase Proof-of-Work system:
 
 | Phase | Algorithm | Block Range | Status |
 |-------|-----------|-------------|--------|
-| 1 | SHA256d | 0 - 209,999 | ✅ Active (bootstrapping) |
-| 2 | RandomX | 210,000+ | ⏳ Pending |
+| 1 | SHA256d | 0 - 209,999 | ✅ Complete |
+| 2 | RandomX | 210,000+ | ✅ Active |
 | 3 | Argon2id | Emergency | 💤 Dormant |
 
 This document covers the emergency activation of **Argon2id** fallback if RandomX is compromised.

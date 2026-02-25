@@ -86,6 +86,11 @@ GoogleService-Info.plist
 *.tmp
 *.temp
 
+# Blockchain data & wallet files
+*.dat
+wallet.dat
+*.wallet
+
 # Private documentation
 doc/private/
 

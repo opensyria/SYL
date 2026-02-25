@@ -148,7 +148,7 @@ BOOST_AUTO_TEST_CASE(feefrac_operators)
     FeeFrac max_fee2{1, 1};
     BOOST_CHECK(max_fee >= max_fee2);
 
-    // Test for integer overflow issue (https://github.com/opensyria/OpenSY/issues/32294)
+    // Test for integer overflow issue (https://github.com/opensyria/SYL/issues/32294)
     BOOST_CHECK_EQUAL((FeeFrac{0x7ffffffdfffffffb, 0x7ffffffd}.EvaluateFeeDown(0x7fffffff)), 0x7fffffffffffffff);
 }
 

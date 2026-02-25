@@ -158,6 +158,22 @@ struct Params {
     uint256 powLimitRandomX;              //!< Minimum difficulty for RandomX blocks (resets at fork)
 
     /**
+     * Genesis Bootstrap Phase
+     *
+     * The initial chain (blocks 0 through nBootstrapEndHeight) was mined at
+     * relaxed difficulty (nBits = 0x207fffff, matching powLimitBootstrap) to
+     * rapidly establish the chain and initial supply distribution.
+     * This is a permanent consensus rule.
+     *
+     * - Blocks 0 to nBootstrapEndHeight have nBits that may exceed the normal
+     *   powLimit. Validation uses powLimitBootstrap instead.
+     * - At nBootstrapEndHeight + 1, difficulty resets to the active algorithm's
+     *   powLimit to begin normal difficulty adjustment.
+     */
+    int nBootstrapEndHeight{210520};       //!< Last block mined during genesis bootstrap phase
+    uint256 powLimitBootstrap;             //!< Relaxed powLimit for bootstrap-phase blocks (0x7fff...)
+
+    /**
      * Emergency Fallback PoW Parameters (Argon2id)
      *
      * If RandomX is compromised (cryptographic break, critical vulnerability),

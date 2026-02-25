@@ -114,7 +114,7 @@ using SettingsUpdate = std::function<std::optional<interfaces::SettingsAction>(c
 //! * The initMessages() and showProgress() methods which the wallet uses to send
 //!   notifications to the GUI should go away when GUI and wallet can directly
 //!   communicate with each other without going through the node
-//!   (https://github.com/opensyria/OpenSY/pull/15288#discussion_r253321096).
+//!   (https://github.com/opensyria/SYL/pull/15288#discussion_r253321096).
 //!
 //! * The handleRpc, registerRpcs, rpcEnableDeprecated methods and other RPC
 //!   methods can go away if wallets listen for HTTP requests on their own
@@ -126,7 +126,7 @@ using SettingsUpdate = std::function<std::optional<interfaces::SettingsAction>(c
 //!
 //! * `guessVerificationProgress` and similar methods can go away if rescan
 //!   logic moves out of the wallet, and the wallet just requests scans from the
-//!   node (https://github.com/opensyria/OpenSY/issues/11756)
+//!   node (https://github.com/opensyria/SYL/issues/11756)
 class Chain
 {
 public:

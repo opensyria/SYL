@@ -87,7 +87,7 @@ void OptionTests::migrateSettings()
 
 void OptionTests::integerGetArgBug()
 {
-    // Test regression https://github.com/opensyria/OpenSY/issues/24457. Ensure
+    // Test regression https://github.com/opensyria/SYL/issues/24457. Ensure
     // that setting integer prune value doesn't cause an exception to be thrown
     // in the OptionsModel constructor
     gArgs.LockSettings([&](common::Settings& settings) {

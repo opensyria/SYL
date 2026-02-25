@@ -105,7 +105,7 @@ BOOST_AUTO_TEST_CASE(xor_file)
     }
     {
 #ifdef __MINGW64__
-        // Temporary workaround for https://github.com/opensyria/OpenSY/issues/30210
+        // MinGW workaround: fopen("wbx") not supported (upstream Bitcoin Core #30210)
         const char* mode = "wb";
 #else
         const char* mode = "wbx";

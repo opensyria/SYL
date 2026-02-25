@@ -687,7 +687,7 @@ public:
      * `shared_ptr` (instead of `unique_ptr`) is used to avoid premature close of
      * the underlying file descriptor by one thread while another thread is
      * poll(2)-ing it for activity.
-     * @see https://github.com/opensyria/OpenSY/issues/21744 for details.
+     * @see https://github.com/opensyria/SYL/issues/21744 for details.
      */
     std::shared_ptr<Sock> m_sock GUARDED_BY(m_sock_mutex);
 

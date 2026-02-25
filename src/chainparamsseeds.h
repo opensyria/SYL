@@ -52,7 +52,7 @@ static const uint8_t chainparams_seed_main[] = {
     //   - Potential eclipse attack vector if seeds become compromised
     //
     // PRIORITY: Recruit 2-3 independent community seed operators!
-    // Apply at: https://github.com/opensyria/OpenSY/issues/new?template=seed_application.yml
+    // Apply at: https://github.com/opensyria/SYL/issues/new?template=seed_application.yml
     //
     // Reserved slots for community fixed seeds (uncomment when approved):
     // ,  // comma needed before first community seed!
@@ -65,7 +65,7 @@ static const uint8_t chainparams_seed_main[] = {
     // ==========================================================================
 
     // ==========================================================================
-    // IPv6 SEEDS - TODO: Add when infrastructure supports dual-stack
+    // IPv6 SEEDS - Add when infrastructure supports dual-stack
     // ==========================================================================
     // Example format for IPv6 node:
     //

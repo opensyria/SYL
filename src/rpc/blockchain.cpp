@@ -3212,7 +3212,7 @@ PrepareUTXOSnapshot(
         // use below this block.
         //
         // See discussion here:
-        //   https://github.com/opensyria/OpenSY/pull/15606#discussion_r274479369
+        //   https://github.com/opensyria/SYL/pull/15606#discussion_r274479369
         //
         AssertLockHeld(::cs_main);
 
@@ -3261,7 +3261,7 @@ UniValue WriteUTXOSnapshot(
     // In the coins vector we collect all coins that belong to a certain tx hash
     // (key.hash) and when we have them all (key.hash != last_hash) we write
     // them to file using the below lambda function.
-    // See also https://github.com/opensyria/OpenSY/issues/25675
+    // See also https://github.com/opensyria/SYL/issues/25675
     auto write_coins_to_file = [&](AutoFile& afile, const Txid& last_hash, const std::vector<std::pair<uint32_t, Coin>>& coins, size_t& written_coins_count) {
         afile << last_hash;
         WriteCompactSize(afile, coins.size());
@@ -3344,7 +3344,7 @@ static RPCHelpMan loadtxoutset()
         "contents are always checked by hash.\n\n"
 
         "You can find more information on this process in the `assumeutxo` design "
-        "document (<https://github.com/opensyria/OpenSY/blob/master/doc/design/assumeutxo.md>).",
+        "document (<https://github.com/opensyria/SYL/blob/master/doc/design/assumeutxo.md>).",
         {
             {"path",
                 RPCArg::Type::STR,

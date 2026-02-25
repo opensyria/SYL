@@ -301,11 +301,6 @@ void Chainstate::MaybeUpdateMempoolForReorg(
     DisconnectedBlockTransactions& disconnectpool,
     bool fAddToMempool)
 {
-    // TODO [SECURITY - SHA256d MITIGATION]: Add alerting for deep reorgs
-    // Since OpenSY shares SHA256d with Bitcoin, hashrate attacks could cause
-    // unexpected reorgs. Consider logging/alerting when disconnectpool size > 6
-    // as this could indicate an attack in progress. Exchanges should be notified
-    // of any reorgs > 3 blocks deep.
     if (!m_mempool) return;
 
     AssertLockHeld(cs_main);
@@ -2337,7 +2332,7 @@ DisconnectResult Chainstate::DisconnectBlock(const CBlock& block, const CBlockIn
 
     // Ignore blocks that contain transactions which are 'overwritten' by later transactions,
     // unless those are already completely spent.
-    // See https://github.com/opensyria/OpenSY/issues/22596 for additional information.
+    // See https://github.com/opensyria/SYL/issues/22596 for additional information.
     // Note: the blocks specified here are different than the ones used in ConnectBlock because DisconnectBlock
     // unwinds the blocks in reverse. As a result, the inconsistency is not discovered until the earlier
     // blocks with the duplicate coinbase transactions are disconnected.
@@ -4496,7 +4491,7 @@ static bool ContextualCheckBlockHeader(const CBlockHeader& block, BlockValidatio
         return state.Invalid(BlockValidationResult::BLOCK_INVALID_HEADER, "time-too-old", "block's timestamp is too early");
 
     // Testnet4 and regtest only: Check timestamp against prev for difficulty-adjustment
-    // blocks to prevent timewarp attacks (see https://github.com/opensyria/OpenSY/pull/15482).
+    // blocks to prevent timewarp attacks (see https://github.com/opensyria/SYL/pull/15482).
     if (consensusParams.enforce_BIP94) {
         // Check timestamp for the first block of each difficulty adjustment
         // interval, except the genesis block.
@@ -4508,7 +4503,15 @@ static bool ContextualCheckBlockHeader(const CBlockHeader& block, BlockValidatio
     }
 
     // Check timestamp
-    if (block.Time() > NodeClock::now() + std::chrono::seconds{MAX_FUTURE_BLOCK_TIME}) {
+    // During the bootstrap transition (first blocks after nBootstrapEndHeight),
+    // allow extended future time because bootstrap blocks have artificial timestamps.
+    // The medianTimePast from bootstrap blocks may be hours/days ahead of wall clock.
+    // Normal 2-hour limit resumes once the chain's timestamps converge with real time.
+    int64_t maxFutureTime = MAX_FUTURE_BLOCK_TIME;
+    if (consensusParams.nBootstrapEndHeight >= 0 && nHeight <= consensusParams.nBootstrapEndHeight + 2016) {
+        maxFutureTime = 365 * 24 * 60 * 60; // 1 year allowance during bootstrap transition
+    }
+    if (block.Time() > NodeClock::now() + std::chrono::seconds{maxFutureTime}) {
         return state.Invalid(BlockValidationResult::BLOCK_TIME_FUTURE, "time-too-new", "block timestamp too far in the future");
     }
 

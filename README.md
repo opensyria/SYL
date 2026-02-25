@@ -91,7 +91,7 @@ cmake --build build -j$(nproc)
 
 # Step 2: Get your mining address
 ./build/bin/opensy-cli getnewaddress "mining"
-# Save this address! It looks like: Fxxxxxxxxx...
+# Save this address! It looks like: syl1qxxxxxxxxx...
 
 # Step 3: Start mining
 ./build/bin/opensy-cli generatetoaddress 1 YOUR_ADDRESS_HERE

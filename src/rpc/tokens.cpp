@@ -120,32 +120,6 @@ public:
         times.push_back(now);
         return true;
     }
-    
-    /**
-     * Get remaining calls for an endpoint/peer
-     */
-    size_t GetRemainingCalls(const std::string& endpoint, const std::string& peer_id,
-                             size_t max_calls = DEFAULT_MAX_CALLS) const {
-        std::lock_guard<std::mutex> lock(m_mutex);
-        
-        int64_t now = GetTime();
-        auto key = std::make_pair(endpoint, peer_id);
-        auto it = m_call_times.find(key);
-        
-        if (it == m_call_times.end()) {
-            return max_calls;
-        }
-        
-        // Count calls in window
-        size_t count = 0;
-        for (auto time : it->second) {
-            if (time >= now - DEFAULT_WINDOW_SECONDS) {
-                ++count;
-            }
-        }
-        
-        return count < max_calls ? max_calls - count : 0;
-    }
 };
 
 // Global rate limiter instance - use a pointer that is intentionally never deleted

@@ -1103,25 +1103,6 @@ static bool rest_blockhash_by_height(const std::any& context, HTTPRequest* req,
     }
 }
 
-// TODO: SRC-20 Token REST API Endpoints (Future Enhancement)
-// ============================================================
-// Add REST endpoints for lightweight token queries without full RPC.
-// These would query the existing token database (src/tokens/tokendb.h).
-//
-// Suggested endpoints:
-//   /rest/token/<ticker>           - Get token info (supply, holders, etc.)
-//   /rest/tokenbalance/<address>   - Get all token balances for an address
-//   /rest/tokentx/<txid>           - Get token operation details from a tx
-//   /rest/tokentransfers/<ticker>  - Get recent transfers for a token
-//
-// Implementation steps:
-//   1. Add rest_token(), rest_tokenbalance(), etc. handler functions
-//   2. Include <tokens/tokendb.h> and query g_token_db
-//   3. Register handlers in uri_prefixes[] array below
-//   4. Support JSON and HEX output formats
-//   5. Add tests in test/functional/interface_rest.py
-// ============================================================
-
 static const struct {
     const char* prefix;
     bool (*handler)(const std::any& context, HTTPRequest* req, const std::string& strReq);
@@ -1139,10 +1120,6 @@ static const struct {
       {"/rest/deploymentinfo", rest_deploymentinfo},
       {"/rest/blockhashbyheight/", rest_blockhash_by_height},
       {"/rest/spenttxouts/", rest_spent_txouts},
-      // TODO: Add token endpoints here when implemented:
-      // {"/rest/token/", rest_token},
-      // {"/rest/tokenbalance/", rest_tokenbalance},
-      // {"/rest/tokentx/", rest_tokentx},
 };
 
 void StartREST(const std::any& context)

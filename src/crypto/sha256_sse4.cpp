@@ -18,7 +18,7 @@ void Transform(uint32_t* s, const unsigned char* chunk, size_t blocks)
   clang is unable to compile this with -O0 and -fsanitize=address.
   See upstream bug: https://github.com/llvm/llvm-project/issues/92182.
   This also fails to compile with -O2, -fcf-protection & -fsanitize=address.
-  See https://github.com/opensyria/OpenSY/issues/31913.
+  See https://github.com/opensyria/SYL/issues/31913.
   */
 #if __has_feature(address_sanitizer)
   __attribute__((no_sanitize("address")))

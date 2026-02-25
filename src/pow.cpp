@@ -66,6 +66,13 @@ unsigned int GetNextWorkRequired(const CBlockIndex* pindexLast, const CBlockHead
         return nProofOfWorkLimit;
     }
 
+    // GENESIS BOOTSTRAP PHASE: At the end of the bootstrap phase, reset to
+    // the active algorithm's minimum difficulty to begin normal adjustment.
+    // Blocks within the bootstrap phase used relaxed difficulty (powLimitBootstrap).
+    if (params.nBootstrapEndHeight >= 0 && nextHeight == params.nBootstrapEndHeight + 1) {
+        return nProofOfWorkLimit;
+    }
+
     // At the RandomX fork height, reset to minimum difficulty for the new algorithm
     if (nextHeight == params.nRandomXForkHeight) {
         return nProofOfWorkLimit;
@@ -334,8 +341,15 @@ std::optional<arith_uint256> DeriveTarget(unsigned int nBits, const uint256& pow
 // AUDIT FIX [v4 ISSUE-010]: Take hash by const reference.
 bool CheckProofOfWorkImpl(const uint256& hash, unsigned int nBits, const Consensus::Params& params)
 {
+    // Try normal powLimit first
     auto bnTarget{DeriveTarget(nBits, params.powLimit)};
-    if (!bnTarget) return false;
+    if (!bnTarget) {
+        // Genesis bootstrap phase: blocks may have nBits exceeding normal powLimit
+        if (!params.powLimitBootstrap.IsNull()) {
+            bnTarget = DeriveTarget(nBits, params.powLimitBootstrap);
+        }
+        if (!bnTarget) return false;
+    }
 
     // Check proof of work matches claimed amount
     if (UintToArith256(hash) > bnTarget)
@@ -348,8 +362,14 @@ bool CheckProofOfWorkImpl(const uint256& hash, unsigned int nBits, const Consens
 // AUDIT FIX [v4 ISSUE-010]: Take hash by const reference.
 bool CheckProofOfWorkImpl(const uint256& hash, unsigned int nBits, int height, const Consensus::Params& params)
 {
-    const uint256& activePowLimit = params.GetRandomXPowLimit(height);
-    auto bnTarget{DeriveTarget(nBits, activePowLimit)};
+    // Use bootstrap powLimit for blocks in the genesis bootstrap phase
+    const uint256* activePowLimitPtr;
+    if (params.nBootstrapEndHeight >= 0 && height >= 0 && height <= params.nBootstrapEndHeight) {
+        activePowLimitPtr = &params.powLimitBootstrap;
+    } else {
+        activePowLimitPtr = &params.GetRandomXPowLimit(height);
+    }
+    auto bnTarget{DeriveTarget(nBits, *activePowLimitPtr)};
     if (!bnTarget) return false;
 
     // Check proof of work matches claimed amount
@@ -541,14 +561,22 @@ bool CheckProofOfWorkForBlockIndex(const CBlockHeader& header, int height, const
         case Consensus::Params::PowAlgorithm::ARGON2ID:
         case Consensus::Params::PowAlgorithm::RANDOMX: {
             // For memory-hard algorithms during index load: just verify nBits is valid
-            const uint256& activePowLimit = params.GetActivePowLimit(height);
+            // Use bootstrap powLimit for blocks in the genesis bootstrap phase
+            const uint256& activePowLimit = (params.nBootstrapEndHeight >= 0 && height <= params.nBootstrapEndHeight)
+                ? params.powLimitBootstrap
+                : params.GetActivePowLimit(height);
             auto bnTarget = DeriveTarget(header.nBits, activePowLimit);
             return bnTarget.has_value();  // Valid if nBits parses to a valid target within powLimit
         }
 
         case Consensus::Params::PowAlgorithm::SHA256D:
         default: {
-            // SHA256d blocks can be fully validated
+            // SHA256d blocks: use bootstrap powLimit if in bootstrap phase
+            if (params.nBootstrapEndHeight >= 0 && height <= params.nBootstrapEndHeight) {
+                auto bnTarget = DeriveTarget(header.nBits, params.powLimitBootstrap);
+                if (!bnTarget) return false;
+                return UintToArith256(header.GetHash()) <= *bnTarget;
+            }
             return CheckProofOfWork(header.GetHash(), header.nBits, params);
         }
     }

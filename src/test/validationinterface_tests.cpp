@@ -76,7 +76,7 @@ public:
 
 // Regression test to ensure UnregisterAllValidationInterfaces calls don't
 // destroy a validation interface while it is being called. Bug:
-// https://github.com/opensyria/OpenSY/pull/18551
+// https://github.com/opensyria/SYL/pull/18551
 BOOST_AUTO_TEST_CASE(unregister_all_during_call)
 {
     bool destroyed = false;

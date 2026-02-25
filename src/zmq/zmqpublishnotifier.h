@@ -72,36 +72,4 @@ public:
     bool NotifyTransactionRemoval(const CTransaction &transaction, uint64_t mempool_sequence) override;
 };
 
-// TODO: SRC-20 Token ZMQ Notifications (Future Enhancement)
-// ============================================================
-// Add ZMQ publishers for SRC-20 token operations to enable external indexers
-// and real-time token tracking without polling RPC.
-//
-// Suggested classes to implement:
-//
-// class CZMQPublishHashTokenNotifier : public CZMQAbstractPublishNotifier
-// {
-// public:
-//     bool NotifyTokenOperation(const TokenOperation& op) override;
-// };
-//
-// class CZMQPublishRawTokenNotifier : public CZMQAbstractPublishNotifier
-// {
-// public:
-//     bool NotifyTokenOperation(const TokenOperation& op) override;
-// };
-//
-// Topics to add:
-//   - zmqpubhashtoken: Publish token operation hash (deploy/mint/transfer)
-//   - zmqpubrawtoken: Publish full token operation data as JSON
-//
-// Implementation steps:
-//   1. Add NotifyTokenOperation() to CZMQAbstractNotifier interface
-//   2. Create notifier classes above
-//   3. Register in zmqnotificationinterface.cpp factories
-//   4. Add -zmqpubhashtoken and -zmqpubrawtoken args in init.cpp
-//   5. Call from validation.cpp where token ops are processed
-//   6. Add functional tests in test/functional/interface_zmq.py
-// ============================================================
-
 #endif // OPENSY_ZMQ_ZMQPUBLISHNOTIFIER_H

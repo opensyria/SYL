@@ -1400,8 +1400,10 @@ std::vector<RPCResult> ScriptPubKeyDoc() {
 
 uint256 GetTarget(const CBlockIndex& blockindex, const Consensus::Params& params)
 {
-    // Use height-aware pow limit to support both SHA256d and RandomX blocks
-    const uint256& pow_limit = params.GetRandomXPowLimit(blockindex.nHeight);
+    // Use bootstrap powLimit for blocks in the genesis bootstrap phase
+    const uint256& pow_limit = (params.nBootstrapEndHeight >= 0 && blockindex.nHeight <= params.nBootstrapEndHeight)
+        ? params.powLimitBootstrap
+        : params.GetActivePowLimit(blockindex.nHeight);
     arith_uint256 target{*CHECK_NONFATAL(DeriveTarget(blockindex.nBits, pow_limit))};
     return ArithToUint256(target);
 }

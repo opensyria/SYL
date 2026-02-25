@@ -20,7 +20,7 @@
 // many times micro-benchmarks of the database showed completely different
 // characteristics than e.g. reindex timings. But that's not a requirement of
 // every benchmark."
-// (https://github.com/opensyria/OpenSY/issues/7883#issuecomment-224807484)
+// (https://github.com/opensyria/SYL/issues/7883#issuecomment-224807484)
 static void CCoinsCaching(benchmark::Bench& bench)
 {
     ECC_Context ecc_context{};

@@ -239,9 +239,19 @@ ChainstateLoadResult VerifyLoadedChainstate(ChainstateManager& chainman, const C
         if (!is_coinsview_empty(chainstate)) {
             const CBlockIndex* tip = chainstate->m_chain.Tip();
             if (tip && tip->nTime > GetTime() + MAX_FUTURE_BLOCK_TIME) {
-                return {ChainstateLoadStatus::FAILURE, _("The block database contains a block which appears to be from the future. "
-                                                         "This may be due to your computer's date and time being set incorrectly. "
-                                                         "Only rebuild the block database if you are sure that your computer's date and time are correct")};
+                // Skip this check for blocks in or near the bootstrap phase.
+                // Bootstrap blocks were mined rapidly and may have future timestamps
+                // relative to the current wall clock. Include one full retarget period
+                // (nPowTargetTimespan / nPowTargetSpacing blocks) after bootstrap end
+                // to cover the transition window. This is safe because the bootstrap
+                // chain is verified by checkpoints and nMinimumChainWork.
+                const auto& consensus = chainman.GetConsensus();
+                const int64_t nRetargetBlocks = consensus.nPowTargetTimespan / consensus.nPowTargetSpacing;
+                if (consensus.nBootstrapEndHeight < 0 || tip->nHeight > consensus.nBootstrapEndHeight + nRetargetBlocks) {
+                    return {ChainstateLoadStatus::FAILURE, _("The block database contains a block which appears to be from the future. "
+                                                             "This may be due to your computer's date and time being set incorrectly. "
+                                                             "Only rebuild the block database if you are sure that your computer's date and time are correct")};
+                }
             }
 
             VerifyDBResult result = CVerifyDB(chainman.GetNotifications()).VerifyDB(

@@ -114,12 +114,6 @@ static constexpr auto CHAIN_SYNC_TIMEOUT{8min};  // Bitcoin: 20min (~4 blocks at
 static constexpr auto STALE_CHECK_INTERVAL{5min};  // Bitcoin: 10min (~2.5 blocks)
 /** How frequently to check for extra outbound peers and disconnect */
 static constexpr auto EXTRA_PEER_CHECK_INTERVAL{18s};  // Bitcoin: 45s (scaled by ~2.5x)
-// TODO [SECURITY - SHA256d MITIGATION]: Monitor for hashrate anomalies
-// Implement alerting when:
-// - Block times deviate significantly from 2-minute average
-// - Sudden large difficulty changes occur
-// - Deep reorgs (>6 blocks) are detected
-// These could indicate a hashrate attack in progress.
 /** Minimum time an outbound-peer-eviction candidate must be connected for, in order to evict */
 static constexpr auto MINIMUM_CONNECT_TIME{30s};
 /** SHA256("main address relay")[0:8] */

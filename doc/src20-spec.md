@@ -536,7 +536,7 @@ await wallet.transferToken({
 > - Token failures do not cause block rejection — the base-layer SYL chain is unaffected
 > - Token balances should be treated as **advisory** for high-value settlement
 >
-> A future hard-fork upgrade (SIP-TBD) will commit a Merkle root of token state
+> A future hard-fork upgrade will commit a Merkle root of token state
 > into the coinbase transaction, making token balances consensus-enforced. Until
 > then, SRC-20 tokens are suitable for community tokens, loyalty points, and
 > low-value use cases — but should not be relied upon for critical financial settlement.
